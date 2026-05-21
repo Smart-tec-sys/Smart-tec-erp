@@ -1,0 +1,29 @@
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Banco de dados
+*.db
+*.sqlite3
+
+# Variáveis de ambiente
+.env
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# Build
+dist/
+build/
+*.egg-info/
