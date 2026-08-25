@@ -3,6 +3,8 @@ import streamlit as st
 
 def telaDashboard():
     st.title("🏠 Dashboard")
+    
+    # Cria as 3 colunas de indicadores na tela
     col1, col2, col3 = st.columns(3)
 
     with col1:

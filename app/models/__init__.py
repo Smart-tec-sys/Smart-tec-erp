@@ -1,0 +1,1 @@
+from .fornecedor import FornecedorDB

@@ -10,15 +10,33 @@ __pycache__/
 *.pyd
 .Python
 
-# Banco de dados
+# Banco de dados e backups
 *.db
 *.sqlite3
+*.backup
+*.dump
+*.sql.gz
 
-# Variáveis de ambiente
+# Variáveis de ambiente e credenciais
 .env
+.env.*
+!.env.example
+.pgpass
+pgpass.conf
+postgres_recovery_password_*.txt
+*_recovery_password_*.txt
+
+# Launchers temporários externos
+frozen_backend.py
+frozen_frontend.py
+smarttec_frozen_readonly/
+
+# Diagnósticos locais com credenciais
+teste_db.py
 
 # VS Code
 .vscode/
+.vscode/PythonImportHelper-v2-Completion.json
 
 # Logs
 *.log

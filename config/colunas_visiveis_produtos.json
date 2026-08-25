@@ -1,0 +1,10 @@
+{
+  "colunas_visiveis_produtos": [
+    "valor_venda",
+    "estoque_atual",
+    "situacao",
+    "grupo_tecnico",
+    "cor",
+    "valor_custo"
+  ]
+}

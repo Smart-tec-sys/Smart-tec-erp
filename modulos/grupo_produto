@@ -1,0 +1,19 @@
+familia_tecnica = st.selectbox(
+    "Família Técnica",
+    [
+        "",
+        "TECIDO",
+        "TUBO_32",
+        "TUBO_38",
+        "BASE_AC133",
+        "BASE_AC191",
+        "FITA_TUBO",
+        "FITA_BASE",
+        "ESPAGUETE_3MM",
+        "CORRENTE_BOLA10",
+        "EMENDA_CORRENTE",
+        "TAMPA_BASE",
+        "COMANDO_32",
+        "COMANDO_38",
+    ],
+)
