@@ -3584,16 +3584,46 @@ def eh_produto_final_rolo_manual_para_receita(produto):
     """
     Identifica produto final Rolô manual para aplicação da receita base.
 
-    Regra V25:
+    Regra V26:
     - aceita o grupo técnico novo PERSIANA_ROLO e o legado ROLO;
     - aceita também produtos GestãoClick cujo nome começa com ROLÔ/ROLO;
-    - não depende mais somente de tipo_produto, porque alguns importados vieram como Componente;
+    - para PERSIANA_ROLO, confirma modelo, tipo e Produto Base pelos campos estruturais;
+    - separa a identidade do produto das receitas serializadas em observacoes;
     - nunca aplica em motorizada/motorizado nem em peças/comandos/tubos/bandôs.
     """
     produto = produto or {}
-    texto = texto_produto_motor(produto)
     nome = normalizar_busca_motor(produto.get("nome"))
     grupo_tecnico = normalizar_grupo_tecnico(produto.get("grupo_tecnico"))
+    modelo_tecnico = normalizar_busca_motor(produto.get("modelo_tecnico"))
+    produto_base = normalizar_busca_motor(produto.get("produto_base"))
+    tipo = normalizar_busca_motor(produto.get("tipo_produto"))
+    grupo_produto = normalizar_busca_motor(produto.get("grupo_produto"))
+
+    # Identidade do produto: observacoes pode conter a receita técnica serializada
+    # e, por isso, não pode decidir se o registro é produto final ou componente.
+    texto_identidade = normalizar_busca_motor(
+        " ".join(
+            [
+                str(produto.get("nome") or ""),
+                str(produto.get("tipo_produto") or ""),
+                str(produto.get("grupo_produto") or ""),
+                str(produto.get("modelo") or ""),
+                str(produto.get("grupo_tecnico") or ""),
+                str(produto.get("modelo_tecnico") or ""),
+                str(produto.get("produto_base") or ""),
+            ]
+        )
+    )
+    campos_motor = [
+        "torque_motor",
+        "voltagem_motor",
+        "acionamento_motor",
+        "uso_motor",
+        "observacao_motor",
+        "programacao_motor",
+        "tubo_motor",
+    ]
+    possui_dado_motor = any(str(produto.get(campo) or "").strip() for campo in campos_motor)
     # Usa também o grupo técnico efetivo/inferido da listagem.
     # Alguns produtos do GestãoClick aparecem como PERSIANA_ROLO na tela,
     # mas ainda não têm o campo salvo de forma definitiva no banco.
@@ -3601,22 +3631,32 @@ def eh_produto_final_rolo_manual_para_receita(produto):
         grupo_tecnico_efetivo = grupo_tecnico_label(produto)
     except Exception:
         grupo_tecnico_efetivo = grupo_tecnico
-    grupo_produto = normalizar_busca_motor(produto.get("grupo_produto"))
-    tipo = normalizar_busca_motor(produto.get("tipo_produto"))
-
     if not produto_ativo(produto.get("situacao", "Ativo")):
         return False
 
-    if any(t in texto for t in ["MOTOR", "MOTORIZADA", "MOTORIZADO"]):
+    if possui_dado_motor:
         return False
 
-    if contem_palavra_bloqueio_produto_final(texto):
+    if any(t in texto_identidade for t in ["MOTOR", "MOTORIZADA", "MOTORIZADO"]):
         return False
 
-    # Confirmação forte pelo grupo técnico definido pelo usuário/saneamento
-    # ou pelo grupo técnico efetivo exibido na listagem.
-    if grupo_tecnico in ["PERSIANA_ROLO", "ROLO"] or grupo_tecnico_efetivo in ["PERSIANA_ROLO", "ROLO"]:
+    if contem_palavra_bloqueio_produto_final(texto_identidade) or any(
+        termo in texto_identidade for termo in ["COMPONENTE", "TECIDO"]
+    ):
+        return False
+
+    # Produto final canônico: todos os campos estruturais precisam concordar.
+    if (
+        grupo_tecnico == "PERSIANA_ROLO"
+        and modelo_tecnico == "ROLO"
+        and "PRODUTO FABRICADO" in tipo
+        and not produto_base
+    ):
         return True
+
+    # Compatibilidade temporária com registros legados ainda não saneados.
+    if grupo_tecnico == "ROLO" or grupo_tecnico_efetivo == "ROLO":
+        return not produto_base
 
     # Fallback para produtos finais importados do GestãoClick ainda sem grupo técnico correto.
     if nome.startswith("ROLO ") or nome.startswith("ROLÔ "):
