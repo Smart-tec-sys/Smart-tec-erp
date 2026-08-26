@@ -3384,6 +3384,97 @@ def produto_bate_textos_receita(produto, regra):
     return False
 
 
+def texto_identidade_tubo_32(produto):
+    """Identidade estrutural do tubo 32, sem descrição ou observações."""
+    produto = produto or {}
+    return normalizar_busca_motor(
+        " ".join(
+            [
+                str(produto.get("nome") or ""),
+                str(produto.get("codigo") or ""),
+                str(produto.get("codigo_interno") or ""),
+                str(produto.get("codigo_barras") or ""),
+                str(produto.get("tipo_produto") or ""),
+                str(produto.get("grupo_produto") or ""),
+                str(produto.get("grupo_tecnico") or ""),
+                str(produto.get("modelo_tecnico") or ""),
+                str(produto.get("produto_base") or ""),
+                str(produto.get("unidade_venda") or ""),
+                str(produto.get("situacao") or ""),
+                str(produto.get("status_comercial") or ""),
+                str(produto.get("material_tecido") or ""),
+                str(produto.get("tubo_motor") or ""),
+            ]
+        )
+    )
+
+
+def produto_candidato_tubo_32_deterministico(produto):
+    """Aceita somente tubo Rolô 32 mm estruturalmente identificado."""
+    produto = produto or {}
+    texto = texto_identidade_tubo_32(produto)
+    nome = normalizar_busca_motor(produto.get("nome"))
+    tipo = normalizar_busca_motor(produto.get("tipo_produto"))
+    grupo = normalizar_busca_motor(produto.get("grupo_tecnico"))
+    unidade = normalizar_busca_motor(produto.get("unidade_venda"))
+    status = normalizar_busca_motor(produto.get("status_comercial"))
+
+    if not produto_ativo(produto.get("situacao", "Ativo")):
+        return False
+    if status and contem_algum(status, ["INATIVO", "BLOQUEADO", "SUSPENSO", "EXCLUIDO"]):
+        return False
+    if "FABRICADO" in tipo:
+        return False
+    if grupo != "PERFIS PERSIANAS ROLO":
+        return False
+    if unidade not in ["ML", "M", "MT", "METRO", "METRO LINEAR"]:
+        return False
+    if "TUBO" not in nome or not contem_algum(nome, ["ROLO", "ROLÔ"]):
+        return False
+    if not re.search(r"(^| )32 ?MM($| )", nome):
+        return False
+    if re.search(r"(^| )(38|41|56|70|88) ?MM($| )", nome):
+        return False
+    if contem_algum(texto, [
+        "TAMPA", "PONTEIRA", "SUPORTE", "COMANDO", "KIT", "MOTOR",
+        "COROA", "ADAPTADOR", "ACESSORIO", "ACESSÓRIO",
+    ]):
+        return False
+    return True
+
+
+def pontuar_tubo_32_deterministico(produto):
+    """Desempata tubos 32 válidos sem consultar observações."""
+    if not produto_candidato_tubo_32_deterministico(produto):
+        return -999999
+
+    produto = produto or {}
+    nome = normalizar_busca_motor(produto.get("nome"))
+    codigo = normalizar_busca_motor(
+        produto.get("codigo") or produto.get("codigo_interno") or produto.get("codigo_barras")
+    )
+    score = 100000
+
+    if codigo == "2418293509764":
+        score += 10000000
+    if nome == "TUBO P ROLO 32MM NATURAL":
+        score += 1000000
+    if normalizar_busca_motor(produto.get("grupo_tecnico")) == "PERFIS PERSIANAS ROLO":
+        score += 100000
+    if normalizar_busca_motor(produto.get("unidade_venda")) in ["ML", "M", "MT", "METRO", "METRO LINEAR"]:
+        score += 10000
+    if str(produto.get("material_tecido") or "").strip():
+        score += 1000
+    if float(produto.get("custo_final") or produto.get("valor_custo") or 0) > 0:
+        score += 100
+
+    try:
+        score += 1 / (int(produto.get("id") or 0) + 1)
+    except Exception:
+        pass
+    return score
+
+
 def produto_bate_tecido_receita_rolo(produto, produto_base):
     """
     Tecido é o único item dinâmico da receita.
@@ -3452,6 +3543,9 @@ def produto_bate_tecido_receita_rolo(produto, produto_base):
 
 
 def pontuar_receita_deterministica(produto, chave, produto_base=None):
+    if chave == "tubo_32":
+        return pontuar_tubo_32_deterministico(produto)
+
     if chave == "tecido":
         if produto_bate_tecido_receita_rolo(produto, produto_base):
             texto = texto_produto_motor(produto or {})
