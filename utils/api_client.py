@@ -1,6 +1,7 @@
+import os
 import requests
 
-API_URL = "http://127.0.0.1:8000"
+API_URL = os.getenv("SMARTTEC_API_URL", "http://127.0.0.1:8000").rstrip("/")
 
 
 def _url(path):
@@ -93,6 +94,13 @@ def deletar_transportadora(id_transportadora):
 
 def get_transportadora():
     return get_transportadoras()
+
+# ORÇAMENTOS
+def get_orcamentos(): return requests.get(_url("/orcamentos/"))
+def get_orcamento_por_id(orcamento_id): return requests.get(_url(f"/orcamentos/{orcamento_id}"))
+def criar_orcamento(dados): return requests.post(_url("/orcamentos/"), json=dados)
+def atualizar_orcamento(orcamento_id,dados): return requests.put(_url(f"/orcamentos/{orcamento_id}"),json=dados)
+def deletar_orcamento(orcamento_id): return requests.delete(_url(f"/orcamentos/{orcamento_id}"))
 
 
 # OPÇÕES AUXILIARES

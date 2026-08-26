@@ -7,6 +7,7 @@ from app.routes.funcionario import router as router_funcionario
 from app.routes.transportadora import router as router_transportadora
 from app.routes.opcao_auxiliar import router as router_opcao_auxiliar
 from app.routes.produto import router as router_produto
+from app.routes.orcamento import router as router_orcamento
 
 # =========================================================
 # INSTANCIAR O FASTAPI
@@ -33,6 +34,7 @@ app.include_router(router_funcionario, prefix="/funcionarios", tags=["Funcionár
 app.include_router(router_transportadora, prefix="/transportadoras", tags=["Transportadoras"])
 app.include_router(router_opcao_auxiliar, prefix="/opcoes-auxiliares", tags=["Opções Auxiliares"])
 app.include_router(router_produto, prefix="/produtos", tags=["Produtos"])
+app.include_router(router_orcamento, prefix="/orcamentos", tags=["Orçamentos"])
 
 
 # =========================================================

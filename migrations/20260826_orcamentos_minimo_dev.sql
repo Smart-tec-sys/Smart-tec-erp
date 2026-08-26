@@ -1,0 +1,25 @@
+BEGIN;
+ALTER TABLE orcamentos_itens
+ ADD COLUMN IF NOT EXISTS tipo_item VARCHAR(20) NOT NULL DEFAULT 'PRODUTO',
+ ADD COLUMN IF NOT EXISTS descricao TEXT,
+ ADD COLUMN IF NOT EXISTS codigo_interno VARCHAR(100),
+ ADD COLUMN IF NOT EXISTS grupo_tecnico VARCHAR(100),
+ ADD COLUMN IF NOT EXISTS modelo_tecnico VARCHAR(50),
+ ADD COLUMN IF NOT EXISTS unidade VARCHAR(30),
+ ADD COLUMN IF NOT EXISTS largura NUMERIC(12,3) NOT NULL DEFAULT 0,
+ ADD COLUMN IF NOT EXISTS altura NUMERIC(12,3) NOT NULL DEFAULT 0,
+ ADD COLUMN IF NOT EXISTS area NUMERIC(14,4) NOT NULL DEFAULT 0,
+ ADD COLUMN IF NOT EXISTS observacao_item TEXT,
+ ADD COLUMN IF NOT EXISTS material VARCHAR(150),
+ ADD COLUMN IF NOT EXISTS cor VARCHAR(100),
+ ADD COLUMN IF NOT EXISTS acionamento VARCHAR(30),
+ ADD COLUMN IF NOT EXISTS lado_comando VARCHAR(30),
+ ADD COLUMN IF NOT EXISTS calculo_producao_status VARCHAR(40);
+CREATE INDEX IF NOT EXISTS ix_orcamentos_cliente_id ON orcamentos(cliente_id);
+CREATE INDEX IF NOT EXISTS ix_orcamentos_itens_orcamento_id ON orcamentos_itens(orcamento_id);
+DO $$ BEGIN
+ IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='fk_orcamentos_cliente_id') THEN
+  ALTER TABLE orcamentos ADD CONSTRAINT fk_orcamentos_cliente_id FOREIGN KEY (cliente_id) REFERENCES clientes(id);
+ END IF;
+END $$;
+COMMIT;

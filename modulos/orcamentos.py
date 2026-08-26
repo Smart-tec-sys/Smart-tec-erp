@@ -18,12 +18,14 @@ except Exception:
 # Integração real com os cadastros do SmartTec ERP (FastAPI).
 # Se o backend estiver fora do ar, o orçamento continua funcionando com fallback visual.
 try:
-    from utils.api_client import get_clientes, get_produtos, get_funcionarios, get_opcoes_auxiliares_por_categoria
+    from utils.api_client import (get_clientes, get_produtos, get_funcionarios, get_opcoes_auxiliares_por_categoria,
+        get_orcamentos, criar_orcamento, atualizar_orcamento, deletar_orcamento)
 except Exception:
     get_clientes = None
     get_produtos = None
     get_funcionarios = None
     get_opcoes_auxiliares_por_categoria = None
+    get_orcamentos = criar_orcamento = atualizar_orcamento = deletar_orcamento = None
 
 SITUACOES_ORCAMENTO = ["Em aberto", "Aprovado", "Reprovado", "Cancelado"]
 CANAIS_VENDA = ["WhatsApp", "Telefone", "Loja", "Instagram", "Site", "Indicação", "Outro"]
@@ -734,11 +736,15 @@ def orcamento_base(idx, cliente, valor):
 
 def inicializar_orcamentos():
     if "orcamentos_lista" not in st.session_state:
-        st.session_state.orcamentos_lista = [
-            orcamento_base(1, "LÍDIA MACHADO AMBIENTES INTERNOS", 430.44),
-            orcamento_base(2, "ALESSANDRA FARIA", 2500.00),
-            orcamento_base(3, "MARIA DA GLORIA MARTINS", 1385.98),
-        ]
+        try:
+            resposta = get_orcamentos() if get_orcamentos else None
+            if resposta is None or resposta.status_code != 200:
+                raise RuntimeError("API de Orçamentos indisponível")
+            st.session_state.orcamentos_lista = [orcamento_api_para_tela(item) for item in resposta.json()]
+            st.session_state.orcamentos_api_ativa = True
+        except Exception:
+            st.session_state.orcamentos_api_ativa = False
+            st.session_state.orcamentos_lista = []
 
     st.session_state.setdefault("tela_orcamentos", "listar")
     st.session_state.setdefault("id_orcamento_editar", None)
@@ -797,6 +803,17 @@ def obter_orcamento_por_id(orcamento_id):
         if int(item.get("id")) == int(orcamento_id):
             return item
     return None
+
+
+def orcamento_api_para_tela(item):
+    produtos, servicos = [], []
+    for registro in item.get("itens") or []:
+        convertido = {"produto":registro.get("descricao", ""),"produto_original":registro.get("descricao", ""),"servico":registro.get("descricao", ""),"detalhe":registro.get("observacao_item", ""),"produto_id":registro.get("produto_id"),"codigo_interno":registro.get("codigo_interno"),"grupo_tecnico":registro.get("grupo_tecnico"),"modelo_tecnico":registro.get("modelo_tecnico"),"modelo_calculo":"Romana de teto" if registro.get("modelo_tecnico")=="ROMANA_TETO" else ("Romana" if registro.get("modelo_tecnico")=="ROMANA" else "Manual"),"unidade":registro.get("unidade"),"quantidade":registro.get("quantidade",1),"quantidade_pecas":registro.get("quantidade",1),"largura":registro.get("largura",0),"altura":registro.get("altura",0),"area_m2":registro.get("area",0),"valor":registro.get("preco_unitario",0),"desconto":registro.get("desconto",0),"subtotal":registro.get("subtotal",0),"material":registro.get("material"),"cor":registro.get("cor"),"acionamento":registro.get("acionamento"),"lado_comando":registro.get("lado_comando"),"calculo_producao_status":registro.get("calculo_producao_status")}
+        (servicos if registro.get("tipo_item")=="SERVICO" else produtos).append(convertido)
+    criado=str(item.get("criado_em") or "")[:10]
+    try:data_fmt=datetime.strptime(criado,"%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:data_fmt=date.today().strftime("%d/%m/%Y")
+    return {"id":item.get("id"),"numero":item.get("numero"),"cliente":item.get("cliente_nome", ""),"cliente_id":item.get("cliente_id"),"data":data_fmt,"situacao":item.get("status","EM_ABERTO"),"valor_total":item.get("total_final",0),"produtos":produtos,"servicos":servicos,"desconto_rs":item.get("desconto",0),"desconto_percentual":0,"frete":0,"observacoes":item.get("observacao") or "","validade_data":item.get("validade"),"tipo_orcamento":"Produtos"}
 
 
 def proximo_id():
@@ -1053,7 +1070,14 @@ def montar_registros_busca_global(tipo):
     registros_session = obter_lista_session_state(configuracao_chaves.get(tipo, []))
 
     # API vem primeiro porque é o cadastro real. Session_state entra como complemento/fallback.
-    return registros_api + registros_session
+    registros = registros_api + registros_session
+    if tipo == "produto":
+        # Opções comerciais temporárias: não criam Produto e não fingem possuir receita produtiva.
+        registros += [
+            {"nome": "ROMANA — ITEM COMERCIAL", "modelo_tecnico": "ROMANA", "grupo_tecnico": "PERSIANA_ROMANA", "unidade_venda": "M²"},
+            {"nome": "ROMANA DE TETO — ITEM COMERCIAL", "modelo_tecnico": "ROMANA_TETO", "grupo_tecnico": "PERSIANA_ROMANA_TETO", "unidade_venda": "M²"},
+        ]
+    return registros
 
 
 def campos_nome_por_tipo(tipo):
@@ -1500,6 +1524,11 @@ def detectar_modelo_calculo_orcamento(nome_produto, registro=None):
 
     texto = " ".join([str(p or "") for p in partes]).upper()
 
+    if "ROMANA DE TETO" in texto or "ROMANA_TETO" in texto:
+        return "Romana de teto"
+    if "ROMANA" in texto:
+        return "Romana Motorizada" if any(t in texto for t in ["MOTORIZADA", "MOTOR", "MOTORIZADO"]) else "Romana"
+
     if any(t in texto for t in ["DOUBLE VISION", "DUPLA VISAO", "DUPLA VISÃO"]):
         if any(t in texto for t in ["MOTORIZADA", "MOTOR", "MOTORIZADO"]):
             return "Double Vision Motorizada"
@@ -1555,7 +1584,7 @@ def calcular_item_produto_orcamento(modelo, largura, altura, quantidade_manual):
 
     area = round(largura * altura, 3) if largura > 0 and altura > 0 else 0.0
 
-    if modelo in ["Rolô", "Rolô Motorizada", "Double Vision", "Double Vision Motorizada"] and area > 0:
+    if modelo in ["Rolô", "Rolô Motorizada", "Double Vision", "Double Vision Motorizada", "Romana", "Romana Motorizada", "Romana de teto"] and area > 0:
         return area, area
 
     return float(quantidade_manual or 1), area
@@ -1960,6 +1989,19 @@ def render_item_produto(prefixo, item=None, disabled=False):
     tipo_motor_dv = str(item.get("tipo_motor", "Convencional") or "Convencional")
     componentes_adicionais = str(item.get("componentes_adicionais", "") or "")
 
+    material = str(item.get("material", "") or "")
+    cor_romana = str(item.get("cor", "") or "")
+    acionamento = str(item.get("acionamento", "Manual") or "Manual")
+    lado_comando = str(item.get("lado_comando", "Direito") or "Direito")
+    if modelo_calculo in ["Romana", "Romana Motorizada", "Romana de teto"]:
+        st.caption("Cálculo de produção pendente — preço comercial por m².")
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        material = rc1.text_input("Tecido/material", value=material, key=f"{prefixo}_material", disabled=disabled)
+        cor_romana = rc2.text_input("Cor", value=cor_romana, key=f"{prefixo}_cor_romana", disabled=disabled)
+        acionamento = rc3.selectbox("Acionamento", ["Manual", "Motorizado"], index=1 if acionamento=="Motorizado" else 0, key=f"{prefixo}_acionamento", disabled=disabled)
+        if acionamento == "Manual":
+            lado_comando = rc4.selectbox("Lado do comando", ["Direito", "Esquerdo"], index=1 if lado_comando=="Esquerdo" else 0, key=f"{prefixo}_lado_comando", disabled=disabled)
+
     if modelo_calculo in ["Double Vision", "Double Vision Motorizada"]:
         opt_cols = st.columns([0.85, 1.25, 1.05, 1.15, 2.20])
         with opt_cols[0]:
@@ -2060,7 +2102,8 @@ def render_item_produto(prefixo, item=None, disabled=False):
 
     # Para Rolô/Double Vision, valor comercial continua por m².
     # O campo Quant. mostra peças, e a área fica automática no motor.
-    base_calculo_subtotal = area_m2 if modelo_calculo in ["Rolô", "Rolô Motorizada", "Double Vision", "Double Vision Motorizada"] and area_m2 > 0 else quantidade_pecas_float
+    modelos_area = ["Rolô", "Rolô Motorizada", "Double Vision", "Double Vision Motorizada", "Romana", "Romana Motorizada", "Romana de teto"]
+    base_calculo_subtotal = area_m2 if modelo_calculo in modelos_area and area_m2 > 0 else quantidade_pecas_float
     subtotal = max(0, float(base_calculo_subtotal or 0) * float(valor or 0) - float(desconto or 0))
     c9.text_input(
         "Subtotal",
@@ -2133,6 +2176,10 @@ def render_item_produto(prefixo, item=None, disabled=False):
         "valor": valor,
         "desconto": desconto,
         "subtotal": subtotal,
+        "produto_id": (registro_produto or {}).get("id"), "codigo_interno": (registro_produto or {}).get("codigo_interno") or (registro_produto or {}).get("codigo"),
+        "grupo_tecnico": (registro_produto or {}).get("grupo_tecnico"), "modelo_tecnico": "ROMANA_TETO" if modelo_calculo=="Romana de teto" else ("ROMANA" if modelo_calculo.startswith("Romana") else (registro_produto or {}).get("modelo_tecnico")),
+        "unidade": (registro_produto or {}).get("unidade_venda") or "M²", "material":material, "cor":cor_romana, "acionamento":acionamento,
+        "lado_comando": lado_comando if acionamento=="Manual" else None, "calculo_producao_status":"CALCULO_PRODUCAO_PENDENTE" if modelo_calculo.startswith("Romana") else None,
     }
 
 
@@ -2488,6 +2535,10 @@ def montar_formulario_orcamento(orcamento=None, modo="adicionar"):
 
     titulo = "Adicionar" if modo == "adicionar" else ("Editar" if editando else "Visualizar")
     cabecalho("📋 Orçamentos", "Orçamentos", titulo)
+    if visualizando:
+        linhas="".join(f"<tr><td>{p.get('produto','')}</td><td>{p.get('largura',0):.2f}</td><td>{p.get('altura',0):.2f}</td><td>{p.get('quantidade',0):.0f}</td><td>{moeda_br(p.get('subtotal',0))}</td></tr>" for p in orcamento.get("produtos",[]))
+        html=f"<html><body><h1>Smart-tec</h1><h2>Orçamento {orcamento.get('numero')}</h2><p>Cliente: {orcamento.get('cliente','')}</p><table border='1' cellspacing='0' cellpadding='6'><tr><th>Item</th><th>Largura</th><th>Altura</th><th>Qtd.</th><th>Subtotal</th></tr>{linhas}</table><h3>Total: {moeda_br(orcamento.get('valor_total',0))}</h3><p>{orcamento.get('observacoes','')}</p></body></html>"
+        st.download_button("🖨️ Baixar proposta imprimível",html.encode("utf-8"),file_name=f"orcamento_{orcamento.get('numero')}.html",mime="text/html")
 
     st.markdown('<div class="orc-card-title">📝 Dados gerais</div>', unsafe_allow_html=True)
     st.markdown('<div class="orc-card-body">', unsafe_allow_html=True)
@@ -2939,6 +2990,24 @@ def montar_formulario_orcamento(orcamento=None, modo="adicionar"):
                 st.error("Informe o cliente.")
                 return
 
+            registro_cliente=obter_registro_por_nome("cliente",cliente)
+            cliente_id=registro_cliente.get("id") or orcamento.get("cliente_id")
+            if not cliente_id:
+                st.error("Selecione um cliente cadastrado para salvar no banco."); return
+            itens_api=[]
+            for p in produtos:
+                itens_api.append({"tipo_item":"PRODUTO","produto_id":p.get("produto_id"),"descricao":p.get("produto") or p.get("produto_original") or "Item","codigo_interno":p.get("codigo_interno"),"grupo_tecnico":p.get("grupo_tecnico"),"modelo_tecnico":p.get("modelo_tecnico"),"unidade":p.get("unidade") or "UN","quantidade":p.get("quantidade",1),"largura":p.get("largura",0),"altura":p.get("altura",0),"area":p.get("area_m2",0),"preco_unitario":p.get("valor",0),"desconto":p.get("desconto",0),"subtotal":p.get("subtotal",0),"observacao_item":p.get("detalhe"),"material":p.get("material"),"cor":p.get("cor"),"acionamento":p.get("acionamento"),"lado_comando":p.get("lado_comando"),"calculo_producao_status":p.get("calculo_producao_status")})
+            for s in servicos:
+                itens_api.append({"tipo_item":"SERVICO","descricao":s.get("servico") or "Serviço","unidade":"UN","quantidade":s.get("quantidade",1),"preco_unitario":s.get("valor",0),"desconto":s.get("desconto",0),"subtotal":s.get("subtotal",0),"observacao_item":s.get("detalhe")})
+            payload_api={"cliente_id":int(cliente_id),"status":orcamento.get("situacao","EM_ABERTO"),"validade":(date.today()+timedelta(days=10)).isoformat(),"observacao":observacoes,"desconto":float(desconto_total),"total":float(total_bruto),"total_final":float(total_geral),"itens":itens_api}
+            try:
+                resposta_api=atualizar_orcamento(orcamento.get("id"),payload_api) if editando else criar_orcamento(payload_api)
+                if resposta_api is None or resposta_api.status_code not in [200,201]:
+                    st.error(f"Não foi possível salvar o orçamento: {resposta_api.text if resposta_api is not None else 'API indisponível'}"); return
+                salvo=orcamento_api_para_tela(resposta_api.json())
+            except Exception as exc:
+                st.error(f"Não foi possível salvar o orçamento: {exc}"); return
+
             payload = {
                 "id": orcamento.get("id", proximo_id()),
                 "numero": int(numero),
@@ -2973,11 +3042,11 @@ def montar_formulario_orcamento(orcamento=None, modo="adicionar"):
             if editando:
                 for i, item in enumerate(st.session_state.orcamentos_lista):
                     if int(item.get("id")) == int(orcamento.get("id")):
-                        st.session_state.orcamentos_lista[i] = payload
+                        st.session_state.orcamentos_lista[i] = salvo
                         break
                 st.success("Orçamento atualizado com sucesso.")
             else:
-                st.session_state.orcamentos_lista.append(payload)
+                st.session_state.orcamentos_lista.insert(0,salvo)
                 st.success("Orçamento cadastrado com sucesso.")
 
             ir_listar()
@@ -3000,6 +3069,10 @@ def tela_excluir_orcamento():
 
     c1, c2, c3 = st.columns([1, 1, 4])
     if c1.button("Sim, excluir", type="primary", use_container_width=True):
+        if deletar_orcamento:
+            resposta=deletar_orcamento(orcamento.get("id"))
+            if resposta.status_code not in [200,204]:
+                st.error("Não foi possível excluir o orçamento no banco."); return
         st.session_state.orcamentos_lista = [
             o for o in st.session_state.orcamentos_lista
             if int(o.get("id")) != int(orcamento.get("id"))
