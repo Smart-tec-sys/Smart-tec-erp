@@ -68,27 +68,28 @@ class RomanaCalculoProducaoTest(unittest.TestCase):
         resultado = calcular_distribuicao_fabricacao_romana(
             RomanaCalculoEntrada(120, 200, 1)
         )
-        self.assertEqual(resultado.quantidade_gomos, 8)
-        self.assertEqual(resultado.quantidade_varetas, 7)
-        self.assertEqual(resultado.tamanho_gomo_padrao_cm, 25.0)
-        self.assertAlmostEqual(resultado.primeiro_gomo_pronto_cm, 27.0)
-        self.assertEqual(len(resultado.gomos_intermediarios_prontos_cm), 6)
+        self.assertEqual(resultado.quantidade_gomos, 7)
+        self.assertEqual(resultado.quantidade_varetas, 6)
+        self.assertAlmostEqual(resultado.tamanho_gomo_padrao_cm, 198 / 7)
+        self.assertAlmostEqual(resultado.primeiro_gomo_pronto_cm, (198 / 7) + 2)
+        self.assertEqual(resultado.regra_primeiro_gomo_status, "FORMULA_GERAL_DISTRIBUICAO_IGUAL")
+        self.assertEqual(len(resultado.gomos_intermediarios_prontos_cm), 5)
         for gomo in resultado.gomos_intermediarios_prontos_cm:
-            self.assertAlmostEqual(gomo, 25.0)
-        self.assertAlmostEqual(resultado.ultimo_gomo_pronto_cm, 23.0)
+            self.assertAlmostEqual(gomo, 198 / 7)
+        self.assertAlmostEqual(resultado.ultimo_gomo_pronto_cm, 198 / 7)
         self.assertAlmostEqual(resultado.soma_altura_pronta_cm, 200.0)
         self.assertAlmostEqual(resultado.diferenca_altura_pronta_cm, 0.0)
         self.assertEqual(resultado.dobra_cabeceira_cm, 2.5)
-        self.assertAlmostEqual(resultado.primeiro_gomo_corte_cm, 27.5)
-        self.assertEqual(len(resultado.intermediarios_corte_cm), 6)
+        self.assertAlmostEqual(resultado.primeiro_gomo_corte_cm, (198 / 7) + 2.5)
+        self.assertEqual(len(resultado.intermediarios_corte_cm), 5)
         for gomo in resultado.intermediarios_corte_cm:
-            self.assertAlmostEqual(gomo, 25.5)
-        self.assertAlmostEqual(resultado.ultimo_gomo_corte_cm, 23.0)
+            self.assertAlmostEqual(gomo, (198 / 7) + 0.5)
+        self.assertAlmostEqual(resultado.ultimo_gomo_corte_cm, 198 / 7)
         self.assertEqual(resultado.reserva_fita_plastica_cm, 1.5)
-        self.assertEqual(resultado.quantidade_dobras_varetas, 7)
-        self.assertAlmostEqual(resultado.sobra_total_fabricacao_cm, 7.5)
-        self.assertAlmostEqual(resultado.comprimento_total_tecido_cm, 207.5)
-        self.assertEqual(resultado.compensacao_aplicada_em, "ULTIMO")
+        self.assertEqual(resultado.quantidade_dobras_varetas, 6)
+        self.assertAlmostEqual(resultado.sobra_total_fabricacao_cm, 7.0)
+        self.assertAlmostEqual(resultado.comprimento_total_tecido_cm, 207.0)
+        self.assertEqual(resultado.compensacao_aplicada_em, "NENHUMA_DIVISAO_IGUAL")
         self.assertEqual(resultado.status_fabricacao, "DISTRIBUICAO_V2_CALCULADA")
 
     def test_distribuicao_v2_fecha_todas_as_alturas_de_referencia(self):
@@ -98,44 +99,45 @@ class RomanaCalculoProducaoTest(unittest.TestCase):
                     RomanaCalculoEntrada(120, altura, 1)
                 )
                 self.assertEqual(resultado.quantidade_varetas, resultado.quantidade_gomos - 1)
-                self.assertEqual(resultado.quantidade_gomos % 2, 0)
-                self.assertEqual(resultado.quantidade_varetas % 2, 1)
+                self.assertEqual(resultado.quantidade_gomos % 2, 1)
+                self.assertEqual(resultado.quantidade_varetas % 2, 0)
                 self.assertGreater(resultado.primeiro_gomo_pronto_cm, 0)
                 self.assertTrue(all(gomo > 0 for gomo in resultado.gomos_intermediarios_prontos_cm))
                 self.assertGreater(resultado.ultimo_gomo_pronto_cm, 0)
                 self.assertAlmostEqual(resultado.soma_altura_pronta_cm, altura)
                 self.assertAlmostEqual(resultado.diferenca_altura_pronta_cm, 0)
 
-    def test_compensacao_dinamica_confirmada(self):
+    def test_distribuicoes_prioritarias_com_restante_igual(self):
         esperados = (
-            (179, 6, 29, 34, 29, "PRIMEIRO"),
-            (180, 6, 29, 35, 29, "PRIMEIRO"),
-            (199, 8, 25, 27, 22, "ULTIMO"),
-            (200, 8, 25, 27, 23, "ULTIMO"),
+            (179, 7, (177 / 7) + 2, 177 / 7),
+            (180, 7, (178 / 7) + 2, 178 / 7),
+            (199, 7, (197 / 7) + 2, 197 / 7),
+            (200, 7, (198 / 7) + 2, 198 / 7),
         )
-        for altura, gomos, padrao, primeiro, ultimo, compensacao in esperados:
+        for altura, gomos, primeiro, demais in esperados:
             with self.subTest(altura=altura):
                 resultado = calcular_distribuicao_fabricacao_romana(
                     RomanaCalculoEntrada(120, altura, 1)
                 )
                 self.assertEqual(resultado.quantidade_gomos, gomos)
                 self.assertEqual(resultado.quantidade_varetas, gomos - 1)
-                self.assertEqual(resultado.tamanho_gomo_padrao_cm, padrao)
-                self.assertEqual(resultado.primeiro_gomo_pronto_cm, primeiro)
+                self.assertAlmostEqual(resultado.primeiro_gomo_pronto_cm, primeiro)
                 self.assertTrue(
-                    all(gomo == padrao for gomo in resultado.gomos_intermediarios_prontos_cm)
+                    all(abs(gomo - demais) < 1e-9 for gomo in resultado.gomos_intermediarios_prontos_cm)
                 )
-                self.assertEqual(resultado.ultimo_gomo_pronto_cm, ultimo)
-                self.assertEqual(resultado.compensacao_aplicada_em, compensacao)
-                self.assertEqual(resultado.status_fabricacao, "DISTRIBUICAO_V2_CALCULADA")
+                self.assertAlmostEqual(resultado.ultimo_gomo_pronto_cm, demais)
+                self.assertEqual(
+                    resultado.regra_primeiro_gomo_status,
+                    "FORMULA_GERAL_DISTRIBUICAO_IGUAL",
+                )
                 self.assertAlmostEqual(resultado.soma_altura_pronta_cm, altura)
 
     def test_posicoes_das_varetas_nos_casos_confirmados(self):
         esperados = {
-            179: (34, 63, 92, 121, 150),
-            180: (35, 64, 93, 122, 151),
-            199: (27, 52, 77, 102, 127, 152, 177),
-            200: (27, 52, 77, 102, 127, 152, 177),
+            179: tuple((177 / 7) + 2 + i * (177 / 7) for i in range(6)),
+            180: tuple((178 / 7) + 2 + i * (178 / 7) for i in range(6)),
+            199: tuple((197 / 7) + 2 + i * (197 / 7) for i in range(6)),
+            200: tuple((198 / 7) + 2 + i * (198 / 7) for i in range(6)),
         }
         for altura, posicoes_esperadas in esperados.items():
             with self.subTest(altura=altura):
@@ -144,7 +146,9 @@ class RomanaCalculoProducaoTest(unittest.TestCase):
                 )
                 posicoes = tuple(item.posicao_cm for item in resultado.posicoes_varetas)
                 numeros = tuple(item.vareta for item in resultado.posicoes_varetas)
-                self.assertEqual(posicoes, posicoes_esperadas)
+                self.assertEqual(len(posicoes), len(posicoes_esperadas))
+                for posicao, esperada in zip(posicoes, posicoes_esperadas):
+                    self.assertAlmostEqual(posicao, esperada)
                 self.assertEqual(numeros, tuple(range(1, resultado.quantidade_varetas + 1)))
                 self.assertEqual(len(posicoes), resultado.quantidade_varetas)
                 self.assertTrue(all(a < b for a, b in zip(posicoes, posicoes[1:])))
@@ -192,10 +196,105 @@ class RomanaCalculoProducaoTest(unittest.TestCase):
         resultado = calcular_distribuicao_fabricacao_romana(
             RomanaCalculoEntrada(120, 180, 1)
         )
-        self.assertEqual(resultado.quantidade_gomos, 6)
-        self.assertEqual(resultado.quantidade_varetas, 5)
-        self.assertAlmostEqual(resultado.sobra_total_fabricacao_cm, 6.5)
-        self.assertAlmostEqual(resultado.comprimento_total_tecido_cm, 186.5)
+        self.assertEqual(resultado.quantidade_gomos, 7)
+        self.assertEqual(resultado.quantidade_varetas, 6)
+        self.assertAlmostEqual(resultado.sobra_total_fabricacao_cm, 7.0)
+        self.assertAlmostEqual(resultado.comprimento_total_tecido_cm, 187.0)
+        self.assertAlmostEqual(resultado.primeiro_gomo_pronto_cm, (178 / 7) + 2)
+        self.assertTrue(
+            all(abs(gomo - (178 / 7)) < 1e-9 for gomo in resultado.gomos_intermediarios_prontos_cm)
+        )
+        self.assertAlmostEqual(resultado.ultimo_gomo_pronto_cm, 178 / 7)
+
+    def test_formula_confirmada_de_240_cm(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(200, 240, 1)
+        )
+        self.assertEqual(resultado.quantidade_gomos, 7)
+        self.assertEqual(resultado.ajuste_primeiro_gomo_cm, 2)
+        self.assertEqual(resultado.tamanho_gomo_padrao_cm, 34)
+        self.assertEqual(resultado.primeiro_gomo_pronto_cm, 36)
+        self.assertEqual(resultado.ultimo_gomo_pronto_cm, 34)
+        self.assertAlmostEqual(resultado.soma_altura_pronta_cm, 240)
+
+    def test_selecao_sem_limite_inferior_rigido(self):
+        resultado_100 = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(200, 100, 1)
+        )
+        resultado_120 = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(200, 120, 1)
+        )
+        self.assertEqual(resultado_100.quantidade_gomos, 5)
+        self.assertAlmostEqual(resultado_100.tamanho_gomo_padrao_cm, 19.6)
+        self.assertAlmostEqual(resultado_100.primeiro_gomo_pronto_cm, 21.6)
+        self.assertEqual(resultado_120.quantidade_gomos, 5)
+        self.assertAlmostEqual(resultado_120.tamanho_gomo_padrao_cm, 23.6)
+        self.assertAlmostEqual(resultado_120.primeiro_gomo_pronto_cm, 25.6)
+        self.assertEqual(resultado_120.status_fabricacao, "DISTRIBUICAO_V2_CALCULADA")
+
+    def test_progressao_e_transicoes_por_limite_superior(self):
+        esperados = {
+            80: 5, 90: 5, 100: 5, 110: 5, 120: 5, 130: 5,
+            140: 5, 150: 5, 160: 5, 170: 5,
+            180: 7, 190: 7, 200: 7, 210: 7, 220: 7,
+            230: 7, 240: 7, 250: 9, 260: 9, 280: 9, 300: 9,
+        }
+        anterior_por_n = {}
+        for altura, quantidade_gomos in esperados.items():
+            with self.subTest(altura=altura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(200, altura, 1)
+                )
+                self.assertEqual(resultado.quantidade_gomos, quantidade_gomos)
+                anterior = anterior_por_n.get(quantidade_gomos)
+                if anterior is not None:
+                    self.assertGreater(resultado.tamanho_gomo_padrao_cm, anterior)
+                anterior_por_n[quantidade_gomos] = resultado.tamanho_gomo_padrao_cm
+
+        for antes, depois, n_antes, n_depois in (
+            (177, 178, 5, 7),
+            (247, 248, 7, 9),
+            (317, 318, 9, 11),
+        ):
+            resultado_antes = calcular_distribuicao_fabricacao_romana(
+                RomanaCalculoEntrada(200, antes, 1)
+            )
+            resultado_depois = calcular_distribuicao_fabricacao_romana(
+                RomanaCalculoEntrada(200, depois, 1)
+            )
+            self.assertEqual(resultado_antes.quantidade_gomos, n_antes)
+            self.assertEqual(resultado_depois.quantidade_gomos, n_depois)
+            self.assertAlmostEqual(resultado_antes.tamanho_gomo_padrao_cm, 35)
+            self.assertLess(resultado_depois.tamanho_gomo_padrao_cm, 35)
+
+    def test_passadores_somente_nas_varetas_pares(self):
+        for altura in (100, 120, 140, 150, 160, 179, 180, 199, 200,
+                       220, 240, 260, 280, 300):
+            with self.subTest(altura=altura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(200, altura, 1)
+                )
+                esperadas = tuple(range(2, resultado.quantidade_varetas + 1, 2))
+                self.assertEqual(resultado.quantidade_gomos % 2, 1)
+                self.assertEqual(resultado.quantidade_varetas % 2, 0)
+                self.assertEqual(resultado.varetas_com_passadores, esperadas)
+                self.assertEqual(resultado.varetas_com_passadores[-1], resultado.quantidade_varetas)
+                self.assertTrue(all(vareta % 2 == 0 for vareta in resultado.varetas_com_passadores))
+                self.assertEqual(resultado.quantidade_cavaletes, 3)
+                self.assertEqual(resultado.passadores_por_vareta, 3)
+                self.assertEqual(
+                    resultado.quantidade_total_passadores,
+                    len(esperadas) * 3,
+                )
+
+    def test_faixas_de_cavaletes_preservadas(self):
+        for largura, cavaletes in ((140, 2), (141, 3), (220, 3), (221, 4),
+                                   (260, 4), (261, 5), (300, 5)):
+            with self.subTest(largura=largura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(largura, 180, 1)
+                )
+                self.assertEqual(resultado.quantidade_cavaletes, cavaletes)
 
     def test_bloqueios_tambem_valem_para_fabricacao_v2(self):
         with self.assertRaises(ValueError):
@@ -211,9 +310,8 @@ class RomanaCalculoProducaoTest(unittest.TestCase):
         resultado = calcular_distribuicao_fabricacao_romana(
             RomanaCalculoEntrada(100, 5, 1)
         )
-        self.assertLessEqual(resultado.ultimo_gomo_pronto_cm, 0)
-        self.assertEqual(resultado.status_fabricacao, "REVISAR_DISTRIBUICAO")
-        self.assertTrue(resultado.alertas)
+        self.assertGreater(resultado.ultimo_gomo_pronto_cm, 0)
+        self.assertAlmostEqual(resultado.soma_altura_pronta_cm, 5)
 
 
 if __name__ == "__main__":

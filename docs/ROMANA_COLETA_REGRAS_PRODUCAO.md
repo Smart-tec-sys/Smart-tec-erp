@@ -55,20 +55,21 @@ Até a confirmação, o sistema não deve estimar nenhuma dessas regras.
 
 A fabricação V2 permanece separada da geometria V1 e se aplica somente à Romana padrão manual.
 
-- gomos sempre pares e varetas sempre ímpares (`varetas = gomos - 1`);
-- seleção parte da aproximação geométrica V1 e a ajusta para par; se a aproximação for ímpar, prefere o par inferior para manter gomos maiores; se já for par, preserva essa referência;
-- a distribuição candidata precisa manter o padrão entre `25 e 35 cm` e um último gomo coerente;
-- primeiro gomo pronto entre `padrão + 2 cm` e `padrão + 6 cm`, por função visual/mecânica;
-- intermediários prontos iguais ao padrão selecionado;
-- a diferença de fechamento vai primeiro para o primeiro gomo dentro da faixa permitida;
-- o restante que violaria a faixa do primeiro vai para o último gomo, compensador secundário;
+- gomos sempre ímpares e varetas sempre pares (`varetas = gomos - 1`);
+- iniciar com 5 gomos e aumentar `N` em 2 somente quando `G` ultrapassar aproximadamente 35 cm;
+- não existe limite inferior rígido para `G`: peças menores podem ter gomos menores;
+- usar inicialmente a diferença `D = 2 cm`;
+- calcular `G = (altura - D) / N` e `primeiro = G + D`;
+- todos os demais gomos, inclusive o último, são iguais a `G`;
+- `D` permanece parametrizado entre 2 e 5 cm, mas fica em 2 enquanto a distribuição estiver adequada;
+- compensação no último não é usada para a Romana individual comum;
 - referência de base de `2,5 cm` integrada ao último gomo, nunca somada como trecho adicional.
 
-A paridade é mecânica: os gomos intermediários alternam durante o recolhimento, escondendo-se atrás do primeiro e à frente do último. A corda fica presa na última vareta. Uma quantidade ímpar de gomos termina a alternância na posição errada.
+A paridade é mecânica: os passadores são instalados exclusivamente nas varetas pares (`2, 4, 6...`) e a última vareta precisa receber passadores. Gomos ímpares produzem uma quantidade par de varetas, garantindo que a última vareta esteja naturalmente nessa sequência.
 
 ### Altura pronta e corte de tecido
 
-As duas contas são independentes. Para 180 cm prontos: `35 + (5 × 29) = 180 cm`; em 179 cm, o primeiro cai para `34 cm` e a compensação permanece nele. Para 200 cm prontos: `27 + (6 × 25) + 23 = 200 cm`; em 199 cm, o primeiro permanece no mínimo de `padrão + 2` e o último cai para `22 cm`. Para o corte de 200 cm: `2,5 + 27,5 + (6 × 25,5) + 23 + 1,5 = 207,5 cm`.
+As duas contas são independentes. Com 7 gomos e 6 varetas, 180 cm usam aproximadamente `27,4286 + (6 × 25,4286) = 180 cm`, com corte de `187 cm`. Para 200 cm: `30,2857 + (6 × 28,2857) = 200 cm`, com corte de `207 cm`. Em 240 cm: `36 + (6 × 34) = 240 cm`.
 
 A dobra de cabeceira e a reserva da fita plástica pertencem somente ao corte. Não existe compensação por acomodação/dilatação do tecido. A distribuição ainda precisa de validação física antes de avançar para varetas, cordões, carretéis, cabeceira, base ou comando.
 
@@ -78,6 +79,14 @@ Fórmula formal do corte longitudinal:
 
 Como `varetas = gomos - 1`, a sobra total é `4,0 + ((gomos - 1) × 0,5)`. Existe um acréscimo de `0,5 cm` em cada trecho que termina em vareta: primeiro gomo e intermediários. O último gomo não recebe acréscimo porque não existe uma vareta após ele. Essa regra não calcula largura, bainhas laterais, perdas ou consumo em área.
 
+### Passadores e cavaletes
+
+Passadores são instalados somente nas varetas pares, incluindo obrigatoriamente a última. A quantidade de passadores por vareta é igual à quantidade de cavaletes/linhas: até 140 cm = 2; acima de 140 até 220 cm = 3; acima de 220 até 260 cm = 4; acima de 260 até 300 cm = 5. O total é `varetas pares selecionadas × cavaletes`. Posição horizontal, cordões e consumo continuam pendentes.
+
 ### Posições auxiliares das varetas
 
 A posição de cada vareta é a soma acumulada dos gomos anteriores. Existem `gomos - 1` posições; o trecho entre a última posição e a altura pronta corresponde ao último gomo. Essa saída serve somente para marcação, conferência e futura ficha de produção. Ela não altera a distribuição e não representa comprimento ou consumo de vareta.
+
+### Próxima regra: conjuntos alinhados
+
+Ainda não implementada: em conjuntos lado a lado, a peça mais alta será a mestre; peças menores herdarão posições comuns e compensarão a diferença no último gomo. Essa regra exige validação própria, especialmente para Romana de teto.

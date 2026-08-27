@@ -4,7 +4,7 @@ Este módulo não consulta banco, não calcula preço e não estima materiais.
 """
 
 from dataclasses import dataclass, field
-from math import ceil, floor
+from math import floor
 
 
 STATUS_CALCULO = "CALCULO_GEOMETRICO_CONCLUIDO"
@@ -13,10 +13,9 @@ TIPO_SUPORTADO = "ROMANA"
 ACIONAMENTO_SUPORTADO = "MANUAL"
 
 # Parâmetros mecânicos V2 centralizados para calibração física.
-GOMO_PADRAO_MINIMO_CM = 25.0
 GOMO_PADRAO_MAXIMO_CM = 35.0
 AJUSTE_PRIMEIRO_GOMO_MINIMO_CM = 2.0
-AJUSTE_PRIMEIRO_GOMO_MAXIMO_CM = 6.0
+AJUSTE_PRIMEIRO_GOMO_MAXIMO_CM = 5.0
 REFERENCIA_BASE_INTEGRADA_CM = 2.5
 DOBRA_CABECEIRA_CORTE_CM = 2.5
 DOBRA_TECIDO_POR_VARETA_CM = 0.5
@@ -66,6 +65,7 @@ class RomanaFabricacaoResultado:
     quantidade_gomos: int
     quantidade_varetas: int
     tamanho_gomo_padrao_cm: float
+    regra_primeiro_gomo_status: str
     primeiro_gomo_pronto_cm: float
     gomos_intermediarios_prontos_cm: tuple[float, ...]
     ultimo_gomo_pronto_cm: float
@@ -84,6 +84,10 @@ class RomanaFabricacaoResultado:
     ajuste_primeiro_gomo_cm: float
     ajuste_ultimo_gomo_cm: float
     posicoes_varetas: tuple[RomanaPosicaoVareta, ...]
+    quantidade_cavaletes: int | None
+    varetas_com_passadores: tuple[int, ...]
+    passadores_por_vareta: int | None
+    quantidade_total_passadores: int | None
     status_fabricacao: str
     alertas: tuple[str, ...] = field(default_factory=tuple)
 
@@ -134,25 +138,18 @@ def calcular_distribuicao_fabricacao_romana(
 ) -> RomanaFabricacaoResultado:
     """Separa altura pronta e corte V2; os gomos são pares e as varetas ímpares."""
     geometria = calcular_producao_romana(entrada)  # valida entrada e bloqueios da V1
-    quantidade_gomos, gomo_padrao_cm = _selecionar_gomos_fabricacao_v2(
-        geometria.altura_cm, geometria.quantidade_gomos
+    quantidade_gomos, diferenca_primeiro_cm, gomo_restante_cm = (
+        _selecionar_gomos_fabricacao_v2(geometria.altura_cm)
     )
     quantidade_varetas = quantidade_gomos - 1
     quantidade_intermediarios = quantidade_gomos - 2
 
-    diferenca_para_distribuir_cm = (
-        geometria.altura_cm - (quantidade_gomos * gomo_padrao_cm)
-    )
-    ajuste_primeiro_gomo_cm = min(
-        AJUSTE_PRIMEIRO_GOMO_MAXIMO_CM,
-        max(AJUSTE_PRIMEIRO_GOMO_MINIMO_CM, diferenca_para_distribuir_cm),
-    )
-    ajuste_ultimo_gomo_cm = diferenca_para_distribuir_cm - ajuste_primeiro_gomo_cm
-    primeiro_gomo_pronto_cm = gomo_padrao_cm + ajuste_primeiro_gomo_cm
-    gomos_intermediarios_prontos = (gomo_padrao_cm,) * quantidade_intermediarios
-    ultimo_gomo_pronto_cm = geometria.altura_cm - (
-        primeiro_gomo_pronto_cm + sum(gomos_intermediarios_prontos)
-    )
+    primeiro_gomo_pronto_cm = gomo_restante_cm + diferenca_primeiro_cm
+    regra_primeiro_gomo_status = "FORMULA_GERAL_DISTRIBUICAO_IGUAL"
+    gomos_intermediarios_prontos = (gomo_restante_cm,) * quantidade_intermediarios
+    ultimo_gomo_pronto_cm = gomo_restante_cm
+    ajuste_primeiro_gomo_cm = diferenca_primeiro_cm
+    ajuste_ultimo_gomo_cm = 0.0
     soma_altura_pronta_cm = (
         primeiro_gomo_pronto_cm
         + sum(gomos_intermediarios_prontos)
@@ -197,11 +194,19 @@ def calcular_distribuicao_fabricacao_romana(
             )
         )
 
+    quantidade_cavaletes = _quantidade_cavaletes_por_largura(geometria.largura_cm)
+    varetas_com_passadores = tuple(range(2, quantidade_varetas + 1, 2))
+    quantidade_total_passadores = (
+        len(varetas_com_passadores) * quantidade_cavaletes
+        if quantidade_cavaletes is not None
+        else None
+    )
+
     alertas = []
     if ultimo_gomo_pronto_cm <= 0:
         alertas.append("Último gomo não positivo; revisar a distribuição.")
     if gomos_intermediarios_prontos:
-        razao = ultimo_gomo_pronto_cm / gomo_padrao_cm
+        razao = ultimo_gomo_pronto_cm / gomo_restante_cm
         if not (
             RAZAO_MINIMA_ULTIMO_INTERMEDIARIO
             <= razao
@@ -213,8 +218,16 @@ def calcular_distribuicao_fabricacao_romana(
             )
     if abs(diferenca_altura_pronta_cm) > TOLERANCIA_FECHAMENTO_CM:
         alertas.append("Altura pronta fora da tolerância matemática de 0,01 cm.")
-    if quantidade_gomos % 2 or quantidade_varetas % 2 != 1:
-        alertas.append("Paridade mecânica inválida: revisar gomos e varetas.")
+    if quantidade_gomos % 2 != 1 or quantidade_varetas % 2:
+        alertas.append("Paridade mecânica inválida: gomos devem ser ímpares e varetas pares.")
+    if not varetas_com_passadores or varetas_com_passadores[-1] != quantidade_varetas:
+        alertas.append("A última vareta deve ser par e receber passadores.")
+    if any(vareta % 2 for vareta in varetas_com_passadores):
+        alertas.append("Passadores só podem ser instalados em varetas pares.")
+    if quantidade_cavaletes is None:
+        alertas.append("Quantidade de cavaletes pendente para largura acima de 300 cm.")
+    if gomo_restante_cm > GOMO_PADRAO_MAXIMO_CM:
+        alertas.append("Tamanho dos gomos acima do máximo confortável aproximado de 35 cm.")
     if len((primeiro_gomo_corte_cm, *intermediarios_corte)) != quantidade_varetas:
         alertas.append("Quantidade de dobras de tecido difere da quantidade de varetas.")
     if abs(comprimento_por_trechos_cm - comprimento_total_tecido_cm) > TOLERANCIA_FECHAMENTO_CM:
@@ -224,7 +237,8 @@ def calcular_distribuicao_fabricacao_romana(
         altura_pronta_cm=geometria.altura_cm,
         quantidade_gomos=quantidade_gomos,
         quantidade_varetas=quantidade_varetas,
-        tamanho_gomo_padrao_cm=gomo_padrao_cm,
+        tamanho_gomo_padrao_cm=gomo_restante_cm,
+        regra_primeiro_gomo_status=regra_primeiro_gomo_status,
         primeiro_gomo_pronto_cm=primeiro_gomo_pronto_cm,
         gomos_intermediarios_prontos_cm=gomos_intermediarios_prontos,
         ultimo_gomo_pronto_cm=ultimo_gomo_pronto_cm,
@@ -239,77 +253,45 @@ def calcular_distribuicao_fabricacao_romana(
         quantidade_dobras_varetas=quantidade_varetas,
         sobra_total_fabricacao_cm=sobra_total_fabricacao_cm,
         comprimento_total_tecido_cm=comprimento_total_tecido_cm,
-        compensacao_aplicada_em=(
-            "PRIMEIRO"
-            if abs(ajuste_ultimo_gomo_cm) <= TOLERANCIA_FECHAMENTO_CM
-            else "ULTIMO"
-        ),
+        compensacao_aplicada_em="NENHUMA_DIVISAO_IGUAL",
         ajuste_primeiro_gomo_cm=ajuste_primeiro_gomo_cm,
         ajuste_ultimo_gomo_cm=ajuste_ultimo_gomo_cm,
         posicoes_varetas=tuple(posicoes_varetas),
+        quantidade_cavaletes=quantidade_cavaletes,
+        varetas_com_passadores=varetas_com_passadores,
+        passadores_por_vareta=quantidade_cavaletes,
+        quantidade_total_passadores=quantidade_total_passadores,
         status_fabricacao="REVISAR_DISTRIBUICAO" if alertas else "DISTRIBUICAO_V2_CALCULADA",
         alertas=tuple(alertas),
     )
 
 
 def _selecionar_gomos_fabricacao_v2(
-    altura_pronta_cm: float, quantidade_aproximada_v1: int
-) -> tuple[int, float]:
-    """Ajusta a aproximação V1 para par e valida o conforto da distribuição.
+    altura_pronta_cm: float,
+) -> tuple[int, float, float]:
+    """Inicia com 5 gomos e só aumenta N quando G ultrapassa 35 cm.
 
-    A paridade é mecânica: gomos pares produzem varetas ímpares e mantêm
-    correta a alternância do conjunto durante o recolhimento. Quando a
-    aproximação V1 é ímpar, o par inferior é preferido para manter gomos
-    maiores. Quando já é par, a referência V1 é preservada.
+    A paridade é mecânica: gomos ímpares produzem varetas pares. Os
+    passadores ficam nas varetas 2, 4, 6... e precisam alcançar naturalmente
+    a última vareta. Não há limite inferior rígido para G: peças menores
+    podem ter gomos menores. D começa em 2 cm e permanece parametrizado até 5.
     """
-    candidato_inicial = max(
-        4,
-        quantidade_aproximada_v1
-        if quantidade_aproximada_v1 % 2 == 0
-        else quantidade_aproximada_v1 - 1,
-    )
-    limite_busca = max(candidato_inicial + 6, ceil(altura_pronta_cm / 20) + 4)
-    candidatos = [candidato_inicial]
-    candidatos.extend(range(candidato_inicial - 2, 3, -2))
-    candidatos.extend(range(candidato_inicial + 2, limite_busca + 1, 2))
+    quantidade_gomos = 5
+    diferenca_primeiro = AJUSTE_PRIMEIRO_GOMO_MINIMO_CM
+    gomo = (altura_pronta_cm - diferenca_primeiro) / quantidade_gomos
+    while gomo > GOMO_PADRAO_MAXIMO_CM:
+        quantidade_gomos += 2
+        gomo = (altura_pronta_cm - diferenca_primeiro) / quantidade_gomos
+    return quantidade_gomos, diferenca_primeiro, gomo
 
-    for quantidade_gomos in candidatos:
-        gomo_padrao_cm = max(
-            GOMO_PADRAO_MINIMO_CM,
-            float(
-                ceil(
-                    (altura_pronta_cm - AJUSTE_PRIMEIRO_GOMO_MAXIMO_CM)
-                    / quantidade_gomos
-                )
-            ),
-        )
-        diferenca = altura_pronta_cm - (quantidade_gomos * gomo_padrao_cm)
-        ajuste_primeiro = min(
-            AJUSTE_PRIMEIRO_GOMO_MAXIMO_CM,
-            max(AJUSTE_PRIMEIRO_GOMO_MINIMO_CM, diferenca),
-        )
-        ultimo_gomo = gomo_padrao_cm + (diferenca - ajuste_primeiro)
-        razao_ultimo = ultimo_gomo / gomo_padrao_cm
-        if (
-            gomo_padrao_cm <= GOMO_PADRAO_MAXIMO_CM
-            and RAZAO_MINIMA_ULTIMO_INTERMEDIARIO
-            <= razao_ultimo
-            <= RAZAO_MAXIMA_ULTIMO_INTERMEDIARIO
-        ):
-            return quantidade_gomos, gomo_padrao_cm
-    # Mantém um resultado diagnosticável para dimensões positivas fora da faixa,
-    # permitindo que o chamador receba REVISAR_DISTRIBUICAO em vez de inventar
-    # uma configuração industrial alternativa.
-    gomo_fallback = max(
-        GOMO_PADRAO_MINIMO_CM,
-        min(
-            GOMO_PADRAO_MAXIMO_CM,
-            float(
-                ceil(
-                    (altura_pronta_cm - AJUSTE_PRIMEIRO_GOMO_MAXIMO_CM)
-                    / candidato_inicial
-                )
-            ),
-        ),
-    )
-    return candidato_inicial, gomo_fallback
+
+def _quantidade_cavaletes_por_largura(largura_cm: float) -> int | None:
+    if largura_cm <= 140:
+        return 2
+    if largura_cm <= 220:
+        return 3
+    if largura_cm <= 260:
+        return 4
+    if largura_cm <= 300:
+        return 5
+    return None
