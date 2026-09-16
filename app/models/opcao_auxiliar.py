@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, ForeignKey, Integer, String, Text, DateTime
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -8,6 +8,7 @@ class OpcaoAuxiliarDB(Base):
     __tablename__ = "opcoes_auxiliares"
 
     id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
 
     categoria = Column(String(100), nullable=False, index=True)
     nome = Column(String(255), nullable=False)

@@ -2,28 +2,38 @@ from sqlalchemy.orm import Session
 
 from app.models.transportadora import TransportadoraDB
 from app.schemas.transportadora import TransportadoraCreate, TransportadoraUpdate
+from app.tenant.context import TenantContext
+from app.tenant.isolation import apply_tenant_filter, require_tenant
 
 
-def get_all(db: Session):
+def get_all(db: Session, tenant: TenantContext):
+    empresa_id = require_tenant(tenant)
     try:
-        return db.query(TransportadoraDB).order_by(TransportadoraDB.id.desc()).all()
+        query = apply_tenant_filter(db.query(TransportadoraDB), TransportadoraDB, empresa_id)
+        return query.order_by(TransportadoraDB.id.desc()).all()
     except Exception as e:
         print(f"Erro ao buscar transportadoras no service: {e}")
         return []
 
 
-def get_by_id(db: Session, transportadora_id: int):
+def get_by_id(db: Session, transportadora_id: int, tenant: TenantContext):
+    empresa_id = require_tenant(tenant)
     try:
-        return db.query(TransportadoraDB).filter(TransportadoraDB.id == transportadora_id).first()
+        return db.query(TransportadoraDB).filter(
+            TransportadoraDB.id == transportadora_id,
+            TransportadoraDB.empresa_id == empresa_id,
+        ).first()
     except Exception as e:
         print(f"Erro ao buscar transportadora por ID no service: {e}")
         return None
 
 
-def create(db: Session, data: TransportadoraCreate):
+def create(db: Session, data: TransportadoraCreate, tenant: TenantContext):
+    empresa_id = require_tenant(tenant)
     try:
         dados_transportadora = data.dict()
-        nova_transportadora = TransportadoraDB(**dados_transportadora)
+        dados_transportadora.pop("empresa_id", None)
+        nova_transportadora = TransportadoraDB(**dados_transportadora, empresa_id=empresa_id)
 
         db.add(nova_transportadora)
         db.commit()
@@ -37,14 +47,19 @@ def create(db: Session, data: TransportadoraCreate):
         raise e
 
 
-def update(db: Session, transportadora_id: int, data: TransportadoraUpdate):
+def update(db: Session, transportadora_id: int, data: TransportadoraUpdate, tenant: TenantContext):
+    empresa_id = require_tenant(tenant)
     try:
-        transportadora = db.query(TransportadoraDB).filter(TransportadoraDB.id == transportadora_id).first()
+        transportadora = db.query(TransportadoraDB).filter(
+            TransportadoraDB.id == transportadora_id,
+            TransportadoraDB.empresa_id == empresa_id,
+        ).first()
 
         if not transportadora:
             return None
 
         dados_transportadora = data.dict()
+        dados_transportadora.pop("empresa_id", None)
 
         for campo, valor in dados_transportadora.items():
             setattr(transportadora, campo, valor)
@@ -60,9 +75,13 @@ def update(db: Session, transportadora_id: int, data: TransportadoraUpdate):
         raise e
 
 
-def delete(db: Session, transportadora_id: int):
+def delete(db: Session, transportadora_id: int, tenant: TenantContext):
+    empresa_id = require_tenant(tenant)
     try:
-        transportadora = db.query(TransportadoraDB).filter(TransportadoraDB.id == transportadora_id).first()
+        transportadora = db.query(TransportadoraDB).filter(
+            TransportadoraDB.id == transportadora_id,
+            TransportadoraDB.empresa_id == empresa_id,
+        ).first()
 
         if transportadora:
             db.delete(transportadora)

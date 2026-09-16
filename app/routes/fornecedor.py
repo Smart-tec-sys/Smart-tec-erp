@@ -5,14 +5,16 @@ from typing import List
 from app.database import get_db
 from app.schemas.fornecedor import Fornecedor, FornecedorCreate, FornecedorUpdate
 from app.services.fornecedor_service import get_all, get_by_id, create, update, delete
+from app.tenant.context import TenantContext
+from app.tenant.dependencies import get_current_tenant
 
 router = APIRouter()
 
 
 @router.get("/", response_model=List[Fornecedor])
-def listar(db: Session=Depends(get_db)):
+def listar(db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
     try:
-        fornecedores = get_all(db)
+        fornecedores = get_all(db, tenant)
         if fornecedores is None:
             return []
         return fornecedores
@@ -23,8 +25,8 @@ def listar(db: Session=Depends(get_db)):
 
 
 @router.get("/{fornecedor_id}", response_model=Fornecedor)
-def buscar_por_id(fornecedor_id: int, db: Session=Depends(get_db)):
-    fornecedor = get_by_id(db, fornecedor_id)
+def buscar_por_id(fornecedor_id: int, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
+    fornecedor = get_by_id(db, fornecedor_id, tenant)
 
     if not fornecedor:
         raise HTTPException(status_code=404, detail="Fornecedor não encontrado")
@@ -33,9 +35,9 @@ def buscar_por_id(fornecedor_id: int, db: Session=Depends(get_db)):
 
 
 @router.post("/", response_model=Fornecedor)
-def criar(data: FornecedorCreate, db: Session=Depends(get_db)):
+def criar(data: FornecedorCreate, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
     try:
-        return create(db, data)
+        return create(db, data, tenant)
 
     except Exception as e:
         print(f"Erro na rota criar fornecedor: {e}")
@@ -43,9 +45,9 @@ def criar(data: FornecedorCreate, db: Session=Depends(get_db)):
 
 
 @router.put("/{fornecedor_id}", response_model=Fornecedor)
-def atualizar(fornecedor_id: int, data: FornecedorUpdate, db: Session=Depends(get_db)):
+def atualizar(fornecedor_id: int, data: FornecedorUpdate, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
     try:
-        fornecedor = update(db, fornecedor_id, data)
+        fornecedor = update(db, fornecedor_id, data, tenant)
 
         if not fornecedor:
             raise HTTPException(status_code=404, detail="Fornecedor não encontrado")
@@ -61,8 +63,8 @@ def atualizar(fornecedor_id: int, data: FornecedorUpdate, db: Session=Depends(ge
 
 
 @router.delete("/{fornecedor_id}")
-def deletar(fornecedor_id: int, db: Session=Depends(get_db)):
-    fornecedor = delete(db, fornecedor_id)
+def deletar(fornecedor_id: int, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
+    fornecedor = delete(db, fornecedor_id, tenant)
 
     if not fornecedor:
         raise HTTPException(status_code=404, detail="Fornecedor não encontrado")

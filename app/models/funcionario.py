@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Float, Text
 from app.database import Base
 
 
@@ -6,6 +6,7 @@ class FuncionarioDB(Base):
     __tablename__ = "funcionarios"
 
     id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
 
     # Dados gerais
     nome = Column(String, nullable=False)

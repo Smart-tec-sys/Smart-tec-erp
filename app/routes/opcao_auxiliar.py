@@ -10,14 +10,16 @@ from app.services.opcao_auxiliar import (
     update,
     delete,
 )
+from app.tenant.context import TenantContext
+from app.tenant.dependencies import get_current_tenant
 
 router = APIRouter()
 
 
 @router.get("/")
-def listar(db: Session=Depends(get_db)):
+def listar(db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
     try:
-        return get_all(db)
+        return get_all(db, tenant)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -26,9 +28,9 @@ def listar(db: Session=Depends(get_db)):
 
 
 @router.get("/categoria/{categoria}")
-def listar_por_categoria(categoria: str, db: Session=Depends(get_db)):
+def listar_por_categoria(categoria: str, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
     try:
-        return get_by_categoria(db, categoria)
+        return get_by_categoria(db, categoria, tenant)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -37,9 +39,9 @@ def listar_por_categoria(categoria: str, db: Session=Depends(get_db)):
 
 
 @router.post("/")
-def criar(data: OpcaoAuxiliarCreate, db: Session=Depends(get_db)):
+def criar(data: OpcaoAuxiliarCreate, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
     try:
-        nova_opcao = create(db, data)
+        nova_opcao = create(db, data, tenant)
         return nova_opcao
     except Exception as e:
         raise HTTPException(
@@ -49,8 +51,8 @@ def criar(data: OpcaoAuxiliarCreate, db: Session=Depends(get_db)):
 
 
 @router.put("/{opcao_id}")
-def atualizar(opcao_id: int, data: OpcaoAuxiliarCreate, db: Session=Depends(get_db)):
-    opcao = update(db, opcao_id, data)
+def atualizar(opcao_id: int, data: OpcaoAuxiliarCreate, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
+    opcao = update(db, opcao_id, data, tenant)
 
     if not opcao:
         raise HTTPException(status_code=404, detail="Opção auxiliar não encontrada")
@@ -59,8 +61,8 @@ def atualizar(opcao_id: int, data: OpcaoAuxiliarCreate, db: Session=Depends(get_
 
 
 @router.delete("/{opcao_id}")
-def deletar(opcao_id: int, db: Session=Depends(get_db)):
-    sucesso = delete(db, opcao_id)
+def deletar(opcao_id: int, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
+    sucesso = delete(db, opcao_id, tenant)
 
     if not sucesso:
         raise HTTPException(status_code=404, detail="Opção auxiliar não encontrada")

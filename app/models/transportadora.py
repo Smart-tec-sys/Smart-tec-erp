@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Integer, String, Text
 from app.database import Base
 
 
@@ -6,6 +6,7 @@ class TransportadoraDB(Base):
     __tablename__ = "transportadoras"
 
     id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
 
     tipo = Column(String(50), nullable=False)  # Pessoa Física / Pessoa Jurídica
     situacao = Column(String(20), default="Ativo")  # Ativo / Inativo
