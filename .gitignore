@@ -73,3 +73,7 @@ fase*_resolucao*.txt
 fase*_fornecedor_custo_final.txt
 fase*_auditoria*.csv
 package-lock.json
+# Smart-tec - relatorios/resultados locais
+RELATORIO_*.md
+fase*_plano_estrito.csv
+fase*_familias_multicor.csv
