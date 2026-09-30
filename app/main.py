@@ -65,6 +65,10 @@ def health_db():
             "database": "connected",
         }
     except Exception:
+        import logging
+
+        logging.exception("Falha no health check do banco de dados")
+
         raise HTTPException(
             status_code=503,
             detail={
