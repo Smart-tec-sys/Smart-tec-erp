@@ -126,9 +126,13 @@ def verify_supabase_access_token(
     if role is not None and role != EXPECTED_AUDIENCE:
         raise SupabaseTokenError("role JWT inválida")
 
+    email_claim = claims.get("email")
+    email = str(email_claim).strip() if email_claim else None
+
     identity = ExternalIdentity(
         provider=PROVIDER_NAME,
         subject=subject,
+        email=email,
     )
 
     return VerifiedSupabaseToken(

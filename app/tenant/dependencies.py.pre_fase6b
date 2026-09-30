@@ -1,0 +1,38 @@
+"""Resolução central do tenant para as rotas ativadas na Fase 4."""
+
+import os
+from typing import Annotated
+
+from fastapi import Header
+
+from .context import LEGACY_UNSCOPED, TenantContext, TenantOrigin
+
+DEV_TENANT_ID = 1
+DEV_TENANT_SLUG = "smart-tec-persianas"
+
+
+def get_development_tenant() -> TenantContext:
+    """Resolve a Smart-tec somente em ambiente local explicitamente reconhecido."""
+    environment = os.getenv("SMARTTEC_ENV", "development").strip().lower()
+    if environment not in {"dev", "development", "local"}:
+        return LEGACY_UNSCOPED
+    return TenantContext(empresa_id=DEV_TENANT_ID, origem=TenantOrigin.SESSION)
+
+
+def get_current_tenant(
+    x_empresa_id: Annotated[int | None, Header(alias="X-Empresa-ID")] = None,
+    x_user_id: Annotated[str | None, Header(alias="X-User-ID")] = None,
+) -> TenantContext:
+    """Aceita header explícito apenas como ponte de desenvolvimento.
+
+    A identidade definitiva deverá ser derivada de autenticação ou sessão
+    validada no servidor, nunca de query string ou de header não autenticado.
+    """
+    allow_test_header = os.getenv("SMARTTEC_ALLOW_TEST_TENANT_HEADER") == "1"
+    if allow_test_header and x_empresa_id is not None:
+        return TenantContext(
+            empresa_id=x_empresa_id,
+            user_id=x_user_id,
+            origem=TenantOrigin.EXPLICIT_TEST,
+        )
+    return get_development_tenant()

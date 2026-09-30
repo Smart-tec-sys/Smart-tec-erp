@@ -15,6 +15,7 @@ class UsuarioDB(Base):
     id = Column(Integer, primary_key=True)
     nome = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False)
+    foto_url = Column(String(500), nullable=True)
     status = Column(String(20), nullable=False, default="ATIVO")
 
     # Identidade fornecida por provedor externo.

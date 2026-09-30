@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE empresas
+    DROP COLUMN IF EXISTS logo_url;
+
+ALTER TABLE usuarios
+    DROP COLUMN IF EXISTS foto_url;
+
+COMMIT;

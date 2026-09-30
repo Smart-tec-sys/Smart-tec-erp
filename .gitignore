@@ -45,3 +45,18 @@ teste_db.py
 dist/
 build/
 *.egg-info/
+
+# ============================================================
+# Smart-tec - artefatos locais / temporarios
+# ============================================================
+backups/
+session-snapshots/
+frontend-erp/node_modules/
+frontend-erp/dist/
+.backup_*/
+*.bak-*
+*.backup-*
+*.pre-*
+# Smart-tec - backups locais de diagnóstico/checkpoint
+commit*-staged-backup.patch
+fase*_backup_*.json

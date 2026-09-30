@@ -1,0 +1,36 @@
+:root {
+    --color-primary: #d9363e;
+    --color-primary-strong: #b72c34;
+    --color-accent: #f0b429;
+    --color-sidebar: #17191d;
+    --color-sidebar-soft: #22262d;
+    --color-background: #f4f5f7;
+    --color-surface: #ffffff;
+    --color-surface-muted: #f8f9fb;
+    --color-text: #20242b;
+    --color-muted: #77808c;
+    --color-border: #e4e7eb;
+    --color-success: #198754;
+    --color-warning: #c98216;
+    --color-danger: #c83b45;
+    --color-info: #3273b8;
+    --color-on-dark: #f7f8fa;
+    --color-dark-line: rgba(255, 255, 255, .09);
+    --color-chart-grid: #edf0f2;
+    --color-neutral-dot: #aeb5bf;
+    --color-avatar: #f4dedf;
+    --color-status-open: #ac761b;
+    --shadow-soft: 0 14px 36px rgba(28, 34, 42, 0.07);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 18px;
+    --sidebar-width: 248px;
+    --font-sans: "DM Sans", "Segoe UI", sans-serif;
+    --font-display: "Manrope", "DM Sans", sans-serif;
+}
+
+/* Future tenant branding can override these variables at the shell root. */
+[data-brand="custom"] {
+    --color-primary: #276749;
+    --color-accent: #d69e2e;
+}

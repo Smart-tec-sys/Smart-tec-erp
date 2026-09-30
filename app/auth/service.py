@@ -21,6 +21,7 @@ class ExternalIdentity:
 
     provider: str
     subject: str
+    email: str | None = None
 
 
 def resolve_identity_tenant(

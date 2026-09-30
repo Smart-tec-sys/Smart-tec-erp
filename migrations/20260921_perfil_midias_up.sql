@@ -1,0 +1,9 @@
+BEGIN;
+
+ALTER TABLE usuarios
+    ADD COLUMN foto_url VARCHAR(500);
+
+ALTER TABLE empresas
+    ADD COLUMN logo_url VARCHAR(500);
+
+COMMIT;

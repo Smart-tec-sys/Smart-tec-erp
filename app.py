@@ -9,6 +9,14 @@ st.set_page_config(
     page_title="SmartTec ERP"
 )
 
+from app.auth.streamlit_ui import (
+    initialize_authentication_gate,
+    render_authenticated_identity_bar,
+)
+from app.auth.navigation import navigate_in_current_session
+
+initialize_authentication_gate()
+
 from modulos.cliente import telaCliente
 from modulos.fornecedor import telaFornecedor
 from modulos.funcionario import telaFuncionario
@@ -18,6 +26,7 @@ from modulos.produtos import telaProdutos
 from modulos.produto_opcoes_auxiliares import telaProdutoOpcoesAuxiliares
 from modulos.produtos_valores_venda import telaProdutosValoresVenda
 from modulos.produtos_etiquetas import telaProdutosEtiquetas
+from modulos.equivalencias_tecnicas import telaEquivalenciasTecnicas
 try:
     from modulos.servicos import telaServicos
 except Exception as erro_import_servicos:
@@ -128,6 +137,23 @@ section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primar
 section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="primary"]:hover {
     background-color: var(--erp-primary-hover) !important;
     color: white !important;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="secondary"] {
+    background: transparent !important;
+    color: #374151 !important;
+    border: none !important;
+    min-height: 32px !important;
+    height: 32px !important;
+    justify-content: flex-start !important;
+    padding: 7px 8px 7px 16px !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stButton"] button[kind="secondary"]:hover {
+    background: #ffffff !important;
+    color: #111827 !important;
 }
 
 /* Menu lateral estilo GestãoClick */
@@ -269,10 +295,10 @@ def render_topbar():
         '<span>Smart-<span class="brand-red">tec</span></span>'
         '<span class="brand-small">Sistemas</span>'
         '</div>'
-        '<a href="?go_to=painel" target="_self" class="erp-topbar-link" title="Menu">☰</a>'
+        '<span class="erp-topbar-link" title="Menu">☰</span>'
         '</div>'
         '<div class="erp-topbar-right">'
-        '<a href="?go_to=painel" target="_self" class="erp-topbar-link" title="Painel">▦</a>'
+        '<span class="erp-topbar-link" title="Painel">▦</span>'
         '<span class="erp-topbar-icon" title="Atalhos">✦</span>'
         '<span class="erp-topbar-icon" title="Documentos">⌑</span>'
         '<span class="erp-topbar-icon" title="Notificações">🔔<span class="erp-badge">1</span></span>'
@@ -596,6 +622,9 @@ if "go_to" in params:
         if "id_produto_opcao_editar" not in st.session_state:
             st.session_state.id_produto_opcao_editar = None
 
+    elif destino == "equivalencias_tecnicas":
+        st.session_state.pagina_atual = "Equivalências técnicas"
+
     # IMPORTANTE:
     # Não limpar query params com rerun automático aqui.
     # Isso corta cliques de formulário e faz botões piscarem.
@@ -698,6 +727,7 @@ def ir_para_orcamentos():
 # =========================================================
 carregar_estilo_global()
 render_topbar()
+render_authenticated_identity_bar()
 
 
 # =========================================================
@@ -707,25 +737,14 @@ def item_menu_link(label, destino, ativo=False, extra_params=""):
     """
     Link pequeno no estilo GestãoClick para evitar botões grandes na lateral.
     """
-    estilo = (
-        "display:block;"
-        "padding:7px 8px 7px 16px;"
-        "font-size:14px;"
-        "line-height:1.25;"
-        "text-decoration:none;"
-        "border-radius:4px;"
-        "margin:1px 0;"
-    )
-
-    if ativo:
-        estilo += "font-weight:700;color:#111827;background:#ffffff;"
-    else:
-        estilo += "font-weight:500;color:#374151;background:transparent;"
-
-    href = f"?go_to={destino}{extra_params}"
-    st.markdown(
-        f'<a href="{href}" target="_self" style="{estilo}">{label}</a>',
-        unsafe_allow_html=True,
+    key_suffix = extra_params.replace("&", "_").replace("=", "_") or "root"
+    st.button(
+        label,
+        key=f"nav_{destino}_{key_suffix}",
+        type="primary" if ativo else "secondary",
+        use_container_width=True,
+        on_click=navigate_in_current_session,
+        args=(st.session_state, st.query_params, destino, extra_params),
     )
 
 
@@ -745,6 +764,12 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
+    item_menu_link(
+        "▦ Painel",
+        "painel",
+        ativo=st.session_state.pagina_atual == "Painel",
+    )
+
     paginas_cadastros = [
         "Clientes",
         "Fornecedores",
@@ -759,6 +784,7 @@ with st.sidebar:
         "Ajustar valores em massa",
         "Etiquetas",
         "Opções auxiliares de produtos",
+        "Equivalências técnicas",
     ]
 
     # ─────────────────────────────────────────
@@ -868,6 +894,12 @@ with st.sidebar:
             extra_params="&categoria=grupo_produto",
         )
 
+        item_menu_link(
+            "🔗 Equivalências técnicas",
+            "equivalencias_tecnicas",
+            ativo=st.session_state.pagina_atual == "Equivalências técnicas",
+        )
+
     # ─────────────────────────────────────────
     # PRÓXIMOS MÓDULOS, já no mesmo padrão visual
     # ─────────────────────────────────────────
@@ -961,6 +993,9 @@ elif st.session_state.pagina_atual == "Etiquetas":
 
 elif st.session_state.pagina_atual == "Opções auxiliares de produtos":
     telaProdutoOpcoesAuxiliares()
+
+elif st.session_state.pagina_atual == "Equivalências técnicas":
+    telaEquivalenciasTecnicas()
 
 elif st.session_state.pagina_atual == "Serviços":
     telaServicos()

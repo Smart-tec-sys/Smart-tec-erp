@@ -21,6 +21,32 @@ DOBRA_CABECEIRA_CORTE_CM = 2.5
 DOBRA_TECIDO_POR_VARETA_CM = 0.5
 RESERVA_FITA_PLASTICA_CORTE_CM = 1.5
 TOLERANCIA_FECHAMENTO_CM = 0.01
+CATEGORIA_TAMPA_VARETA_ROMANA = "TAMPA_VARETA_ROMANA"
+IDS_COMERCIAIS_TAMPA_VARETA_ROMANA = (292, 294, 920, 921, 922, 923, 2598)
+TAMPAS_POR_VARETA = 2
+CATEGORIA_GUIA_CORDA_ROMANA = "GUIA_CORDA_ROMANA"
+IDS_COMERCIAIS_GUIA_CORDA_ROMANA = (667, 668)
+CATEGORIA_ESPAGUETE_ROMANA_2_5MM = "ESPAGUETE_ROMANA_2_5MM"
+ID_COMERCIAL_ESPAGUETE_ROMANA_2_5MM = 660
+CATEGORIA_ESPAGUETE_BASE_ROMANA_3MM = "ESPAGUETE_BASE_ROMANA_3MM"
+ID_COMERCIAL_ESPAGUETE_BASE_ROMANA_3MM = 661
+RECUO_LARGURA_VARETA_CM = 1.5
+RECUO_LARGURA_BASE_CM = 1.0
+CATEGORIA_CORDA_ROMANA_1MM = "CORDA_ROMANA_1MM"
+CORDA_ROMANA_1MM_PRODUTO = "PENDENTE"
+EXTENSAO_CORDA_APOS_ULTIMA_VARETA_CM = 5.0
+TIPO_CORRENTE_SEM_FIM_PRONTA = "SEM_FIM_PRONTA"
+TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA = "JUTA_BOLA10_PERSONALIZADA"
+CATEGORIA_CORRENTE_JUTA_BOLA10_PERSONALIZADA = (
+    "CORRENTE_JUTA_BOLA10_PERSONALIZADA"
+)
+TIPO_COMANDO_NORMAL = "NORMAL"
+TIPO_COMANDO_REDUCAO = "REDUCAO"
+CATEGORIA_COMANDO_NORMAL_ROMANA = "COMANDO_NORMAL_ROMANA"
+CATEGORIA_COMANDO_REDUCAO_ROMANA = "COMANDO_REDUCAO_ROMANA"
+ID_COMERCIAL_COMANDO_NORMAL_ROMANA = 273
+ID_COMERCIAL_COMANDO_REDUCAO_ROMANA = 272
+LARGURA_RECOMENDACAO_COMANDO_REDUCAO_CM = 220.0
 # Diagnóstico amplo e calibrável; não representa limite industrial definitivo.
 RAZAO_MINIMA_ULTIMO_INTERMEDIARIO = 0.75
 RAZAO_MAXIMA_ULTIMO_INTERMEDIARIO = 1.75
@@ -33,6 +59,9 @@ class RomanaCalculoEntrada:
     quantidade: int
     tipo: str = TIPO_SUPORTADO
     acionamento: str = ACIONAMENTO_SUPORTADO
+    tipo_corrente: str = TIPO_CORRENTE_SEM_FIM_PRONTA
+    medida_personalizada_m: float | None = None
+    tipo_comando: str = TIPO_COMANDO_NORMAL
 
 
 @dataclass(frozen=True)
@@ -64,6 +93,9 @@ class RomanaFabricacaoResultado:
     altura_pronta_cm: float
     quantidade_gomos: int
     quantidade_varetas: int
+    categoria_tampa_vareta: str
+    ids_comerciais_tampa_vareta: tuple[int, ...]
+    quantidade_tampas_varetas: int
     tamanho_gomo_padrao_cm: float
     regra_primeiro_gomo_status: str
     primeiro_gomo_pronto_cm: float
@@ -88,6 +120,42 @@ class RomanaFabricacaoResultado:
     varetas_com_passadores: tuple[int, ...]
     passadores_por_vareta: int | None
     quantidade_total_passadores: int | None
+    categoria_guia_corda: str
+    ids_comerciais_guia_corda: tuple[int, ...]
+    quantidade_guias_corda: int | None
+    largura_vareta_cm: float
+    categoria_espaguete_romana_2_5mm: str
+    id_comercial_espaguete_romana_2_5mm: int
+    espaguete_romana_2_5_total_cm: float
+    espaguete_romana_2_5_total_m: float
+    largura_base_cm: float
+    categoria_espaguete_base_romana_3mm: str
+    id_comercial_espaguete_base_romana_3mm: int
+    espaguete_base_romana_3mm_total_cm: float
+    espaguete_base_romana_3mm_total_m: float
+    categoria_corda_romana_1mm: str
+    produto_comercial_corda_romana_1mm: str
+    posicao_ultima_vareta_cm: float
+    corda_por_linha_cm: float
+    corda_total_cm: float | None
+    corda_total_m: float | None
+    tipo_corrente: str
+    corrente_pronta_referencia_m: float
+    corrente_pronta_referencia_status: str
+    categoria_corrente_personalizada: str
+    medida_personalizada_m: float | None
+    medida_corrente_selecionada_m: float
+    quantidade_correntes: int
+    tipos_comando_permitidos: tuple[str, ...]
+    tipo_comando: str
+    comando_reducao_recomendado: bool
+    categoria_comando_selecionado: str
+    id_comercial_comando_selecionado: int
+    categoria_comando_normal: str
+    id_comercial_comando_normal: int
+    categoria_comando_reducao: str
+    id_comercial_comando_reducao: int
+    quantidade_comando: int
     status_fabricacao: str
     alertas: tuple[str, ...] = field(default_factory=tuple)
 
@@ -138,6 +206,42 @@ def calcular_distribuicao_fabricacao_romana(
 ) -> RomanaFabricacaoResultado:
     """Separa altura pronta e corte V2; os gomos são pares e as varetas ímpares."""
     geometria = calcular_producao_romana(entrada)  # valida entrada e bloqueios da V1
+    tipo_corrente = str(entrada.tipo_corrente or "").strip().upper()
+    tipos_corrente_suportados = {
+        TIPO_CORRENTE_SEM_FIM_PRONTA,
+        TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+    }
+    if tipo_corrente not in tipos_corrente_suportados:
+        raise ValueError("tipo_corrente deve ser SEM_FIM_PRONTA ou JUTA_BOLA10_PERSONALIZADA")
+
+    corrente_pronta_referencia_m, corrente_pronta_referencia_status = (
+        _corrente_pronta_referencia(geometria.altura_cm)
+    )
+    medida_personalizada_m = entrada.medida_personalizada_m
+    if tipo_corrente == TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA:
+        if medida_personalizada_m is None or medida_personalizada_m <= 0:
+            raise ValueError(
+                "medida_personalizada_m deve ser informada e maior que zero "
+                "para JUTA_BOLA10_PERSONALIZADA"
+            )
+        medida_corrente_selecionada_m = float(medida_personalizada_m)
+    else:
+        medida_personalizada_m = None
+        medida_corrente_selecionada_m = corrente_pronta_referencia_m
+
+    tipo_comando = str(entrada.tipo_comando or "").strip().upper()
+    tipos_comando_permitidos = (TIPO_COMANDO_NORMAL, TIPO_COMANDO_REDUCAO)
+    if tipo_comando not in tipos_comando_permitidos:
+        raise ValueError("tipo_comando deve ser NORMAL ou REDUCAO")
+    comando_reducao_recomendado = (
+        geometria.largura_cm > LARGURA_RECOMENDACAO_COMANDO_REDUCAO_CM
+    )
+    if tipo_comando == TIPO_COMANDO_REDUCAO:
+        categoria_comando_selecionado = CATEGORIA_COMANDO_REDUCAO_ROMANA
+        id_comercial_comando_selecionado = ID_COMERCIAL_COMANDO_REDUCAO_ROMANA
+    else:
+        categoria_comando_selecionado = CATEGORIA_COMANDO_NORMAL_ROMANA
+        id_comercial_comando_selecionado = ID_COMERCIAL_COMANDO_NORMAL_ROMANA
     quantidade_gomos, diferenca_primeiro_cm, gomo_restante_cm = (
         _selecionar_gomos_fabricacao_v2(geometria.altura_cm)
     )
@@ -201,6 +305,21 @@ def calcular_distribuicao_fabricacao_romana(
         if quantidade_cavaletes is not None
         else None
     )
+    largura_vareta_cm = geometria.largura_cm - RECUO_LARGURA_VARETA_CM
+    espaguete_romana_2_5_total_cm = (
+        quantidade_varetas + 1
+    ) * largura_vareta_cm
+    largura_base_cm = geometria.largura_cm - RECUO_LARGURA_BASE_CM
+    espaguete_base_romana_3mm_total_cm = largura_base_cm
+    posicao_ultima_vareta_cm = posicoes_varetas[-1].posicao_cm
+    corda_por_linha_cm = (
+        posicao_ultima_vareta_cm + EXTENSAO_CORDA_APOS_ULTIMA_VARETA_CM
+    )
+    corda_total_cm = (
+        corda_por_linha_cm * quantidade_cavaletes
+        if quantidade_cavaletes is not None
+        else None
+    )
 
     alertas = []
     if ultimo_gomo_pronto_cm <= 0:
@@ -237,6 +356,11 @@ def calcular_distribuicao_fabricacao_romana(
         altura_pronta_cm=geometria.altura_cm,
         quantidade_gomos=quantidade_gomos,
         quantidade_varetas=quantidade_varetas,
+        categoria_tampa_vareta=CATEGORIA_TAMPA_VARETA_ROMANA,
+        ids_comerciais_tampa_vareta=IDS_COMERCIAIS_TAMPA_VARETA_ROMANA,
+        quantidade_tampas_varetas=calcular_quantidade_tampas_varetas(
+            quantidade_varetas
+        ),
         tamanho_gomo_padrao_cm=gomo_restante_cm,
         regra_primeiro_gomo_status=regra_primeiro_gomo_status,
         primeiro_gomo_pronto_cm=primeiro_gomo_pronto_cm,
@@ -261,6 +385,46 @@ def calcular_distribuicao_fabricacao_romana(
         varetas_com_passadores=varetas_com_passadores,
         passadores_por_vareta=quantidade_cavaletes,
         quantidade_total_passadores=quantidade_total_passadores,
+        categoria_guia_corda=CATEGORIA_GUIA_CORDA_ROMANA,
+        ids_comerciais_guia_corda=IDS_COMERCIAIS_GUIA_CORDA_ROMANA,
+        quantidade_guias_corda=quantidade_total_passadores,
+        largura_vareta_cm=largura_vareta_cm,
+        categoria_espaguete_romana_2_5mm=CATEGORIA_ESPAGUETE_ROMANA_2_5MM,
+        id_comercial_espaguete_romana_2_5mm=ID_COMERCIAL_ESPAGUETE_ROMANA_2_5MM,
+        espaguete_romana_2_5_total_cm=espaguete_romana_2_5_total_cm,
+        espaguete_romana_2_5_total_m=espaguete_romana_2_5_total_cm / 100,
+        largura_base_cm=largura_base_cm,
+        categoria_espaguete_base_romana_3mm=CATEGORIA_ESPAGUETE_BASE_ROMANA_3MM,
+        id_comercial_espaguete_base_romana_3mm=ID_COMERCIAL_ESPAGUETE_BASE_ROMANA_3MM,
+        espaguete_base_romana_3mm_total_cm=espaguete_base_romana_3mm_total_cm,
+        espaguete_base_romana_3mm_total_m=(
+            espaguete_base_romana_3mm_total_cm / 100
+        ),
+        categoria_corda_romana_1mm=CATEGORIA_CORDA_ROMANA_1MM,
+        produto_comercial_corda_romana_1mm=CORDA_ROMANA_1MM_PRODUTO,
+        posicao_ultima_vareta_cm=posicao_ultima_vareta_cm,
+        corda_por_linha_cm=corda_por_linha_cm,
+        corda_total_cm=corda_total_cm,
+        corda_total_m=corda_total_cm / 100 if corda_total_cm is not None else None,
+        tipo_corrente=tipo_corrente,
+        corrente_pronta_referencia_m=corrente_pronta_referencia_m,
+        corrente_pronta_referencia_status=corrente_pronta_referencia_status,
+        categoria_corrente_personalizada=(
+            CATEGORIA_CORRENTE_JUTA_BOLA10_PERSONALIZADA
+        ),
+        medida_personalizada_m=medida_personalizada_m,
+        medida_corrente_selecionada_m=medida_corrente_selecionada_m,
+        quantidade_correntes=1,
+        tipos_comando_permitidos=tipos_comando_permitidos,
+        tipo_comando=tipo_comando,
+        comando_reducao_recomendado=comando_reducao_recomendado,
+        categoria_comando_selecionado=categoria_comando_selecionado,
+        id_comercial_comando_selecionado=id_comercial_comando_selecionado,
+        categoria_comando_normal=CATEGORIA_COMANDO_NORMAL_ROMANA,
+        id_comercial_comando_normal=ID_COMERCIAL_COMANDO_NORMAL_ROMANA,
+        categoria_comando_reducao=CATEGORIA_COMANDO_REDUCAO_ROMANA,
+        id_comercial_comando_reducao=ID_COMERCIAL_COMANDO_REDUCAO_ROMANA,
+        quantidade_comando=1,
         status_fabricacao="REVISAR_DISTRIBUICAO" if alertas else "DISTRIBUICAO_V2_CALCULADA",
         alertas=tuple(alertas),
     )
@@ -283,6 +447,22 @@ def _selecionar_gomos_fabricacao_v2(
         quantidade_gomos += 2
         gomo = (altura_pronta_cm - diferenca_primeiro) / quantidade_gomos
     return quantidade_gomos, diferenca_primeiro, gomo
+
+
+def calcular_quantidade_tampas_varetas(quantidade_varetas: int) -> int:
+    """Calcula duas tampas por vareta, uma em cada extremidade."""
+    if quantidade_varetas < 0:
+        raise ValueError("quantidade_varetas não pode ser negativa")
+    return quantidade_varetas * TAMPAS_POR_VARETA
+
+
+def _corrente_pronta_referencia(altura_cm: float) -> tuple[float, str]:
+    """Retorna referência comercial; a corrente personalizada pode substituí-la."""
+    if altura_cm < 150:
+        return 1.25, "REFERENCIA_PRONTA"
+    if altura_cm <= 260:
+        return 1.50, "REFERENCIA_PRONTA"
+    return 1.75, "REFERENCIA_INICIAL_SUPERIOR_PROVISORIA"
 
 
 def _quantidade_cavaletes_por_largura(largura_cm: float) -> int | None:

@@ -4,6 +4,7 @@ import csv
 import io
 import calendar
 import math
+from decimal import Decimal, ROUND_HALF_UP
 
 # SMARTTEC ERP - ORÇAMENTOS - INTEGRAÇÃO REAL DOS CADASTROS
 # Cliente, Cliente Final, Produto e Representante via API real. Serviços via session_state até existir API.
@@ -18,11 +19,11 @@ except Exception:
 # Integração real com os cadastros do SmartTec ERP (FastAPI).
 # Se o backend estiver fora do ar, o orçamento continua funcionando com fallback visual.
 try:
-    from utils.api_client import (get_clientes, get_produtos, get_funcionarios, get_opcoes_auxiliares_por_categoria,
+    from utils.api_client import (get_clientes, get_produtos_todos, get_funcionarios, get_opcoes_auxiliares_por_categoria,
         get_orcamentos, criar_orcamento, atualizar_orcamento, deletar_orcamento)
 except Exception:
     get_clientes = None
-    get_produtos = None
+    get_produtos_todos = None
     get_funcionarios = None
     get_opcoes_auxiliares_por_categoria = None
     get_orcamentos = criar_orcamento = atualizar_orcamento = deletar_orcamento = None
@@ -808,12 +809,12 @@ def obter_orcamento_por_id(orcamento_id):
 def orcamento_api_para_tela(item):
     produtos, servicos = [], []
     for registro in item.get("itens") or []:
-        convertido = {"produto":registro.get("descricao", ""),"produto_original":registro.get("descricao", ""),"servico":registro.get("descricao", ""),"detalhe":registro.get("observacao_item", ""),"produto_id":registro.get("produto_id"),"codigo_interno":registro.get("codigo_interno"),"grupo_tecnico":registro.get("grupo_tecnico"),"modelo_tecnico":registro.get("modelo_tecnico"),"modelo_calculo":"Romana de teto" if registro.get("modelo_tecnico")=="ROMANA_TETO" else ("Romana" if registro.get("modelo_tecnico")=="ROMANA" else "Manual"),"unidade":registro.get("unidade"),"quantidade":registro.get("quantidade",1),"quantidade_pecas":registro.get("quantidade",1),"largura":registro.get("largura",0),"altura":registro.get("altura",0),"area_m2":registro.get("area",0),"valor":registro.get("preco_unitario",0),"desconto":registro.get("desconto",0),"subtotal":registro.get("subtotal",0),"material":registro.get("material"),"cor":registro.get("cor"),"acionamento":registro.get("acionamento"),"lado_comando":registro.get("lado_comando"),"calculo_producao_status":registro.get("calculo_producao_status")}
-        (servicos if registro.get("tipo_item")=="SERVICO" else produtos).append(convertido)
-    criado=str(item.get("criado_em") or "")[:10]
-    try:data_fmt=datetime.strptime(criado,"%Y-%m-%d").strftime("%d/%m/%Y")
-    except Exception:data_fmt=date.today().strftime("%d/%m/%Y")
-    return {"id":item.get("id"),"numero":item.get("numero"),"cliente":item.get("cliente_nome", ""),"cliente_id":item.get("cliente_id"),"data":data_fmt,"situacao":item.get("status","EM_ABERTO"),"valor_total":item.get("total_final",0),"produtos":produtos,"servicos":servicos,"desconto_rs":item.get("desconto",0),"desconto_percentual":0,"frete":0,"observacoes":item.get("observacao") or "","validade_data":item.get("validade"),"tipo_orcamento":"Produtos"}
+        convertido = {"produto":registro.get("descricao", ""), "produto_original":registro.get("descricao", ""), "servico":registro.get("descricao", ""), "detalhe":registro.get("observacao_item", ""), "produto_id":registro.get("produto_id"), "codigo_interno":registro.get("codigo_interno"), "grupo_tecnico":registro.get("grupo_tecnico"), "modelo_tecnico":registro.get("modelo_tecnico"), "modelo_calculo":"Romana de teto" if registro.get("modelo_tecnico") == "ROMANA_TETO" else ("Romana" if registro.get("modelo_tecnico") == "ROMANA" else "Manual"), "unidade":registro.get("unidade"), "quantidade":registro.get("quantidade", 1), "quantidade_pecas":registro.get("quantidade", 1), "largura":registro.get("largura", 0), "altura":registro.get("altura", 0), "area_m2":registro.get("area", 0), "valor":registro.get("preco_unitario", 0), "desconto":registro.get("desconto", 0), "subtotal":registro.get("subtotal", 0), "material":registro.get("material"), "cor":registro.get("cor"), "acionamento":registro.get("acionamento"), "lado_comando":registro.get("lado_comando"), "calculo_producao_status":registro.get("calculo_producao_status")}
+        (servicos if registro.get("tipo_item") == "SERVICO" else produtos).append(convertido)
+    criado = str(item.get("criado_em") or "")[:10]
+    try:data_fmt = datetime.strptime(criado, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:data_fmt = date.today().strftime("%d/%m/%Y")
+    return {"id":item.get("id"), "numero":item.get("numero"), "cliente":item.get("cliente_nome", ""), "cliente_id":item.get("cliente_id"), "data":data_fmt, "situacao":item.get("status", "EM_ABERTO"), "valor_total":item.get("total_final", 0), "produtos":produtos, "servicos":servicos, "desconto_rs":item.get("desconto", 0), "desconto_percentual":0, "frete":0, "observacoes":item.get("observacao") or "", "validade_data":item.get("validade"), "tipo_orcamento":"Produtos"}
 
 
 def proximo_id():
@@ -1035,7 +1036,7 @@ def carregar_cadastros_api(tipo):
     mapa_funcoes = {
         "cliente": get_clientes,
         "cliente_final": get_clientes,
-        "produto": get_produtos,
+        "produto": get_produtos_todos,
         "representante": get_funcionarios,
     }
 
@@ -1043,7 +1044,8 @@ def carregar_cadastros_api(tipo):
     if not funcao:
         return []
 
-    chave_cache = f"orc_cache_api_{tipo}"
+    tenant_id_cache = st.session_state.get("tenant_empresa_id")
+    chave_cache = f"tenant_{tenant_id_cache}_orc_cache_api_{tipo}"
 
     try:
         resposta = funcao()
@@ -1129,11 +1131,81 @@ def extrair_float_registro(registro, campos, padrao=0.0):
 def extrair_detalhe_registro(registro):
     if not isinstance(registro, dict):
         return ""
-    for campo in ["descricao", "observacao_orcamento", "observacoes", "categoria", "tipo_calculo", "grupo_produto", "cor"]:
+    # Cor é atributo estruturado do item e não deve ocupar o campo livre
+    # Ambiente/Detalhes do orçamento.
+    for campo in ["descricao", "observacao_orcamento", "observacoes", "categoria", "tipo_calculo", "grupo_produto"]:
         valor = registro.get(campo)
         if valor not in [None, ""]:
             return str(valor).strip()
     return ""
+
+
+def cor_estruturada_produto(registro):
+    """Obtém a cor comercial sem recorrer a descrição ou observação."""
+    if not isinstance(registro, dict):
+        return ""
+    for campo in ["cor", "cor_componente", "variacao_cor"]:
+        valor = str(registro.get(campo) or "").strip()
+        if valor:
+            return valor
+    return ""
+
+
+def produto_mesma_familia_cor_orcamento(produto, familia_tecnica, cor):
+    if not isinstance(produto, dict):
+        return False
+    familia = normalizar_texto(produto.get("familia_tecnica"))
+    cor_produto = normalizar_texto(cor_estruturada_produto(produto))
+    ativo = produto.get("ativo", True)
+    situacao = normalizar_texto(produto.get("situacao", "Ativo"))
+    return (
+        bool(familia)
+        and familia == normalizar_texto(familia_tecnica)
+        and cor_produto == normalizar_texto(cor)
+        and ativo is not False
+        and situacao != "inativo"
+    )
+
+
+def opcoes_cor_familia_orcamento(produtos, produto_atual):
+    """Retorna cores apenas quando a família tem variantes ativas inequívocas."""
+    if not isinstance(produto_atual, dict) or not produto_atual.get("familia_tecnica"):
+        return []
+    familia = normalizar_texto(produto_atual.get("familia_tecnica"))
+    por_cor = {}
+    for produto in produtos or []:
+        if normalizar_texto(produto.get("familia_tecnica")) != familia:
+            continue
+        if produto.get("ativo", True) is False or normalizar_texto(produto.get("situacao", "Ativo")) == "inativo":
+            continue
+        cor = cor_estruturada_produto(produto)
+        if cor:
+            identidade = produto.get("id") or (
+                normalizar_texto(produto.get("nome")),
+                normalizar_texto(produto.get("codigo_interno")),
+                normalizar_texto(cor),
+            )
+            por_cor.setdefault(normalizar_texto(cor), {})[identidade] = cor
+    # Duas linhas para a mesma cor tornam a troca de SKU ambígua.
+    if len(por_cor) < 2 or any(len(itens) != 1 for itens in por_cor.values()):
+        return []
+    return sorted((next(iter(itens.values())) for itens in por_cor.values()), key=normalizar_texto)
+
+
+def procurar_substituto_mesma_familia_cor_orcamento(produtos, produto_atual, cor):
+    """Localiza outro SKU da mesma família e cor, sem usar Detalhes."""
+    if not isinstance(produto_atual, dict) or not cor:
+        return None
+    # A família estruturada e suas variantes ativas são a fonte da troca;
+    # varia_cor legado não pode contornar a proteção contra ambiguidade.
+    if not opcoes_cor_familia_orcamento(produtos, produto_atual):
+        return None
+    familia = produto_atual.get("familia_tecnica")
+    candidatos = [
+        p for p in (produtos or [])
+        if produto_mesma_familia_cor_orcamento(p, familia, cor)
+    ]
+    return sorted(candidatos, key=lambda p: int(p.get("id") or 0))[0] if candidatos else None
 
 
 def atualizar_valor_item_por_cadastro(prefixo, tipo, nome, item):
@@ -1267,6 +1339,11 @@ def montar_opcoes_busca_global(tipo):
 
     opcoes = []
     for registro in registros:
+        if tipo == "produto" and (
+            registro.get("ativo", True) is False
+            or normalizar_texto(registro.get("situacao", "Ativo")) == "inativo"
+        ):
+            continue
         nome = extrair_valor_registro(registro, cfg["campos"]).strip()
         if nome:
             opcoes.append(nome.upper())
@@ -1294,6 +1371,36 @@ def campo_busca_inteligente_global(
     Por isso normalizamos o valor antes de renderizar o selectbox.
     """
     opcoes = montar_opcoes_busca_global(tipo)
+
+    if tipo == "produto":
+        import unicodedata
+
+        def normalizar_busca_produto(valor):
+            texto = unicodedata.normalize("NFKD", str(valor or "").strip().lower())
+            return "".join(
+                caractere
+                for caractere in texto
+                if not unicodedata.combining(caractere)
+                and (caractere.isalnum() or caractere.isspace())
+            )
+
+        busca_produto = st.text_input(
+            "Buscar produto",
+            key=f"{key}_pesquisa",
+            disabled=disabled,
+        )
+        termos_busca = [
+            normalizar_busca_produto(termo)
+            for termo in str(busca_produto or "").split()
+            if normalizar_busca_produto(termo)
+        ]
+        opcoes_especiais = {"Digite para buscar", "➕ Adicionar novo produto"}
+        opcoes_filtradas = [
+            opcao for opcao in opcoes
+            if opcao in opcoes_especiais
+            or all(termo in normalizar_busca_produto(opcao) for termo in termos_busca)
+        ]
+        opcoes = opcoes_filtradas
 
     # Proteção definitiva para o st.selectbox:
     # - options nunca pode ser vazio
@@ -1546,10 +1653,27 @@ def detectar_modelo_calculo_orcamento(nome_produto, registro=None):
 
 def escolher_tubo_rolo(largura):
     """
-    Regra inicial SmartTec para Rolô.
-    Até 2,20m usa tubo 32mm. Acima disso usa tubo 38mm.
-    Essa regra fica centralizada para facilitar ajuste fino depois.
+    Regra técnica central para Rolô (delega para app.technical.rules.rolo).
+    Mantém interface compatível: retorna "32mm", "38mm", "43mm", "65mm" ou "".
     """
+    try:
+        from app.technical.rules.rolo import selecionar_tubo_rolo, MotorObrigatorioErro
+    except Exception:
+        # Fallback se módulo não estiver disponível
+        try:
+            largura = float(largura or 0)
+        except Exception:
+            largura = 0.0
+        if largura <= 0:
+            return ""
+        if largura <= 1.80:
+            return "32mm"
+        if largura <= 2.50:
+            return "38mm"
+        if largura <= 3.20:
+            return "43mm"
+        return "65mm"
+
     try:
         largura = float(largura or 0)
     except Exception:
@@ -1558,7 +1682,12 @@ def escolher_tubo_rolo(largura):
     if largura <= 0:
         return ""
 
-    return "32mm" if largura <= 2.20 else "38mm"
+    try:
+        selecao = selecionar_tubo_rolo(largura, acionamento="manual")
+        return selecao.diametro.value
+    except MotorObrigatorioErro:
+        # Para orçamento, retorna a sugestão de motorização
+        return "65mm"
 
 
 def kit_por_tubo_rolo(tubo):
@@ -1567,6 +1696,12 @@ def kit_por_tubo_rolo(tubo):
         return "Kit Comando Ação Premium 32mm"
     if "38" in tubo:
         return "Kit Comando Ação Premium 38mm"
+    if "43" in tubo:
+        return "Kit Comando Ação Premium 43mm"
+    if "65" in tubo:
+        return "Kit Comando Ação Premium 65mm"
+    if "70" in tubo:
+        return "Kit Comando Ação Premium 70mm"
     return ""
 
 
@@ -1635,9 +1770,9 @@ def carregar_tabelas_venda_orcamento():
     Se a API não responder, mantém os três padrões do SmartTec.
     """
     padroes = [
-        {"nome": "Varejo", "lucro": 150.0, "ordem": 1},
-        {"nome": "Cliente final", "lucro": 200.0, "ordem": 2},
-        {"nome": "Decorador", "lucro": 100.0, "ordem": 3},
+        {"nome": "Varejo", "lucro": 100.0, "ordem": 1},
+        {"nome": "Consumidor final", "lucro": 150.0, "ordem": 2},
+        {"nome": "Decorador", "lucro": 50.0, "ordem": 3},
     ]
 
     tabelas = []
@@ -1701,13 +1836,14 @@ def calcular_valor_produto_por_tipo_venda(registro_produto, tipo_venda, valor_ba
     """
     custo = extrair_float_registro(
         registro_produto,
-        ["valor_custo", "vr_custo", "preco_custo", "custo", "custo_final", "valor_compra"],
+        ["custo_final", "valor_custo", "vr_custo", "preco_custo", "custo", "valor_compra"],
         0.0,
     )
 
     if custo > 0:
         lucro = obter_lucro_tabela_venda_orcamento(tipo_venda)
-        return round(custo * (1 + lucro / 100), 2)
+        valor = Decimal(str(custo)) * (Decimal("1") + Decimal(str(lucro)) / Decimal("100"))
+        return float(valor.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
     valor_cadastro = extrair_float_registro(
         registro_produto,
@@ -1716,9 +1852,9 @@ def calcular_valor_produto_por_tipo_venda(registro_produto, tipo_venda, valor_ba
     )
 
     if valor_cadastro > 0:
-        return round(valor_cadastro, 2)
+        return float(Decimal(str(valor_cadastro)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-    return round(float(valor_base or 0), 2)
+    return float(Decimal(str(float(valor_base or 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
 def garantir_selectbox_valido(key, opcoes, valor_padrao):
@@ -1778,14 +1914,51 @@ def qtd_grapas_double_vision(largura):
     return max(2, 2 + math.ceil((largura - 1.0) / 0.50))
 
 
-def tubo_double_vision(modelo, largura, tipo_motor="Convencional"):
+def tubo_double_vision(modelo, largura, tipo_motor="Convencional", *, tem_validacao_tecido_fornecedor=False):
     """
-    Manual: 32/38 conforme largura.
+    Manual: 32/38 conforme largura (regra central Double Vision).
     Motorizada: 41mm padrão; 38mm somente motor bateria.
+
+    Args:
+        modelo: "Double Vision" ou "Double Vision Motorizada"
+        largura: Largura em metros
+        tipo_motor: Tipo de motorização
+        tem_validacao_tecido_fornecedor: True se houver evidência explícita
+            de compatibilidade do tecido/fornecedor para larguras > 2,60m
     """
     if modelo == "Double Vision Motorizada":
         return "38mm" if str(tipo_motor or "").lower().startswith("bateria") else "41mm"
-    return escolher_tubo_rolo(largura)
+
+    try:
+        from app.technical.rules.double_vision import (
+            selecionar_tubo_double_vision,
+            LarguraExcedidaErro,
+            LarguraInvalidaErro,
+        )
+    except Exception:
+        # Fallback se módulo não estiver disponível
+        try:
+            largura_f = float(largura or 0)
+        except Exception:
+            largura_f = 0.0
+        if largura_f <= 1.80:
+            return "32mm"
+        if largura_f <= 2.80:
+            return "38mm"
+        return "38mm"
+
+    try:
+        largura_f = float(largura or 0)
+        selecao = selecionar_tubo_double_vision(largura_f, tem_validacao_tecido_fornecedor=tem_validacao_tecido_fornecedor)
+        if selecao.diametro:
+            return selecao.diametro.value
+        # Se chegou aqui, é um estado de validação pendente ou bloqueado
+        # Retorna o diâmetro técnico mas a validação deve ser feita no nível superior
+        if selecao.estado.name == "REQUER_VALIDACAO":
+            return "38mm"  # Diâmetro técnico, mas requer validação
+        return ""
+    except (LarguraExcedidaErro, LarguraInvalidaErro):
+        return ""
 
 
 def montar_nome_comercial_double_vision(modelo, com_bando=False):
@@ -1798,7 +1971,7 @@ def montar_nome_comercial_double_vision(modelo, com_bando=False):
     return nome
 
 
-def montar_receita_double_vision(largura, altura, quantidade, modelo="Double Vision", com_bando=False, tipo_bando="Bandô Double Vision", cor="Branco", tipo_motor="Convencional", componentes_adicionais=""):
+def montar_receita_double_vision(largura, altura, quantidade, modelo="Double Vision", com_bando=False, tipo_bando="Bandô Double Vision", cor="Branco", tipo_motor="Convencional", componentes_adicionais="", *, tem_validacao_tecido_fornecedor=False):
     """
     Receita técnica SmartTec para Double Vision manual e motorizada.
     O motor monta a receita padrão, mas o vendedor pode trocar/adicionar componentes no orçamento.
@@ -1812,7 +1985,7 @@ def montar_receita_double_vision(largura, altura, quantidade, modelo="Double Vis
 
     largura_tecido = max(largura - 0.025, 0)  # largura - 2,5cm
     altura_tecido = max((altura * 2) + 0.15, 0)  # altura dupla + 15cm
-    tubo = tubo_double_vision(modelo, largura, tipo_motor)
+    tubo = tubo_double_vision(modelo, largura, tipo_motor, tem_validacao_tecido_fornecedor=tem_validacao_tecido_fornecedor)
     comprimento_tubo = max(largura - 0.025, 0)
     qtd_grapas = qtd_grapas_double_vision(largura)
     manual = modelo == "Double Vision"
@@ -1920,9 +2093,46 @@ def render_item_produto(prefixo, item=None, disabled=False):
         )
 
     registro_produto = obter_registro_por_nome("produto", produto)
+    registros_produtos_api = carregar_cadastros_api("produto") if produto else []
+    if produto and registros_produtos_api:
+        produto_id_atual = item.get("produto_id")
+        candidatos_produto = [
+            registro for registro in registros_produtos_api
+            if normalizar_texto(extrair_valor_registro(registro, campos_nome_por_tipo("produto"))) == normalizar_texto(produto)
+            and registro.get("ativo", True) is not False
+            and normalizar_texto(registro.get("situacao", "Ativo")) != "inativo"
+        ]
+        registro_por_id = next(
+            (registro for registro in candidatos_produto if produto_id_atual and registro.get("id") == produto_id_atual),
+            None,
+        )
+        if registro_por_id or not registro_produto.get("familia_tecnica"):
+            registro_produto = registro_por_id or (candidatos_produto[0] if candidatos_produto else registro_produto)
     modelo_calculo = detectar_modelo_calculo_orcamento(produto, registro_produto)
 
-    detalhe_padrao = item.get("detalhe", "") or extrair_detalhe_registro(registro_produto)
+    cor_produto = str(item.get("cor", "") or cor_estruturada_produto(registro_produto)).strip()
+    if registro_produto.get("familia_tecnica"):
+        # Para trocar SKU, use o cadastro autoritativo da API; listas auxiliares
+        # da sessão podem repetir ou simplificar produtos e tornar a cor ambígua.
+        registros_produtos = registros_produtos_api or montar_registros_busca_global("produto")
+        cores_familia = opcoes_cor_familia_orcamento(registros_produtos, registro_produto)
+        if cores_familia:
+            cor_produto = st.selectbox(
+                "Cor/variação do produto",
+                cores_familia,
+                index=cores_familia.index(cor_produto) if cor_produto in cores_familia else 0,
+                key=f"{prefixo}_cor_produto",
+                disabled=disabled,
+            )
+            substituto = procurar_substituto_mesma_familia_cor_orcamento(
+                registros_produtos, registro_produto, cor_produto
+            )
+            if substituto:
+                registro_produto = substituto
+                produto = str(substituto.get("nome") or produto)
+                modelo_calculo = detectar_modelo_calculo_orcamento(produto, registro_produto)
+
+    detalhe_padrao = item.get("detalhe", "") or ""
     detalhe = c2.text_input(
         "Detalhes",
         value=detalhe_padrao,
@@ -1990,7 +2200,7 @@ def render_item_produto(prefixo, item=None, disabled=False):
     componentes_adicionais = str(item.get("componentes_adicionais", "") or "")
 
     material = str(item.get("material", "") or "")
-    cor_romana = str(item.get("cor", "") or "")
+    cor_romana = cor_produto
     acionamento = str(item.get("acionamento", "Manual") or "Manual")
     lado_comando = str(item.get("lado_comando", "Direito") or "Direito")
     if modelo_calculo in ["Romana", "Romana Motorizada", "Romana de teto"]:
@@ -1998,9 +2208,9 @@ def render_item_produto(prefixo, item=None, disabled=False):
         rc1, rc2, rc3, rc4 = st.columns(4)
         material = rc1.text_input("Tecido/material", value=material, key=f"{prefixo}_material", disabled=disabled)
         cor_romana = rc2.text_input("Cor", value=cor_romana, key=f"{prefixo}_cor_romana", disabled=disabled)
-        acionamento = rc3.selectbox("Acionamento", ["Manual", "Motorizado"], index=1 if acionamento=="Motorizado" else 0, key=f"{prefixo}_acionamento", disabled=disabled)
+        acionamento = rc3.selectbox("Acionamento", ["Manual", "Motorizado"], index=1 if acionamento == "Motorizado" else 0, key=f"{prefixo}_acionamento", disabled=disabled)
         if acionamento == "Manual":
-            lado_comando = rc4.selectbox("Lado do comando", ["Direito", "Esquerdo"], index=1 if lado_comando=="Esquerdo" else 0, key=f"{prefixo}_lado_comando", disabled=disabled)
+            lado_comando = rc4.selectbox("Lado do comando", ["Direito", "Esquerdo"], index=1 if lado_comando == "Esquerdo" else 0, key=f"{prefixo}_lado_comando", disabled=disabled)
 
     if modelo_calculo in ["Double Vision", "Double Vision Motorizada"]:
         opt_cols = st.columns([0.85, 1.25, 1.05, 1.15, 2.20])
@@ -2060,7 +2270,7 @@ def render_item_produto(prefixo, item=None, disabled=False):
     area_m2 = round(float(area_unitaria_m2 or 0) * quantidade_pecas_float, 3)
 
     if modelo_calculo in ["Double Vision", "Double Vision Motorizada"]:
-        tubo = tubo_double_vision(modelo_calculo, largura, tipo_motor_dv)
+        tubo = tubo_double_vision(modelo_calculo, largura, tipo_motor_dv, tem_validacao_tecido_fornecedor=False)
     else:
         tubo = escolher_tubo_rolo(largura) if modelo_calculo in ["Rolô", "Rolô Motorizada"] else ""
     kit = kit_por_tubo_rolo(tubo) if modelo_calculo != "Double Vision Motorizada" else ""
@@ -2137,6 +2347,7 @@ def render_item_produto(prefixo, item=None, disabled=False):
             cor=cor_acessorios,
             tipo_motor=tipo_motor_dv,
             componentes_adicionais=componentes_adicionais,
+            tem_validacao_tecido_fornecedor=False,
         )
 
     if produto and modelo_calculo != "Manual":
@@ -2177,9 +2388,9 @@ def render_item_produto(prefixo, item=None, disabled=False):
         "desconto": desconto,
         "subtotal": subtotal,
         "produto_id": (registro_produto or {}).get("id"), "codigo_interno": (registro_produto or {}).get("codigo_interno") or (registro_produto or {}).get("codigo"),
-        "grupo_tecnico": (registro_produto or {}).get("grupo_tecnico"), "modelo_tecnico": "ROMANA_TETO" if modelo_calculo=="Romana de teto" else ("ROMANA" if modelo_calculo.startswith("Romana") else (registro_produto or {}).get("modelo_tecnico")),
+        "grupo_tecnico": (registro_produto or {}).get("grupo_tecnico"), "modelo_tecnico": "ROMANA_TETO" if modelo_calculo == "Romana de teto" else ("ROMANA" if modelo_calculo.startswith("Romana") else (registro_produto or {}).get("modelo_tecnico")),
         "unidade": (registro_produto or {}).get("unidade_venda") or "M²", "material":material, "cor":cor_romana, "acionamento":acionamento,
-        "lado_comando": lado_comando if acionamento=="Manual" else None, "calculo_producao_status":"CALCULO_PRODUCAO_PENDENTE" if modelo_calculo.startswith("Romana") else None,
+        "lado_comando": lado_comando if acionamento == "Manual" else None, "calculo_producao_status":"CALCULO_PRODUCAO_PENDENTE" if modelo_calculo.startswith("Romana") else None,
     }
 
 
@@ -2256,17 +2467,35 @@ def bloco_produtos(orcamento=None, disabled=False):
     st.markdown('<div class="orc-card-body">', unsafe_allow_html=True)
 
     produtos = (orcamento or {}).get("produtos") or []
-    item_base = produtos[0] if produtos else {}
-    produto = render_item_produto("orc_prod_1", item_base, disabled=disabled)
+    chave_linhas = f"orc_produtos_linhas_{(orcamento or {}).get('id', 'novo')}"
+    if chave_linhas not in st.session_state:
+        st.session_state[chave_linhas] = list(range(1, max(1, len(produtos)) + 1))
+
+    linhas = list(st.session_state.get(chave_linhas) or [1])
+    produtos_renderizados = []
+    remover_linha = None
+    for indice, linha_id in enumerate(linhas):
+        item_base = produtos[indice] if indice < len(produtos) else {}
+        produto = render_item_produto(f"orc_prod_{linha_id}", item_base, disabled=disabled)
+        if produto.get("produto"):
+            produtos_renderizados.append(produto)
+        if not disabled and len(linhas) > 1 and st.button("Remover produto", key=f"btn_rem_produto_orc_{linha_id}"):
+            remover_linha = linha_id
+
+    if remover_linha is not None:
+        st.session_state[chave_linhas] = [linha for linha in linhas if linha != remover_linha]
+        st.rerun()
 
     st.markdown('<div class="orc-btn-add-row">', unsafe_allow_html=True)
     if st.button("✚ Adicionar produto", key="btn_add_produto_orc", disabled=disabled):
-        st.info("Próxima etapa: adicionar múltiplas linhas de produtos.")
+        proximo_id_linha = max(linhas or [0]) + 1
+        st.session_state[chave_linhas] = linhas + [proximo_id_linha]
+        st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
-    return [produto] if produto.get("produto") else []
+    return produtos_renderizados
 
 
 def bloco_servicos(orcamento=None, disabled=False):
@@ -2536,9 +2765,9 @@ def montar_formulario_orcamento(orcamento=None, modo="adicionar"):
     titulo = "Adicionar" if modo == "adicionar" else ("Editar" if editando else "Visualizar")
     cabecalho("📋 Orçamentos", "Orçamentos", titulo)
     if visualizando:
-        linhas="".join(f"<tr><td>{p.get('produto','')}</td><td>{p.get('largura',0):.2f}</td><td>{p.get('altura',0):.2f}</td><td>{p.get('quantidade',0):.0f}</td><td>{moeda_br(p.get('subtotal',0))}</td></tr>" for p in orcamento.get("produtos",[]))
-        html=f"<html><body><h1>Smart-tec</h1><h2>Orçamento {orcamento.get('numero')}</h2><p>Cliente: {orcamento.get('cliente','')}</p><table border='1' cellspacing='0' cellpadding='6'><tr><th>Item</th><th>Largura</th><th>Altura</th><th>Qtd.</th><th>Subtotal</th></tr>{linhas}</table><h3>Total: {moeda_br(orcamento.get('valor_total',0))}</h3><p>{orcamento.get('observacoes','')}</p></body></html>"
-        st.download_button("🖨️ Baixar proposta imprimível",html.encode("utf-8"),file_name=f"orcamento_{orcamento.get('numero')}.html",mime="text/html")
+        linhas = "".join(f"<tr><td>{p.get('produto','')}</td><td>{p.get('largura',0):.2f}</td><td>{p.get('altura',0):.2f}</td><td>{p.get('quantidade',0):.0f}</td><td>{moeda_br(p.get('subtotal',0))}</td></tr>" for p in orcamento.get("produtos", []))
+        html = f"<html><body><h1>Smart-tec</h1><h2>Orçamento {orcamento.get('numero')}</h2><p>Cliente: {orcamento.get('cliente','')}</p><table border='1' cellspacing='0' cellpadding='6'><tr><th>Item</th><th>Largura</th><th>Altura</th><th>Qtd.</th><th>Subtotal</th></tr>{linhas}</table><h3>Total: {moeda_br(orcamento.get('valor_total',0))}</h3><p>{orcamento.get('observacoes','')}</p></body></html>"
+        st.download_button("🖨️ Baixar proposta imprimível", html.encode("utf-8"), file_name=f"orcamento_{orcamento.get('numero')}.html", mime="text/html")
 
     st.markdown('<div class="orc-card-title">📝 Dados gerais</div>', unsafe_allow_html=True)
     st.markdown('<div class="orc-card-body">', unsafe_allow_html=True)
@@ -2990,21 +3219,21 @@ def montar_formulario_orcamento(orcamento=None, modo="adicionar"):
                 st.error("Informe o cliente.")
                 return
 
-            registro_cliente=obter_registro_por_nome("cliente",cliente)
-            cliente_id=registro_cliente.get("id") or orcamento.get("cliente_id")
+            registro_cliente = obter_registro_por_nome("cliente", cliente)
+            cliente_id = registro_cliente.get("id") or orcamento.get("cliente_id")
             if not cliente_id:
                 st.error("Selecione um cliente cadastrado para salvar no banco."); return
-            itens_api=[]
+            itens_api = []
             for p in produtos:
-                itens_api.append({"tipo_item":"PRODUTO","produto_id":p.get("produto_id"),"descricao":p.get("produto") or p.get("produto_original") or "Item","codigo_interno":p.get("codigo_interno"),"grupo_tecnico":p.get("grupo_tecnico"),"modelo_tecnico":p.get("modelo_tecnico"),"unidade":p.get("unidade") or "UN","quantidade":p.get("quantidade",1),"largura":p.get("largura",0),"altura":p.get("altura",0),"area":p.get("area_m2",0),"preco_unitario":p.get("valor",0),"desconto":p.get("desconto",0),"subtotal":p.get("subtotal",0),"observacao_item":p.get("detalhe"),"material":p.get("material"),"cor":p.get("cor"),"acionamento":p.get("acionamento"),"lado_comando":p.get("lado_comando"),"calculo_producao_status":p.get("calculo_producao_status")})
+                itens_api.append({"tipo_item":"PRODUTO", "produto_id":p.get("produto_id"), "descricao":p.get("produto") or p.get("produto_original") or "Item", "codigo_interno":p.get("codigo_interno"), "grupo_tecnico":p.get("grupo_tecnico"), "modelo_tecnico":p.get("modelo_tecnico"), "unidade":p.get("unidade") or "UN", "quantidade":p.get("quantidade", 1), "largura":p.get("largura", 0), "altura":p.get("altura", 0), "area":p.get("area_m2", 0), "preco_unitario":p.get("valor", 0), "desconto":p.get("desconto", 0), "subtotal":p.get("subtotal", 0), "observacao_item":p.get("detalhe"), "material":p.get("material"), "cor":p.get("cor"), "acionamento":p.get("acionamento"), "lado_comando":p.get("lado_comando"), "calculo_producao_status":p.get("calculo_producao_status")})
             for s in servicos:
-                itens_api.append({"tipo_item":"SERVICO","descricao":s.get("servico") or "Serviço","unidade":"UN","quantidade":s.get("quantidade",1),"preco_unitario":s.get("valor",0),"desconto":s.get("desconto",0),"subtotal":s.get("subtotal",0),"observacao_item":s.get("detalhe")})
-            payload_api={"cliente_id":int(cliente_id),"status":orcamento.get("situacao","EM_ABERTO"),"validade":(date.today()+timedelta(days=10)).isoformat(),"observacao":observacoes,"desconto":float(desconto_total),"total":float(total_bruto),"total_final":float(total_geral),"itens":itens_api}
+                itens_api.append({"tipo_item":"SERVICO", "descricao":s.get("servico") or "Serviço", "unidade":"UN", "quantidade":s.get("quantidade", 1), "preco_unitario":s.get("valor", 0), "desconto":s.get("desconto", 0), "subtotal":s.get("subtotal", 0), "observacao_item":s.get("detalhe")})
+            payload_api = {"cliente_id":int(cliente_id), "status":orcamento.get("situacao", "EM_ABERTO"), "validade":(date.today() + timedelta(days=10)).isoformat(), "observacao":observacoes, "desconto":float(desconto_total), "total":float(total_bruto), "total_final":float(total_geral), "itens":itens_api}
             try:
-                resposta_api=atualizar_orcamento(orcamento.get("id"),payload_api) if editando else criar_orcamento(payload_api)
-                if resposta_api is None or resposta_api.status_code not in [200,201]:
+                resposta_api = atualizar_orcamento(orcamento.get("id"), payload_api) if editando else criar_orcamento(payload_api)
+                if resposta_api is None or resposta_api.status_code not in [200, 201]:
                     st.error(f"Não foi possível salvar o orçamento: {resposta_api.text if resposta_api is not None else 'API indisponível'}"); return
-                salvo=orcamento_api_para_tela(resposta_api.json())
+                salvo = orcamento_api_para_tela(resposta_api.json())
             except Exception as exc:
                 st.error(f"Não foi possível salvar o orçamento: {exc}"); return
 
@@ -3046,7 +3275,7 @@ def montar_formulario_orcamento(orcamento=None, modo="adicionar"):
                         break
                 st.success("Orçamento atualizado com sucesso.")
             else:
-                st.session_state.orcamentos_lista.insert(0,salvo)
+                st.session_state.orcamentos_lista.insert(0, salvo)
                 st.success("Orçamento cadastrado com sucesso.")
 
             ir_listar()
@@ -3070,8 +3299,8 @@ def tela_excluir_orcamento():
     c1, c2, c3 = st.columns([1, 1, 4])
     if c1.button("Sim, excluir", type="primary", use_container_width=True):
         if deletar_orcamento:
-            resposta=deletar_orcamento(orcamento.get("id"))
-            if resposta.status_code not in [200,204]:
+            resposta = deletar_orcamento(orcamento.get("id"))
+            if resposta.status_code not in [200, 204]:
                 st.error("Não foi possível excluir o orçamento no banco."); return
         st.session_state.orcamentos_lista = [
             o for o in st.session_state.orcamentos_lista

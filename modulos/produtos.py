@@ -203,9 +203,9 @@ def carregar_tabelas_valores_venda():
     Enquanto não houver registros, usa os três padrões.
     """
     padroes = [
-        {"nome": "Varejo", "lucro": 150.0, "ordem": 1},
-        {"nome": "Consumidor final", "lucro": 200.0, "ordem": 2},
-        {"nome": "Decorador", "lucro": 100.0, "ordem": 3},
+        {"nome": "Varejo", "lucro": 100.0, "ordem": 1},
+        {"nome": "Consumidor final", "lucro": 150.0, "ordem": 2},
+        {"nome": "Decorador", "lucro": 50.0, "ordem": 3},
     ]
 
     try:
@@ -3785,12 +3785,19 @@ def montar_prev_aplicacao_receita_rolo_manual(produtos, ids_alvo=None):
     for produto in produtos_finais:
         receita_atual = extrair_receita_tecnica_observacoes((produto or {}).get("observacoes"))
         carrinho, faltantes = montar_receita_base_rolo_manual_para_produto(produto, produtos)
+        largura = largura_produto_base_motor(produto)
+        try:
+            from app.technical.rules.rolo import selecionar_tubo_rolo
+            selecao = selecionar_tubo_rolo(largura, acionamento="manual") if largura > 0 else None
+            tubo = selecao.diametro.value if selecao else "32mm"
+        except Exception:
+            tubo = "38mm" if largura > 1.80 else "32mm"
         linhas.append({
             "id": int(produto.get("id") or 0),
             "codigo": produto.get("codigo_interno") or produto.get("codigo_barras") or "",
             "nome": produto.get("nome") or "",
-            "largura": largura_produto_base_motor(produto),
-            "tubo": "38mm" if largura_produto_base_motor(produto) > 1.80 else "32mm",
+            "largura": largura,
+            "tubo": tubo,
             "itens_receita": len(carrinho),
             "faltantes": ", ".join(faltantes),
             "ja_tem_receita": "Sim" if receita_atual else "Não",
@@ -4082,15 +4089,56 @@ def largura_produto_base_motor(produto_base):
 
 def chaves_rolo_manual_por_largura(chaves, produto_base):
     """
-    Rolô manual não pode carregar tubo 32 + tubo 38, nem comando 32 + comando 38.
-    Regra inicial SmartTec: até 1,80m usa 32mm; acima disso usa 38mm.
-    Se a largura ainda não estiver informada, começa com 32mm e o usuário pode trocar.
+    Rolô manual: seleciona apenas o tubo/comando adequado para a largura.
+    Regra técnica central (app.technical.rules.rolo):
+    - <= 1,80m: tubo 32mm
+    - > 1,80m e <= 2,50m: tubo 38mm
+    - > 2,50m e <= 3,20m: tubo 43mm
+    - > 3,20m: manual proibido (motorização obrigatória)
+    Se a largura ainda não estiver informada, começa com 32mm.
     """
+    try:
+        from app.technical.rules.rolo import selecionar_tubo_rolo, MotorObrigatorioErro
+    except Exception:
+        # Fallback compatível
+        chaves = list(chaves or [])
+        largura = largura_produto_base_motor(produto_base)
+        if largura <= 0 or largura <= 1.80:
+            remover = {"tubo_38", "comando_38", "tubo_43", "comando_43"}
+        elif largura <= 2.50:
+            remover = {"tubo_32", "comando_32", "tubo_43", "comando_43"}
+        elif largura <= 3.20:
+            remover = {"tubo_32", "comando_32", "tubo_38", "comando_38"}
+        else:
+            # > 3,20: manual proibido, remove todos os manuais
+            remover = {"tubo_32", "comando_32", "tubo_38", "comando_38", "tubo_43", "comando_43"}
+        return [ch for ch in chaves if ch not in remover]
+
     chaves = list(chaves or [])
     largura = largura_produto_base_motor(produto_base)
-    usar_38 = largura > 1.80
 
-    remover = {"tubo_32", "comando_32"} if usar_38 else {"tubo_38", "comando_38"}
+    if largura <= 0:
+        # Sem largura: padrão 32mm
+        remover = {"tubo_38", "comando_38", "tubo_43", "comando_43"}
+        return [ch for ch in chaves if ch not in remover]
+
+    try:
+        selecao = selecionar_tubo_rolo(largura, acionamento="manual")
+    except MotorObrigatorioErro:
+        # Largura > 3,20: manual proibido, remove todos os tubos/comandos manuais
+        remover = {"tubo_32", "comando_32", "tubo_38", "comando_38", "tubo_43", "comando_43"}
+        return [ch for ch in chaves if ch not in remover]
+
+    diametro = selecao.diametro.value
+    # Remove os outros diâmetros
+    todos_diametros = {"32mm", "38mm", "43mm", "65mm", "70mm"}
+    remover_diametros = todos_diametros - {diametro}
+    remover = set()
+    for d in remover_diametros:
+        d_sufixo = d.replace("mm", "")
+        remover.add(f"tubo_{d_sufixo}")
+        remover.add(f"comando_{d_sufixo}")
+
     return [ch for ch in chaves if ch not in remover]
 
 
@@ -4153,7 +4201,8 @@ def aplicar_vinculos_tecnicos_motor(catalogo_auto, produtos_componentes, modelo_
     # - Livre: busca em todos os componentes, mas exige texto para não pesar a tela.
     chaves_carrinho = list(chaves) + ["bau_componentes", "componente_livre"]
 
-    carrinho_key = f"{prefixo_key}_carrinho_receita_tecnica"
+    tenant_id_cache = st.session_state.get("tenant_empresa_id")
+    carrinho_key = f"tenant_{tenant_id_cache}_{prefixo_key}_carrinho_receita_tecnica"
     if carrinho_key not in st.session_state:
         st.session_state[carrinho_key] = []
 
@@ -4276,7 +4325,7 @@ def aplicar_vinculos_tecnicos_motor(catalogo_auto, produtos_componentes, modelo_
 
     def produtos_base_para_categoria(chave):
         # Cache por categoria técnica: evita refazer a filtragem pesada a cada tecla digitada.
-        cache_key = f"{prefixo_key}_cache_carrinho_v47_{modelo_usado}_{motorizada}_{chave}"
+        cache_key = f"tenant_{tenant_id_cache}_{prefixo_key}_cache_carrinho_v47_{modelo_usado}_{motorizada}_{chave}"
 
         if cache_key in st.session_state:
             return st.session_state[cache_key]

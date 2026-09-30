@@ -1,0 +1,25 @@
+.header-notifications .notifications-panel { right: 0 !important; }
+.header-notifications .notifications-panel::before { right: 10px !important; }
+.header-notifications .notification-item { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 17px; border: 0; border-bottom: 1px solid var(--color-border); background: var(--color-surface); text-align: left; cursor: pointer; color: var(--color-primary); }
+.header-notifications .notification-item:hover { background: var(--color-surface-muted); }
+.header-notifications .notification-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -3px; }
+.header-notifications .notification-item > svg { flex-shrink: 0; }
+.header-notifications .notification-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; }
+.header-notifications .notification-type { font-size: 11px; font-weight: 600; }
+.header-notifications .notification-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text); font-size: 12px; }
+.header-notifications .notification-copy time { color: var(--color-muted); font-size: 11px; }
+.header-notifications .notification-limit { padding: 12px 17px; color: var(--color-muted); font-size: 11px; }
+@media (max-width: 640px) {
+  .header-notifications .notifications-panel { right: 12px !important; }
+}
+
+
+/* ===== NOTIFICACOES ESTOQUE ===== */
+
+.notification-stock > svg {
+  color: #d99100;
+}
+
+.notification-footer-actions {
+  grid-template-columns: repeat(3, 1fr);
+}

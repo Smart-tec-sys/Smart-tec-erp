@@ -15,6 +15,7 @@ class EmpresaDB(Base):
     id = Column(Integer, primary_key=True)
     nome = Column(String(255), nullable=False)
     nome_fantasia = Column(String(255), nullable=True)
+    logo_url = Column(String(500), nullable=True)
     documento = Column(String(50), nullable=True)
     status = Column(String(20), nullable=False, default="ATIVA")
     slug = Column(String(100), nullable=False, unique=True)

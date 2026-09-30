@@ -1,13 +1,351 @@
 import unittest
 
 from app.services.romana_calculo_producao import (
+    CATEGORIA_ESPAGUETE_BASE_ROMANA_3MM,
+    CATEGORIA_ESPAGUETE_ROMANA_2_5MM,
+    CATEGORIA_CORDA_ROMANA_1MM,
+    CATEGORIA_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+    CATEGORIA_COMANDO_NORMAL_ROMANA,
+    CATEGORIA_COMANDO_REDUCAO_ROMANA,
+    CATEGORIA_TAMPA_VARETA_ROMANA,
+    CATEGORIA_GUIA_CORDA_ROMANA,
+    CORDA_ROMANA_1MM_PRODUTO,
+    ID_COMERCIAL_ESPAGUETE_BASE_ROMANA_3MM,
+    ID_COMERCIAL_ESPAGUETE_ROMANA_2_5MM,
+    ID_COMERCIAL_COMANDO_NORMAL_ROMANA,
+    ID_COMERCIAL_COMANDO_REDUCAO_ROMANA,
+    IDS_COMERCIAIS_GUIA_CORDA_ROMANA,
+    IDS_COMERCIAIS_TAMPA_VARETA_ROMANA,
+    TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+    TIPO_CORRENTE_SEM_FIM_PRONTA,
+    TIPO_COMANDO_NORMAL,
+    TIPO_COMANDO_REDUCAO,
     RomanaCalculoEntrada,
+    calcular_quantidade_tampas_varetas,
     calcular_distribuicao_fabricacao_romana,
     calcular_producao_romana,
 )
 
 
 class RomanaCalculoProducaoTest(unittest.TestCase):
+    def test_recomendacao_de_comando_respeita_limite_de_220_cm(self):
+        for largura, recomendado in (
+            (120, False),
+            (220, False),
+            (220.1, True),
+            (240, True),
+        ):
+            with self.subTest(largura=largura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(largura, 200, 1)
+                )
+                self.assertEqual(
+                    resultado.tipos_comando_permitidos,
+                    (TIPO_COMANDO_NORMAL, TIPO_COMANDO_REDUCAO),
+                )
+                self.assertEqual(resultado.comando_reducao_recomendado, recomendado)
+                self.assertEqual(resultado.tipo_comando, TIPO_COMANDO_NORMAL)
+                self.assertEqual(
+                    resultado.categoria_comando_selecionado,
+                    CATEGORIA_COMANDO_NORMAL_ROMANA,
+                )
+                self.assertEqual(
+                    resultado.id_comercial_comando_selecionado,
+                    ID_COMERCIAL_COMANDO_NORMAL_ROMANA,
+                )
+                self.assertEqual(resultado.quantidade_comando, 1)
+
+    def test_recomendacao_nao_troca_comando_normal_acima_de_220_cm(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(240, 200, 1, tipo_comando=TIPO_COMANDO_NORMAL)
+        )
+
+        self.assertTrue(resultado.comando_reducao_recomendado)
+        self.assertEqual(resultado.tipo_comando, TIPO_COMANDO_NORMAL)
+        self.assertEqual(resultado.id_comercial_comando_selecionado, 273)
+        self.assertEqual(resultado.quantidade_comando, 1)
+
+    def test_comando_reducao_continua_selecionavel_em_qualquer_largura(self):
+        for largura in (120, 220, 220.1, 240):
+            with self.subTest(largura=largura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(
+                        largura,
+                        200,
+                        1,
+                        tipo_comando=TIPO_COMANDO_REDUCAO,
+                    )
+                )
+                self.assertEqual(resultado.tipo_comando, TIPO_COMANDO_REDUCAO)
+                self.assertEqual(
+                    resultado.categoria_comando_selecionado,
+                    CATEGORIA_COMANDO_REDUCAO_ROMANA,
+                )
+                self.assertEqual(
+                    resultado.id_comercial_comando_selecionado,
+                    ID_COMERCIAL_COMANDO_REDUCAO_ROMANA,
+                )
+                self.assertEqual(resultado.quantidade_comando, 1)
+
+    def test_comandos_sao_alternativas_e_nunca_somados(self):
+        normal = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(240, 200, 1, tipo_comando=TIPO_COMANDO_NORMAL)
+        )
+        reducao = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(240, 200, 1, tipo_comando=TIPO_COMANDO_REDUCAO)
+        )
+
+        self.assertEqual(normal.quantidade_comando, 1)
+        self.assertEqual(reducao.quantidade_comando, 1)
+        self.assertNotEqual(
+            normal.id_comercial_comando_selecionado,
+            reducao.id_comercial_comando_selecionado,
+        )
+        self.assertEqual(normal.categoria_comando_normal, CATEGORIA_COMANDO_NORMAL_ROMANA)
+        self.assertEqual(normal.id_comercial_comando_normal, 273)
+        self.assertEqual(normal.categoria_comando_reducao, CATEGORIA_COMANDO_REDUCAO_ROMANA)
+        self.assertEqual(normal.id_comercial_comando_reducao, 272)
+
+    def test_romana_de_75_cm_permite_corrente_pronta_de_referencia(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 75, 1)
+        )
+
+        self.assertEqual(resultado.tipo_corrente, TIPO_CORRENTE_SEM_FIM_PRONTA)
+        self.assertEqual(resultado.corrente_pronta_referencia_m, 1.25)
+        self.assertEqual(resultado.corrente_pronta_referencia_status, "REFERENCIA_PRONTA")
+        self.assertIsNone(resultado.medida_personalizada_m)
+        self.assertEqual(resultado.medida_corrente_selecionada_m, 1.25)
+        self.assertEqual(resultado.quantidade_correntes, 1)
+
+    def test_romana_de_75_cm_permite_corrente_personalizada_sem_somar_pronta(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(
+                120,
+                75,
+                1,
+                tipo_corrente=TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+                medida_personalizada_m=0.80,
+            )
+        )
+
+        self.assertEqual(
+            resultado.tipo_corrente,
+            TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+        )
+        self.assertEqual(
+            resultado.categoria_corrente_personalizada,
+            CATEGORIA_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+        )
+        self.assertEqual(resultado.corrente_pronta_referencia_m, 1.25)
+        self.assertEqual(resultado.medida_personalizada_m, 0.80)
+        self.assertEqual(resultado.medida_corrente_selecionada_m, 0.80)
+        self.assertNotEqual(
+            resultado.medida_corrente_selecionada_m,
+            resultado.corrente_pronta_referencia_m + resultado.medida_personalizada_m,
+        )
+        self.assertEqual(resultado.quantidade_correntes, 1)
+
+    def test_corrente_personalizada_exige_medida_positiva(self):
+        for medida in (None, 0, -0.5):
+            with self.subTest(medida=medida):
+                with self.assertRaises(ValueError):
+                    calcular_distribuicao_fabricacao_romana(
+                        RomanaCalculoEntrada(
+                            120,
+                            75,
+                            1,
+                            tipo_corrente=TIPO_CORRENTE_JUTA_BOLA10_PERSONALIZADA,
+                            medida_personalizada_m=medida,
+                        )
+                    )
+
+    def test_referencias_prontas_continuam_disponiveis_por_altura(self):
+        for altura, medida, status in (
+            (75, 1.25, "REFERENCIA_PRONTA"),
+            (149.99, 1.25, "REFERENCIA_PRONTA"),
+            (150, 1.50, "REFERENCIA_PRONTA"),
+            (260, 1.50, "REFERENCIA_PRONTA"),
+            (260.01, 1.75, "REFERENCIA_INICIAL_SUPERIOR_PROVISORIA"),
+        ):
+            with self.subTest(altura=altura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(120, altura, 1)
+                )
+                self.assertEqual(resultado.corrente_pronta_referencia_m, medida)
+                self.assertEqual(resultado.corrente_pronta_referencia_status, status)
+
+    def test_corda_da_romana_de_120_por_200(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 200, 1)
+        )
+
+        self.assertEqual(resultado.categoria_corda_romana_1mm, CATEGORIA_CORDA_ROMANA_1MM)
+        self.assertEqual(
+            resultado.produto_comercial_corda_romana_1mm,
+            CORDA_ROMANA_1MM_PRODUTO,
+        )
+        self.assertEqual(resultado.produto_comercial_corda_romana_1mm, "PENDENTE")
+        self.assertAlmostEqual(
+            resultado.posicao_ultima_vareta_cm,
+            resultado.posicoes_varetas[-1].posicao_cm,
+        )
+        self.assertAlmostEqual(
+            resultado.corda_por_linha_cm,
+            resultado.posicao_ultima_vareta_cm + 5,
+        )
+        self.assertEqual(resultado.quantidade_cavaletes, 2)
+        self.assertAlmostEqual(
+            resultado.corda_total_cm,
+            resultado.corda_por_linha_cm * 2,
+        )
+        self.assertAlmostEqual(resultado.corda_total_m, resultado.corda_total_cm / 100)
+
+    def test_corda_total_acompanha_as_faixas_de_cavaletes(self):
+        for largura, cavaletes in ((120, 2), (180, 3), (240, 4)):
+            with self.subTest(largura=largura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(largura, 200, 1)
+                )
+                self.assertEqual(resultado.quantidade_cavaletes, cavaletes)
+                self.assertAlmostEqual(
+                    resultado.corda_por_linha_cm,
+                    resultado.posicoes_varetas[-1].posicao_cm + 5,
+                )
+                self.assertAlmostEqual(
+                    resultado.corda_total_cm,
+                    resultado.corda_por_linha_cm * cavaletes,
+                )
+                self.assertAlmostEqual(
+                    resultado.corda_total_m,
+                    resultado.corda_total_cm / 100,
+                )
+
+    def test_geometria_diferente_altera_corda_por_linha(self):
+        resultado_200 = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 200, 1)
+        )
+        resultado_240 = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 240, 1)
+        )
+
+        self.assertNotEqual(
+            resultado_200.posicao_ultima_vareta_cm,
+            resultado_240.posicao_ultima_vareta_cm,
+        )
+        self.assertNotEqual(
+            resultado_200.corda_por_linha_cm,
+            resultado_240.corda_por_linha_cm,
+        )
+        self.assertAlmostEqual(
+            resultado_240.corda_por_linha_cm,
+            resultado_240.posicoes_varetas[-1].posicao_cm + 5,
+        )
+
+    def test_espaguetes_separados_da_romana_de_120_por_200(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 200, 1)
+        )
+
+        self.assertEqual(resultado.quantidade_varetas, 6)
+        self.assertEqual(resultado.largura_vareta_cm, 118.5)
+        self.assertEqual(
+            resultado.categoria_espaguete_romana_2_5mm,
+            CATEGORIA_ESPAGUETE_ROMANA_2_5MM,
+        )
+        self.assertEqual(
+            resultado.id_comercial_espaguete_romana_2_5mm,
+            ID_COMERCIAL_ESPAGUETE_ROMANA_2_5MM,
+        )
+        self.assertAlmostEqual(resultado.espaguete_romana_2_5_total_cm, 829.5)
+        self.assertAlmostEqual(resultado.espaguete_romana_2_5_total_m, 8.295)
+
+        self.assertEqual(resultado.largura_base_cm, 119.0)
+        self.assertEqual(
+            resultado.categoria_espaguete_base_romana_3mm,
+            CATEGORIA_ESPAGUETE_BASE_ROMANA_3MM,
+        )
+        self.assertEqual(
+            resultado.id_comercial_espaguete_base_romana_3mm,
+            ID_COMERCIAL_ESPAGUETE_BASE_ROMANA_3MM,
+        )
+        self.assertAlmostEqual(resultado.espaguete_base_romana_3mm_total_cm, 119.0)
+        self.assertAlmostEqual(resultado.espaguete_base_romana_3mm_total_m, 1.19)
+
+    def test_consumo_dos_espaguetes_em_outras_larguras_e_varetas(self):
+        casos = (
+            (100, 120, 4),
+            (200, 240, 6),
+            (260, 260, 8),
+        )
+        for largura, altura, varetas in casos:
+            with self.subTest(largura=largura, altura=altura):
+                resultado = calcular_distribuicao_fabricacao_romana(
+                    RomanaCalculoEntrada(largura, altura, 1)
+                )
+                largura_vareta = largura - 1.5
+                largura_base = largura - 1.0
+
+                self.assertEqual(resultado.quantidade_varetas, varetas)
+                self.assertAlmostEqual(resultado.largura_vareta_cm, largura_vareta)
+                self.assertAlmostEqual(
+                    resultado.espaguete_romana_2_5_total_cm,
+                    (varetas + 1) * largura_vareta,
+                )
+                self.assertAlmostEqual(
+                    resultado.espaguete_romana_2_5_total_m,
+                    ((varetas + 1) * largura_vareta) / 100,
+                )
+                self.assertAlmostEqual(resultado.largura_base_cm, largura_base)
+                self.assertAlmostEqual(
+                    resultado.espaguete_base_romana_3mm_total_cm,
+                    largura_base,
+                )
+                self.assertAlmostEqual(
+                    resultado.espaguete_base_romana_3mm_total_m,
+                    largura_base / 100,
+                )
+
+    def test_duas_tampas_por_vareta(self):
+        for varetas, tampas in ((4, 8), (6, 12), (8, 16), (10, 20)):
+            with self.subTest(varetas=varetas):
+                self.assertEqual(calcular_quantidade_tampas_varetas(varetas), tampas)
+
+    def test_guias_de_corda_sao_alternativas_para_uma_quantidade_tecnica(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 200, 1)
+        )
+        self.assertEqual(resultado.varetas_com_passadores, (2, 4, 6))
+        self.assertEqual(resultado.quantidade_cavaletes, 2)
+        self.assertEqual(resultado.quantidade_guias_corda, 3 * 2)
+        self.assertEqual(
+            resultado.quantidade_guias_corda,
+            resultado.quantidade_total_passadores,
+        )
+        self.assertEqual(resultado.categoria_guia_corda, CATEGORIA_GUIA_CORDA_ROMANA)
+        self.assertEqual(resultado.ids_comerciais_guia_corda, (667, 668))
+        self.assertEqual(
+            resultado.ids_comerciais_guia_corda,
+            IDS_COMERCIAIS_GUIA_CORDA_ROMANA,
+        )
+
+    def test_tampas_da_romana_de_120_por_200(self):
+        resultado = calcular_distribuicao_fabricacao_romana(
+            RomanaCalculoEntrada(120, 200, 1)
+        )
+        self.assertEqual(resultado.quantidade_gomos, 7)
+        self.assertEqual(resultado.quantidade_varetas, 6)
+        self.assertEqual(resultado.quantidade_tampas_varetas, 12)
+        self.assertEqual(resultado.categoria_tampa_vareta, CATEGORIA_TAMPA_VARETA_ROMANA)
+        self.assertEqual(
+            resultado.ids_comerciais_tampa_vareta,
+            (292, 294, 920, 921, 922, 923, 2598),
+        )
+        self.assertEqual(
+            resultado.ids_comerciais_tampa_vareta,
+            IDS_COMERCIAIS_TAMPA_VARETA_ROMANA,
+        )
+
     def assert_calculo(self, altura, gomos, tamanho, base):
         resultado = calcular_producao_romana(
             RomanaCalculoEntrada(largura_cm=120, altura_cm=altura, quantidade=1)

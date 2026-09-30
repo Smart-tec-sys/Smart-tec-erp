@@ -89,4 +89,8 @@ A posição de cada vareta é a soma acumulada dos gomos anteriores. Existem `go
 
 ### Próxima regra: conjuntos alinhados
 
-Ainda não implementada: em conjuntos lado a lado, a peça mais alta será a mestre; peças menores herdarão posições comuns e compensarão a diferença no último gomo. Essa regra exige validação própria, especialmente para Romana de teto.
+Implementada como camada pura separada: em conjuntos lado a lado, a peça mais alta é a mestre e mantém integralmente o cálculo individual. Todas as menores herdam diretamente as posições da mesma mestre que couberem abaixo de suas alturas; o trecho restante vira o último gomo compensador. Nenhuma menor serve de referência para outra.
+
+O grupo não corrige silenciosamente paridade incompatível, ausência de vareta ou último gomo muito pequeno. Esses casos retornam `REVISAR_GRUPO_ALINHADO`. O limiar de 50% do padrão da mestre é somente diagnóstico e não constitui limite industrial. O corte de cada menor usa sua altura real e sua própria quantidade herdada de varetas.
+
+Esse mecanismo será uma dependência central da futura Romana de teto, mas não habilita nem calcula a produção de `ROMANA_TETO`.
