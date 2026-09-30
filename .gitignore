@@ -60,3 +60,16 @@ frontend-erp/dist/
 # Smart-tec - backups locais de diagnóstico/checkpoint
 commit*-staged-backup.patch
 fase*_backup_*.json
+# ============================================================
+# Smart-tec - artefatos locais de desenvolvimento
+# ============================================================
+media/
+prompt_*.txt
+schemas_*.txt
+fase*_resultado*.txt
+fase*_resultado*.csv
+fase*_saida*.txt
+fase*_resolucao*.txt
+fase*_fornecedor_custo_final.txt
+fase*_auditoria*.csv
+package-lock.json
