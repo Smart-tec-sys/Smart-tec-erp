@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from app.database import engine
 
+from app.routes.webhooks_wix import router as router_webhooks_wix
 from app.routes.cliente import router as router_cliente
 from app.routes.fornecedor import router as router_fornecedor
 from app.routes.funcionario import router as router_funcionario
@@ -80,6 +81,7 @@ def health_db():
 # =========================================================
 # INCLUIR ROTAS
 # =========================================================
+app.include_router(router_webhooks_wix)
 app.include_router(router_cliente, prefix="/clientes", tags=["Clientes"])
 app.include_router(router_fornecedor, prefix="/fornecedores", tags=["Fornecedores"])
 app.include_router(router_funcionario, prefix="/funcionarios", tags=["Funcionários"])
