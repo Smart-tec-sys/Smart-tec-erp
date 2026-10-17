@@ -46,8 +46,36 @@ def fingerprint(value):
     return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest() if value else None
 
 
+def valid_instance_id(value):
+    # The REST contract supplies a string. Validate without rewriting its value.
+    return (
+        isinstance(value, str)
+        and value != ""
+        and not any(
+            character.isspace() or ord(character) < 32 or 127 <= ord(character) <= 159
+            for character in value
+        )
+    )
+
+
+def require_allowed_instance(envelope):
+    allowed = os.getenv("WIX_ALLOWED_INSTANCE_ID")
+    if not valid_instance_id(allowed):
+        logger.error("wix_webhook_instance_configuration_invalid")
+        raise HTTPException(status_code=503, detail="Webhook Wix não configurado")
+
+    instance_id = envelope.get("instanceId")
+    if not valid_instance_id(instance_id):
+        raise ValueError("Invalid installation identifier")
+    if instance_id != allowed:
+        logger.warning("wix_webhook_instance_not_allowed")
+        raise HTTPException(status_code=403, detail="Instalação Wix não autorizada")
+
+
 def diagnostic_fields(claims):
     envelope = object_value(claims["data"])
+    # claims reaches this function only after RS256 verification.
+    require_allowed_instance(envelope)
     if envelope.get("eventType") != EVENT_TYPE:
         raise HTTPException(status_code=403, detail="Evento Wix não autorizado")
     event = object_value(envelope["data"])
