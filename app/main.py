@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from app.settings import get_commercial_mode_setting, initialize_backend_configuration
 
 initialize_backend_configuration()
@@ -33,11 +34,23 @@ from app.routes.financeiro_fluxo_caixa import router as router_financeiro_fluxo_
 # =========================================================
 # INSTANCIAR O FASTAPI
 # =========================================================
-app = FastAPI(title="Smart-tec ERP API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.integracao_comercial = preparar_integracao_comercial(
+        get_commercial_mode_setting()
+    )
+    try:
+        yield
+    finally:
+        app.state.integracao_comercial.encerrar()
 
-# Integracao comercial: sempre OFF nesta fase; sem pool, thread, consulta ou dependencia em rotas.
-app.state.integracao_comercial = preparar_integracao_comercial(get_commercial_mode_setting())
-app.add_event_handler("shutdown", app.state.integracao_comercial.encerrar)
+
+app = FastAPI(
+    title="Smart-tec ERP API",
+    lifespan=lifespan,
+)
+
+# Integracao comercial inicializada e encerrada pelo lifespan do FastAPI.
 from pathlib import Path
 
 MEDIA_DIR = Path("media")
