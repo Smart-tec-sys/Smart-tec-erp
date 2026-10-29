@@ -1,8 +1,9 @@
-# Wix Pricing Plans → Smart-tec ERP — Etapa 1
+# Wix Pricing Plans → Smart-tec ERP — Proteção de instalação (Etapa 3G)
 
 Endpoint público: `POST /webhooks/wix/pricing-plans`.
 Recebe, valida e diagnostica. Não acessa banco, não provisiona, não altera empresas,
-usuários, planos, autenticação, checkout ou tabelas. Nenhum commit faz parte desta etapa.
+usuários, planos, autenticação do ERP, checkout ou tabelas. A proteção de instalação
+é uma alteração local; commit, push e publicação exigem autorização própria.
 
 ## Origem e formato
 
@@ -14,8 +15,9 @@ iat e nbf quando presentes. Não se inventam issuer/audience ausentes do contrat
 Não há consulta externa durante a requisição.
 
 Após a verificação: claim data → envelope com eventType/instanceId/data →
-data do evento → actionEvent.body.order. Aceita strings JSON ou objetos nessas
-camadas. Exige event id, order id, planId, entityId consistente, entityFqdn
+validação exata do instanceId permitido → data do evento → actionEvent.body.order.
+Aceita strings JSON ou objetos nessas camadas. Exige event id, order id, planId,
+entityId consistente, entityFqdn
 wix.pricing_plans.v2.order e slug purchased.
 
 Evento autorizado: `wix.pricing_plans.v2.order_purchased`.
@@ -23,24 +25,53 @@ Outros eventos recebem 403 e não são diagnosticados como compras.
 
 ## Configuração
 
-Variável necessária: `WIX_WEBHOOK_PUBLIC_KEY`.
+Variáveis necessárias: `WIX_WEBHOOK_PUBLIC_KEY` e `WIX_ALLOWED_INSTANCE_ID`.
 Obter a chave pública do app em Wix → Webhooks → Get Public Key (ou View ID & keys).
 Usar PEM RSA, com quebras reais de linha ou sequências literais `\n`.
 Não usar app secret, chave privada ou chave do Supabase. Nunca registrar a chave.
 Não há alteração automática de .env. O bootstrap existente já carrega o ambiente.
 
-A assinatura confirma a origem Wix para o app da chave. Esta etapa não faz
-vinculação de instanceId/site/contato a uma empresa; isso depende da Etapa 2.
+`WIX_ALLOWED_INSTANCE_ID` deve conter o Instance ID completo da instalação
+autorizada, obtido em Custom Apps → app → Manage → App Installations, conferindo
+o site da mesma linha. App ID identifica o aplicativo; Site ID identifica o site;
+Instance ID identifica a instalação desse aplicativo no site. Nenhum desses
+outros campos substitui `instanceId` no envelope assinado.
+
+A assinatura RS256 é verificada antes de interpretar o envelope e validar sua
+instalação. O campo usado é `instanceId` dentro do claim `data` do JWT:
+verificação da assinatura → parsing de `claims["data"]` → `envelope["instanceId"]`.
+O campo pode ser lido somente dessa estrutura autenticada; headers, query,
+claim de nível superior, dados do pedido, metadata SDK e identity.appId não
+servem como alternativas.
+
+O contrato REST fornece uma string, descrita nas referências de instância como
+App instance GUID, sem regex, versão UUID ou regra textual de normalização
+especificada para esse envelope. A comparação é exata e sensível à caixa:
+não aplica trim, lowercase, conversão para UUID, hash ou normalização Unicode.
+Como validação defensiva, configuração e identificador recebido precisam ser
+strings não vazias, sem espaços ou caracteres de controle; rejeitar esses
+valores não os transforma em identificadores válidos. Não impor um regex UUID
+deduzido somente de exemplos.
+
+Configuração ausente ou inválida falha fechada com 503. Identificador recebido
+ausente, vazio, de outro tipo ou com espaços/controles recebe 400. Uma string
+diferente da instalação permitida recebe 403, sem revelar nenhum dos valores.
+As variáveis são lidas na requisição, sem carregar credenciais na importação.
 Cada app configurado deve usar sua própria chave pública.
+
+Esta proteção não vincula pedido, contato ou instalação a uma empresa Smart-tec
+e não confirma pagamento. O Instance ID real não deve aparecer em código,
+testes, documentação, respostas ou logs. Configuração no Render e publicação
+desta alteração exigem autorização própria; não são executadas nesta etapa.
 
 ## Respostas
 
 - 200: evento autorizado, validado e diagnosticado; corpo {"status":"received"}.
-- 400: corpo vazio ou estrutura/campos inválidos após assinatura válida.
+- 400: corpo vazio ou estrutura/campos/instanceId inválidos após assinatura válida.
 - 401: JWT malformado, algoritmo diferente, assinatura inválida ou token expirado ou claim data obrigatória ausente/nula.
-- 403: evento não autorizado.
+- 403: instalação diferente da permitida ou evento não autorizado.
 - 413: corpo maior que 256 KiB.
-- 503: chave pública ausente ou inválida; falha fechada.
+- 503: chave pública ou WIX_ALLOWED_INSTANCE_ID ausente/inválida; falha fechada.
 
 Resposta 200 reconhece recebimento, nunca pagamento, provisionamento ou liberação.
 O processamento é local, sem banco ou chamadas de rede. Não há SLA medido de produção.
@@ -64,7 +95,8 @@ planName só aparece em claro quando corresponde exatamente ao nome conhecido
 para aquele planId; nomes divergentes/desconhecidos geram fingerprint.
 Campos opcionais ausentes aparecem como null, sem inferir pagamento.
 A lista permitida exclui emails, nomes de pessoas, formulários, preços, identidade,
-JWT, chaves e corpo completo. O JSON do log escapa caracteres de controle.
+instanceId, WIX_ALLOWED_INSTANCE_ID, JWT, chaves e corpo completo. Rejeições da
+instalação registram apenas mensagens constantes, antes do diagnóstico do pedido. O JSON do log escapa caracteres de controle.
 Restringir acesso e retenção dos logs de diagnóstico no servidor.
 
 ## Duplicidade
@@ -111,14 +143,18 @@ Na raiz C:\Users\valmi\Smart-tec ERP, usando o ambiente existente:
 
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = "1"
+$env:PYTEST_DISABLE_PLUGIN_AUTOLOAD = "1"
 & .venv/Scripts/python.exe -m pytest tests/test_webhooks_wix.py -q -p no:cacheprovider
 $env:WIX_WEBHOOK_PUBLIC_KEY = Get-Content "C:\caminho\wix-public-key.pem" -Raw
+$env:WIX_ALLOWED_INSTANCE_ID = Read-Host "Instance ID completo da instalação autorizada"
 & .venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 O app completo precisa da configuração existente de inicialização, sem alterações
 nesta etapa. Os testes carregam somente o router e não inicializam banco ou Auth.
-Usam uma chave RSA efêmera de teste, nunca credenciais reais.
+Usam uma chave RSA efêmera e identificadores fictícios, nunca credenciais ou
+Instance IDs reais. HTTP e DNS são bloqueados antes de importar o router e durante
+os testes. Autoload de plugins, cache pytest e gravação de pyc ficam desabilitados.
 
 Com um JWT recente assinado pelo Wix salvo localmente (não colocar em logs):
 
@@ -139,6 +175,9 @@ cancelamentos/reembolsos e eventual provisionamento. Tudo exige nova autorizaç�
 
 ## Fontes oficiais
 
+- [Webhook REST sem SDK](https://dev.wix.com/docs/build-apps/develop-your-app/develop-a-self-managed-app/webhooks/handle-events-with-webhooks-for-self-hosting-without-the-java-script-sdk)
+- [About App Instances](https://dev.wix.com/docs/build-apps/develop-your-app/auth/app-instances/about-app-instances)
+- [App Installations](https://dev.wix.com/docs/build-apps/manage-your-app/data-and-analytics/app-installations)
 - [About Webhooks](https://dev.wix.com/docs/build-apps/develop-your-app/api-integrations/events-and-webhooks/about-webhooks)
 - [Verify Requests Received from Wix](https://dev.wix.com/docs/build-apps/develop-your-app/auth/verify-requests-received-from-wix)
 - [Estrutura de eventos](https://dev.wix.com/docs/api-reference/articles/work-with-wix-apis/platform/about-the-structure-of-webhooks)
