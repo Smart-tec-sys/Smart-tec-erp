@@ -155,7 +155,7 @@ class PedidoItemCreate(BaseModel):
     calculo_producao_status: Optional[str] = None
     dados_tecnicos: Optional[dict] = None
 
-    @root_validator
+    @root_validator(skip_on_failure=True)
     def validar_item(cls, values):
         if values.get("tipo_item") == "PRODUTO" and values.get("produto_id") is None:
             config = (values.get("dados_tecnicos") or {}).get("cortina") or {}
