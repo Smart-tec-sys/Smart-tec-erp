@@ -1,37 +1,17 @@
-import { useEffect } from 'react'
+import { CurtainComponents } from './CurtainComponents'
+import { curtainComponentLines } from '../utils/curtainComponents'
+import { DEFAULT_CURTAIN, canonicalFabricSupplier, getFabricSupplier, getFabricCollection, getFabricVariant, getFabricDisplayName, normalizeCurtainFabric, getFabricColorLabel, curtainFabricCatalog, fabricVariants, fabricState } from '../utils/curtainFabricCatalog'
+import { technicalSimulationError } from '../utils/technicalSimulation'
+import { useEffect, useRef } from 'react'
 import { simulateCurtain } from '../services/api'
 import type { ApiProduct, BudgetProduct, CurtainState } from '../types/budget'
-import { normalizeSearch, parseDecimal } from '../types/budget'
+import { normalizeSearch, parseDecimal, curtainKey, formatCurrency } from '../types/budget'
 
 type Props = {
   profile: 'Decorador' | 'Varejo' | 'Consumidor final'
   product: BudgetProduct
   catalog: ApiProduct[]
   onResult: (id: number, state: CurtainState) => void
-}
-
-const DEFAULT_CURTAIN: CurtainState = {
-  tecido: '',
-  cor: '',
-  larguraTecido: 1.5,
-  possuiForro: false,
-  tipoForro: '',
-  modeloPrega: 'WAVE',
-  fator: 2.5,
-  trilhoLinha: 'MINI',
-  trilhoModelo: 'SIMPLES',
-  rodizioTipo: 'MINI',
-  possuiGancho: true,
-  cabecaCm: 10,
-  barraCm: 15,
-  barraDupla: true,
-  usaEntretela: true,
-  tipoEntretela: 'TNT',
-  fixacaoCortina: 'RODIZIO',
-  trilhoComCordas: false,
-  sistemaWave: 'PREGA_PRONTA',
-  espacamentoBotaoCm: 10,
-  aberturaCortina: 'LATERAL_ESQUERDA',
 }
 
 function isCurtain(product: BudgetProduct) {
@@ -84,199 +64,10 @@ export function CurtainSimulation({ product, catalog, profile, onResult }: Props
 
   
 
-const canonicalFabricSupplier = (value: string | null | undefined) => {
-  const raw = String(value ?? '').trim()
-  const normalized = normalizeSearch(raw)
 
-  if (!normalized) return ''
-
-  // Aceita A??O, ACAO e tamb?m o legado quebrado A??O.
-  if (
-    normalized.includes('DISTRIBUIDORA') &&
-    (
-      normalized.includes('ACAO') ||
-      normalized.startsWith('A??O') ||
-      normalized.startsWith('A O') ||
-      normalized.startsWith('AO ')
-    )
-  ) {
-    return 'AÇÃO DISTRIBUIDORA'
-  }
-
-  if (
-    normalized.includes('JP PERSIANAS') ||
-    normalized === 'JP'
-  ) {
-    return 'JP PERSIANAS'
-  }
-
-  return raw
-}
-
-const isAcaoCurtainTableFabric = (fabric: ApiProduct) => {
-  const raw = fabric as ApiProduct & { linha?: string | null }
-  const line = normalizeSearch(raw.linha ?? '')
-  const name = normalizeSearch(fabric.nome ?? '')
-    .replace(/^\d+(?:-\d+)*\s*-\s*/, '')
-
-  return line === 'CORTINA' &&
-    /^(VOIL\b|LINHO VOIL\b|CAMBURI\b|PARATI\b|TECIDO VELUDO\b)/.test(name)
-}
-
-const getFabricSupplier = (fabric: ApiProduct) => {
-  const explicit = String(fabric.nome_fornecedor ?? '').trim()
-
-  if (explicit) return canonicalFabricSupplier(explicit)
-
-  if (isAcaoCurtainTableFabric(fabric)) {
-    return canonicalFabricSupplier('ACAO DISTRIBUIDORA')
-  }
-
-  const raw = fabric as ApiProduct & {
-    origem?: string | null
-  }
-
-  const origem = normalizeSearch(raw.origem ?? '')
-  const nome = normalizeSearch(fabric.nome ?? '')
-
-  if (
-    origem.includes('ACAO DISTRIBUIDORA') ||
-    origem.includes('TABELA DE CORTINAS') ||
-    origem.includes('TABELA CORTINA IMPORTADO')
-  ) {
-    return 'AÇÃO DISTRIBUIDORA'
-  }
-
-  if (
-    origem.includes('2 - TECIDO.PDF') ||
-    nome.includes(' JP ') ||
-    nome.startsWith('JP ') ||
-    nome.includes('JP157') ||
-    nome.includes('JP159') ||
-    nome.includes('RATTAN') ||
-    nome.includes('ROLLER') ||
-    nome.includes('PANDORA')
-  ) {
-    return 'JP PERSIANAS'
-  }
-
-  return ''
-}
-
-const getFabricCollection = (name: string | null | undefined) => {
-  let value = String(name ?? '').trim()
-
-  // Remove c?digo inicial
-  value = value.replace(/^\d+(?:-\d+)*\s*-\s*/, '')
-
-  // Remove largura final
-  value = value.replace(/\s*-\s*\d+[.,]\d+\s*M\s*$/i, '')
-
-  if (/^TECIDO VELUDO\s*-/i.test(value)) {
-    return 'VELUDO'
-  }
-
-  // Remove cor/c?digo final
-  value = value.replace(/\s*-\s*\(\d+\)\s*[^-]+$/i, '')
-
-  const parts = value
-    .split(/\s+-\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-
-  if (parts.length > 1) {
-    const first = parts[0]
-
-    if (
-      /^(RATTAN|ROLLER|PANDORA)$/i.test(first)
-    ) {
-      return first
-    }
-
-    if (
-      /^(VOIL LISO|VOIL TELA|VOIL XADREZ|VOIL RUSTICO|VOIL R?STICO|LINHO VOIL I|LINHO VOIL II|LINHO VOIL III|LINHO VOIL IV)$/i.test(first)
-    ) {
-      return first
-    }
-  }
-
-  return value
-    .replace(/^TECIDO\s+/i, '')
-    .replace(/^CORTINA\s+TECIDO\s+/i, '')
-    .trim()
-}
-
-const getFabricColorLabel = (fabric: ApiProduct) => {
-  const rawFabric = fabric as ApiProduct & {
-    cor?: string | null
-  }
-
-  const explicit = String(rawFabric.cor ?? '').trim()
-
-  if (explicit) return explicit
-
-  let value = String(fabric.nome ?? '').trim()
-  value = value.replace(/^\d+(?:-\d+)*\s*-\s*/, '')
-
-  const parts = value.split(/\s+-\s+/)
-
-  return String(parts[1] ?? '')
-    .replace(/^COR\s*/i, '')
-    .replace(/[()]/g, '')
-    .trim() || 'Sem cor identificada'
-}
-
-const selectFabric = (fabric: ApiProduct) => {
-    const rawWidth = Number(
-      String(fabric.largura ?? '')
-        .replace(',', '.')
-    )
-
-    let detectedWidth =
-      Number.isFinite(rawWidth) && rawWidth > 0
-        ? rawWidth
-        : undefined
-
-    if (!detectedWidth) {
-      const name = normalizeSearch(fabric.nome ?? '')
-      const match = name.match(/(?:^|\s)(1[,.]40|1[,.]50|2[,.]80|3[,.]00)(?:M|\s|$)/)
-
-      if (match) {
-        detectedWidth = Number(match[1].replace(',', '.'))
-      }
-    }
-
-    onResult(product.id, {
-      ...current,
-      tecido: fabric.nome ?? '',
-      tecidoNome: fabric.nome ?? '',
-      tecidoProdutoId: fabric.id,
-      fornecedorTecido: getFabricSupplier(fabric),
-      colecaoTecido: getFabricCollection(fabric.nome),
-      cor: getFabricColorLabel(fabric),
-      larguraTecido:
-        detectedWidth === 1.4 ||
-        detectedWidth === 1.5 ||
-        detectedWidth === 2.8 ||
-        detectedWidth === 3
-          ? detectedWidth
-          : current.larguraTecido,
-      simulationKey: undefined,
-      result: undefined,
-      error: undefined,
-    })
-  }
-
-  const selectedCatalogProduct =
-    catalog.find((p) => p.id === product.productId) ??
-    catalog.find(
-      (p) =>
-        normalizeSearch(p.nome ?? '') ===
-        normalizeSearch(product.product ?? '')
-    )
-
-  const resolvedProductId =
-    product.productId ?? selectedCatalogProduct?.id ?? null
+  const resolvedProductId = current.tecidoProdutoId ?? null
+  const latest = useRef(current)
+  latest.current = current
 
   const parseMeasure = (value: unknown) => {
     const parsed = parseDecimal(String(value ?? ''))
@@ -295,6 +86,12 @@ const selectFabric = (fabric: ApiProduct) => {
   const height = parseMeasure(product.height)
   const quantity = Math.max(1, product.quantity || 1)
 
+  useEffect(() => {
+    if (!applicable || !state || state.componentes !== undefined) return
+    // Carry explicit legacy selections once. Subsequent model/measure changes never replace user quantities.
+    onResult(product.id, { ...state, componentes: curtainComponentLines(state, width), simulationKey: undefined, result: undefined, error: undefined })
+  }, [applicable, state, product.id, width, onResult])
+
   const commercialProfile =
     profile === 'Decorador'
       ? 'DECORADOR'
@@ -302,32 +99,7 @@ const selectFabric = (fabric: ApiProduct) => {
         ? 'CONSUMIDOR_FINAL'
         : 'VAREJO'
 
-  const simulationKey = JSON.stringify([
-    commercialProfile,
-    product.discount,
-    resolvedProductId,
-    width,
-    height,
-    quantity,
-    current.fator,
-    current.larguraTecido,
-    current.modeloPrega,
-    current.possuiForro,
-    current.tipoForro ?? '',
-    current.trilhoLinha ?? '',
-    current.trilhoModelo ?? '',
-    current.rodizioTipo ?? '',
-    current.cabecaCm,
-    current.barraCm,
-    current.barraDupla,
-    current.usaEntretela,
-    current.tipoEntretela,
-    current.fixacaoCortina,
-    current.trilhoComCordas,
-    current.sistemaWave,
-    current.espacamentoBotaoCm,
-    current.aberturaCortina,
-  ])
+  const simulationKey = curtainKey({ ...product, curtain: current }, profile)
 
   useEffect(() => {
     if (
@@ -343,7 +115,15 @@ const selectFabric = (fabric: ApiProduct) => {
 
     const timer = window.setTimeout(() => {
       void simulateCurtain({
-        produto_id: resolvedProductId!,
+        tecido_produto_id: resolvedProductId!,
+        componentes: curtainComponentLines(current, width).filter(l => l.produto_id).map(l => ({ produto_id: l.produto_id!, quantidade: l.quantidade })),
+        forro_produto_id: current.possuiForro ? current.forroProdutoId : undefined,
+        largura_forro: current.possuiForro ? current.larguraForro : undefined,
+        trilho_produto_id: current.trilhoProdutoId,
+        rodizio_produto_id: current.rodizioProdutoId,
+        gancho_produto_id: current.ganchoProdutoId,
+        botao_produto_id: current.botaoProdutoId,
+        entretela_produto_id: current.entretelaProdutoId,
         largura: width,
         altura: height,
         quantidade: quantity,
@@ -376,7 +156,7 @@ const selectFabric = (fabric: ApiProduct) => {
           if (cancelled) return
 
           onResult(product.id, {
-            ...current,
+            ...latest.current,
             simulationKey,
             result,
             error: undefined,
@@ -386,13 +166,10 @@ const selectFabric = (fabric: ApiProduct) => {
           if (cancelled) return
 
           onResult(product.id, {
-            ...current,
+            ...latest.current,
             simulationKey,
             result: undefined,
-            error:
-              error instanceof Error
-                ? error.message
-                : String(error),
+            error: technicalSimulationError(error),
           })
         })
     }, 350)
@@ -445,77 +222,27 @@ const selectFabric = (fabric: ApiProduct) => {
     !simulationError
 
 
-const curtainFabricCatalog = catalog.filter((fabric) => {
-  const raw = fabric as ApiProduct & {
-    modelo_tecnico?: string | null
-    grupo_tecnico?: string | null
-    grupo_produto?: string | null
-    linha?: string | null
-    tipo_produto?: string | null
-  }
-
-  const group = normalizeSearch(raw.grupo_tecnico ?? '')
-  const productGroup = normalizeSearch(raw.grupo_produto ?? '')
-  const name = normalizeSearch(fabric.nome ?? '')
-
-  const isVerticalFabric = [
-    name,
-    group,
-    productGroup,
-    normalizeSearch(raw.modelo_tecnico ?? ''),
-    normalizeSearch(raw.linha ?? ''),
-    normalizeSearch(raw.tipo_produto ?? ''),
-  ].some((value) => /(^|[^A-Z])VERTICA(?:L|IS)([^A-Z]|$)/i.test(value))
-
-  if (isVerticalFabric) {
-    return false
-  }
-
-  if ([name, group, productGroup, normalizeSearch(raw.linha ?? '')]
-    .some((value) => value.includes('HOSPITALAR'))) {
-    return false
-  }
-
-  const isCurtainFabricGroup =
-    isAcaoCurtainTableFabric(fabric) ||
-    group === 'TECIDOS_CORTINA' ||
-    group === 'TECIDOS_CORTINAS' ||
-    productGroup.includes('TECIDO CORTINA') ||
-    productGroup.includes('TECIDO PARA CORTINA')
-
-  if (!isCurtainFabricGroup) {
-    return false
-  }
-
-  const isExcluded =
-    /FITA|TRILHO|VARAO|RODIZIO|MOTOR|MOTC|PONTEIRA|SUPORTE|CURVA|CORREIA|COMANDO|PERFIL|TAMPA|CLIP|FIO CONTINUO|MANIVELA|HOSPITALAR|CORTINA WAVE|CORTINA MOTORIZADA|APMOTV/.test(
-      name
-    )
-
-  if (isExcluded) {
-    return false
-  }
-
-  return true
-})
+const fabrics = curtainFabricCatalog(catalog)
 
   const selectedFabric =
-    curtainFabricCatalog.find(
+    fabrics.find(
       (fabric) => fabric.id === current.tecidoProdutoId
     ) ?? null
 
+  const normalizedSelection = selectedFabric ? normalizeCurtainFabric(selectedFabric) : null
+
   const selectedSupplier =
     canonicalFabricSupplier(current.fornecedorTecido) ||
-    (selectedFabric ? getFabricSupplier(selectedFabric) : '') ||
+    (normalizedSelection?.supplier ?? '') ||
     ''
 
   const selectedCollection =
     current.colecaoTecido ||
-    (selectedFabric ? getFabricCollection(selectedFabric.nome) : '')
+    (normalizedSelection?.collection ?? '')
 
   const fabricSuppliers = Array.from(
     new Set(
-      curtainFabricCatalog
+      fabrics
         .map((fabric) => getFabricSupplier(fabric))
         .filter(Boolean)
     )
@@ -523,41 +250,51 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
 
   const fabricCollections = Array.from(
     new Set(
-      curtainFabricCatalog
+      fabrics
         .filter(
           (fabric) =>
             getFabricSupplier(fabric) === selectedSupplier
         )
-        .map((fabric) => getFabricCollection(fabric.nome))
+        .map((fabric) => getFabricCollection(fabric.nome, getFabricSupplier(fabric)))
         .filter(Boolean)
     )
   ).sort((a, b) => a.localeCompare(b, 'pt-BR'))
 
-  const fabricColors = curtainFabricCatalog
-    .filter(
-      (fabric) =>
-        getFabricSupplier(fabric) === selectedSupplier &&
-        getFabricCollection(fabric.nome) === selectedCollection
-    )
-    .sort((a, b) =>
-      getFabricColorLabel(a).localeCompare(
-        getFabricColorLabel(b),
-        'pt-BR',
-        { numeric: true }
-      )
-    )
+  const selectedFabricName = normalizedSelection?.fabricName ?? current.tecidoNome ?? ''
+
+  const collectionFabrics = fabrics.filter((fabric) =>
+    getFabricSupplier(fabric) === selectedSupplier &&
+    getFabricCollection(fabric.nome, getFabricSupplier(fabric)) === selectedCollection
+  )
+  const fabricNames = Array.from(new Set(
+    collectionFabrics.map((fabric) => getFabricVariant(fabric).name).filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'pt-BR'))
 
   const clearFabricSelection = (
     fornecedorTecido: string,
-    colecaoTecido: string
+    colecaoTecido: string,
+    tecidoNome = ''
   ) => {
+    const variants = fabricVariants(catalog, { ...current, fornecedorTecido, colecaoTecido, tecidoNome, tecidoProdutoId: undefined })
+    const compatible = variants.filter(fabric => normalizeSearch(getFabricColorLabel(fabric)) === normalizeSearch(current.cor))
+    // A reference needs a real fabric ID even before the optional color is chosen.
+    const selected = compatible.length === 1 && current.cor
+      ? compatible[0]
+      : variants.find(fabric => fabric.id === current.tecidoProdutoId) ?? variants[0]
+    if (tecidoNome && selected) {
+      onResult(product.id, {
+        ...fabricState(current, selected),
+        cor: compatible.length === 1 && current.cor ? current.cor : '',
+      })
+      return
+    }
     onResult(product.id, {
       ...current,
       fornecedorTecido,
       colecaoTecido,
       cor: '',
       tecido: '',
-      tecidoNome: '',
+      tecidoNome,
       tecidoProdutoId: undefined,
       simulationKey: undefined,
       result: undefined,
@@ -620,40 +357,18 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
       </label>
 
       <label className="field">
-        <span>Cor</span>
+        <span>Tecido</span>
         <select
-          value={current.tecidoProdutoId ?? ''}
+          value={selectedFabricName}
           disabled={!selectedSupplier || !selectedCollection}
-          onChange={(e) => {
-            const id = Number(e.target.value)
-
-            const fabric = fabricColors.find(
-              (item) => item.id === id
-            )
-
-            if (fabric) {
-              selectFabric(fabric)
-            }
-          }}
+          onChange={(e) => clearFabricSelection(selectedSupplier, selectedCollection, e.target.value)}
         >
-          <option value="">
-            {selectedCollection
-              ? 'Selecione a cor'
-              : 'Escolha primeiro a coleção'}
-          </option>
-
-          {fabricColors.map((fabric) => (
-            <option key={fabric.id} value={fabric.id}>
-              {getFabricColorLabel(fabric)}
-            </option>
-          ))}
+          <option value="">{selectedCollection ? 'Selecione o tecido' : 'Escolha primeiro a coleção'}</option>
+          {fabricNames.map((name) => {
+            const fabric = collectionFabrics.find(item => getFabricVariant(item).name === name)
+            return <option key={name} value={name}>{fabric ? getFabricDisplayName(fabric) : name}</option>
+          })}
         </select>
-
-        {current.tecidoProdutoId && (
-          <small>
-            Tecido vinculado ao cadastro #{current.tecidoProdutoId}
-          </small>
-        )}
       </label>
 
         <label className="field">
@@ -702,7 +417,7 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
               type="number"
               min="0"
               step="1"
-              value={current.cabecaCm}
+              value={current.cabecaCm === 0 ? '' : current.cabecaCm}
               onChange={(e) => update('cabecaCm', Number(e.target.value))}
             />
             <span>cm</span>
@@ -760,11 +475,19 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
         {current.possuiForro && (
           <label className="field">
             <span>Tipo de forro</span>
-            <input
-              value={current.tipoForro ?? ''}
-              onChange={(e) => update('tipoForro', e.target.value)}
-              placeholder="Ex.: Tergal"
-            />
+            <select value={current.forroProdutoId ?? ''} onChange={e => {
+              const forro=catalog.find(p=>p.id===Number(e.target.value))
+              onResult(product.id,{...current,forroProdutoId:forro?.id,tipoForro:forro?.nome,
+                larguraForro:Number(forro?.largura)||undefined,simulationKey:undefined,result:undefined,error:undefined})
+            }}>
+              <option value="">Selecione o produto de forro</option>
+              {catalog.filter(p=>normalizeSearch(p.modelo_tecnico ?? '') !== 'CORTINA' && /FORRO|TERGAL/.test(normalizeSearch(p.nome))).map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+            {current.forroProdutoId && !Number(catalog.find(p=>p.id===current.forroProdutoId)?.largura) && <input
+              type="number" min="0.01" step="0.01" aria-label="Largura do forro em metros"
+              placeholder="Largura real do forro (m)" value={current.larguraForro ?? ''}
+              onChange={e=>update('larguraForro',Number(e.target.value)||undefined)} />}
+
           </label>
         )}
 
@@ -867,21 +590,7 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
         )}
 
         <label className="field">
-          <span>Linha do trilho</span>
-          <select
-            value={current.trilhoLinha ?? 'MINI'}
-            onChange={(e) =>
-              update('trilhoLinha', e.target.value as CurtainState['trilhoLinha'])
-            }
-          >
-            <option value="MINI">Mini</option>
-            <option value="MAX">Max</option>
-            <option value="MASTER">Master</option>
-          </select>
-        </label>
-
-        <label className="field">
-          <span>Modelo do trilho</span>
+          <span>Observação do trilho (opcional)</span>
           <input
             value={current.trilhoModelo ?? ''}
             onChange={(e) => update('trilhoModelo', e.target.value)}
@@ -890,9 +599,11 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
         </label>
       </div>
 
+      <CurtainComponents catalog={catalog} lines={curtainComponentLines(current, width)} onChange={lines => update('componentes', lines)} />
+
       {(!resolvedProductId || width <= 0 || height <= 0) && (
         <div className="api-message" role="status">
-          Informe um produto, largura e altura para calcular a cortina.
+          Selecione o tecido real e informe largura e altura para calcular a cortina.
         </div>
       )}
 
@@ -912,6 +623,8 @@ const curtainFabricCatalog = catalog.filter((fabric) => {
       {result && (
         <section className="api-message curtain-result" aria-live="polite">
           <strong>Cortina — simulação técnica</strong>
+          <p>Custo por peça: {formatCurrency(result.custo_total ?? 0)} · Valor unitário: {formatCurrency(result.preco_unitario ?? 0)}</p>
+          {result.avisos?.map((aviso,index)=><p key={index} role="status">{aviso}</p>)}
 
           <p>
             Desenvolvimento:{' '}

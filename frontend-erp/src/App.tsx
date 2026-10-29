@@ -1,3 +1,4 @@
+import { NewSalePage } from './pages/NewSalePage'
 import { useEffect, useState } from 'react'
 import {
     AlertCircle,
@@ -33,6 +34,10 @@ import {
 } from 'lucide-react'
 import type { Metric, RecentQuote } from './types/dashboard'
 import { BudgetsPage } from './pages/BudgetsPage'
+import { SalesPage } from './pages/SalesPage'
+import { SaleDetailPage } from './pages/SaleDetailPage'
+import { AccountingPage } from './pages/AccountingPage'
+import { FinancePage, type FinanceFocus } from './pages/FinancePage'
 import { NewBudgetPage } from './pages/NewBudgetPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { CadastrosPage, type CadastroEntity } from './pages/CadastrosPage'
@@ -41,7 +46,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
 import { getAdminMe } from './services/admin'
 import { useAuthSession } from './components/AuthGate'
-import { clearAuthSession } from './services/auth'
+import { signOut } from './services/auth'
 import { HeaderAgenda } from "./components/HeaderAgenda"
 import { HeaderNotifications } from "./components/HeaderNotifications"
 import { AgendaPage } from './pages/AgendaPage'
@@ -93,6 +98,7 @@ const navGroups = [
         items: [
             { label: 'Estoque', icon: 'layers' },
             { label: 'Financeiro', icon: 'wallet' },
+            { label: 'Contabilidade', icon: 'bar' },
             { label: 'Fiscal', icon: 'bar' },
             { label: 'Relatórios', icon: 'chart' },
         ],
@@ -161,6 +167,11 @@ const [activePage, setActivePage] = useState(() => {
     const [view, setView] = useState<
         'dashboard' |
         'budgets' |
+        'sales' |
+        'sale-detail' |
+        'new-sale' |
+        'accounting' |
+        'finance' |
         'new-budget' |
         'products' |
         'cadastro' |
@@ -174,6 +185,9 @@ const [activePage, setActivePage] = useState(() => {
         )
 
         if (saved === 'budgets') return 'budgets'
+        if (saved === 'sales' || saved === 'sale-detail' || saved === 'new-sale') return 'sales'
+        if (saved === 'accounting') return 'accounting'
+        if (saved === 'finance') return 'finance'
         if (saved === 'new-budget') return 'new-budget'
         if (saved === 'products') return 'products'
         if (saved === 'cadastro') return 'cadastro'
@@ -187,6 +201,8 @@ const [activePage, setActivePage] = useState(() => {
     const [searchOpen, setSearchOpen] = useState(false)
     const [userMenuOpen, setUserMenuOpen] = useState(false)
     const [budgetId, setBudgetId] = useState<number | null>(null)
+    const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null)
+    const [financeFocus, setFinanceFocus] = useState<FinanceFocus | null>(null)
     const [budgetRefresh, setBudgetRefresh] = useState(0)
     const [budgetSavedToast, setBudgetSavedToast] = useState<{ message: string } | null>(null)
     useEffect(() => {
@@ -213,6 +229,8 @@ const [activePage, setActivePage] = useState(() => {
                 window.localStorage.getItem(
                     'smarttec:last-cadastro',
                 )
+
+            if (saved === 'revendas' || saved === 'representantes') return saved
 
             if (saved === 'fornecedores') {
                 return 'fornecedores'
@@ -278,8 +296,19 @@ const [activePage, setActivePage] = useState(() => {
             : `${apiUrl}${companyLogoPath}`
         : null
 
-    const handleLogout = () => {
-        clearAuthSession()
+    const [loggingOut, setLoggingOut] = useState(false)
+    const [logoutError, setLogoutError] = useState('')
+    const handleLogout = async () => {
+        if (loggingOut) return
+        setLoggingOut(true)
+        setLogoutError('')
+        try {
+            await signOut()
+        } catch (error) {
+            setLogoutError(error instanceof Error ? error.message : 'Não foi possível sair. Tente novamente.')
+            setLoggingOut(false)
+            return
+        }
 
         window.localStorage.removeItem(
             'smarttec:last-view',
@@ -302,6 +331,8 @@ const [activePage, setActivePage] = useState(() => {
 
         const cadastroMap: Record<string, CadastroEntity> = {
             'Clientes': 'clientes',
+            'Revendas': 'revendas',
+            'Representantes': 'representantes',
             'Fornecedores': 'fornecedores',
             'Transportadoras': 'transportadoras',
             'Funcionários': 'funcionarios',
@@ -315,15 +346,26 @@ const [activePage, setActivePage] = useState(() => {
             return
         }
 
-        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Produtos' && label !== 'Configurações') return
+        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Produtos' && label !== 'Configurações') return
 
         setActivePage(label)
 
         if (label === 'Orçamentos') setView('budgets')
+        else if (label === 'Vendas') setView('sales')
+        else if (label === 'Contabilidade') setView('accounting')
+        else if (label === 'Financeiro') setView('finance')
         else if (label === 'Produtos') setView('products')
         else if (label === 'Configurações') setView('settings')
         else setView('dashboard')
 
+        setMobileOpen(false)
+    }
+
+    const openSale = (id: number) => {
+        if (!Number.isSafeInteger(id) || id <= 0) return
+        setSelectedSaleId(id)
+        setActivePage('Vendas')
+        setView('sale-detail')
         setMobileOpen(false)
     }
 
@@ -398,6 +440,8 @@ const [activePage, setActivePage] = useState(() => {
                                             <div className="nav-submenu">
                                                 {[
                                                     'Clientes',
+                                                    'Revendas',
+                                                    'Representantes',
                                                     'Fornecedores',
                                                     'Transportadoras',
                                                     'Funcionários',
@@ -520,8 +564,9 @@ const [activePage, setActivePage] = useState(() => {
                 </button>
             )}
 
-            <button type="button" onClick={handleLogout}>
-                Sair
+            {logoutError && <p role="alert">{logoutError}</p>}
+            <button type="button" onClick={handleLogout} disabled={loggingOut}>
+                {loggingOut ? 'Saindo...' : 'Sair'}
             </button>
         </div>
     )}
@@ -532,7 +577,22 @@ const [activePage, setActivePage] = useState(() => {
 <div className="page-wrap">
                     {view === 'agenda' && <AgendaPage newRequest={agendaNewRequest} onChanged={() => setAgendaRefresh(value => value + 1)} onBack={() => { setActivePage('Início'); setView('dashboard') }} />}
                     {view === 'budgets' && <BudgetsPage onNew={openNewBudget} refreshKey={budgetRefresh} onOpen={(id) => { setBudgetId(id); setActivePage('Orçamento'); setView('new-budget') }} />}
-                    {view === 'new-budget' && <NewBudgetPage budgetId={budgetId} onBack={() => navigate('Orçamentos')} onSaved={(id, mode) => { setBudgetId(id); setBudgetRefresh((value) => value + 1); navigate('Orçamentos'); setBudgetSavedToast({ message: mode === 'created' ? 'Orçamento salvo com sucesso.' : 'Orçamento atualizado com sucesso.' }) }} />}
+                    {(view === 'sales' || view === 'sale-detail') && (
+                        <div hidden={view === 'sale-detail' && selectedSaleId !== null}>
+                            <SalesPage onOpenSale={openSale} onViewFinance={id => { setFinanceFocus({ pedidoId: id, nonce: Date.now() }); setActivePage('Financeiro'); setView('finance'); setMobileOpen(false) }} onNewSale={() => { setActivePage('Vendas'); setView('new-sale'); setMobileOpen(false) }} />
+                        </div>
+                    )}
+                    {view === 'sale-detail' && selectedSaleId !== null && (
+                        <SaleDetailPage
+                            key={selectedSaleId}
+                            saleId={selectedSaleId}
+                            onBack={() => navigate('Vendas')}
+                        />
+                    )}
+                    {view === 'new-sale' && <NewSalePage onBack={() => navigate('Vendas')} onSaved={() => { navigate('Vendas'); setBudgetSavedToast({ message: 'Venda salva com sucesso.' }) }} />}
+                    {view === 'accounting' && <AccountingPage />}
+                    {view === 'finance' && <FinancePage focus={financeFocus} onClearFocus={() => setFinanceFocus(null)} />}
+                    {view === 'new-budget' && <NewBudgetPage budgetId={budgetId} onBack={() => navigate('Orçamentos')} onSaved={(id, mode) => { setBudgetId(id); setBudgetRefresh((value) => value + 1); navigate('Orçamentos'); setBudgetSavedToast({ message: mode === 'created' ? 'Orçamento salvo com sucesso.' : 'Orçamento atualizado com sucesso.' }) }} onConverted={() => navigate('Vendas')} />}
                     {view === 'products' && <ProductsPage />}
                     {view === 'cadastro' && <CadastrosPage entity={cadastroEntity} />}
                     {view === 'profile' && <MyProfilePage />}

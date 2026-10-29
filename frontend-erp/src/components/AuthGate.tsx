@@ -1,16 +1,21 @@
+import { resolveLoginAccess } from '../utils/loginAccess'
 import {
   createContext,
   useContext,
   useEffect,
   useState,
+  useRef,
   type FormEvent,
   type ReactNode,
 } from 'react'
 import {
   authEnabled,
+  AuthTokenError,
   captureRecoverySessionFromUrl,
   clearAuthSession,
   hasStoredAuthSession,
+  getPendingLoginStage,
+  setPendingLoginStage,
   initializeAuthenticatedSession,
   loginWithPassword,
   requestPasswordRecovery,
@@ -45,7 +50,7 @@ export function useRefreshAuthSession() {
   return refresh
 }
 
-type AuthView = 'login' | 'forgot' | 'reset' | 'mfa'
+type AuthView = 'login' | 'forgot' | 'reset' | 'mfa' | 'access'
 
 export function AuthGate({ children }: Props) {
   const [checking, setChecking] = useState(authEnabled)
@@ -67,7 +72,9 @@ export function AuthGate({ children }: Props) {
   const [confirmPassword, setConfirmPassword] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
+  const loginInFlight = useRef(false)
   const [error, setError] = useState('')
+  const [loginErrorStatus, setLoginErrorStatus] = useState<number | null>(null)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -86,25 +93,26 @@ export function AuthGate({ children }: Props) {
       return
     }
 
-    void initializeAuthenticatedSession()
-      .then(session => {
-        setAuthSession(session)
-        setAuthenticated(true)
-      })
-      .catch(() => {
-        clearAuthSession()
+    let cancelled = false
+    void loadLoginAccess()
+      .then(result => { if (!cancelled) applyLoginAccess(result) })
+      .catch(err => {
+        if (cancelled) return
         setAuthenticated(false)
+        setView('access')
+        setError(err instanceof Error ? err.message : String(err))
       })
-      .finally(() => {
-        setChecking(false)
-      })
+      .finally(() => { if (!cancelled) setChecking(false) })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
     if (!authenticated) return
 
     const handleFocus = () => {
-      void refreshAuthSession()
+      void refreshAuthSession().catch(() => {
+        setMessage('Não foi possível atualizar o perfil agora. A sessão atual foi mantida.')
+      })
     }
 
     window.addEventListener('focus', handleFocus)
@@ -113,66 +121,83 @@ export function AuthGate({ children }: Props) {
       window.removeEventListener('focus', handleFocus)
     }
   }, [authenticated])
+  function loadLoginAccess(verifiedAccessToken?: string) {
+    return resolveLoginAccess({
+      factors: listMfaFactors,
+      challenge: challengeTotpMfa,
+      profile: () => initializeAuthenticatedSession(verifiedAccessToken),
+      markProfile: () => setPendingLoginStage('profile'),
+    }, getPendingLoginStage() === 'security')
+  }
+
+  function applyLoginAccess(result: Awaited<ReturnType<typeof loadLoginAccess>>) {
+    setError('')
+    if (result.kind === 'mfa') {
+      setMfaFactorId(result.factorId)
+      setMfaChallengeId(result.challengeId)
+      setMfaCode('')
+      setView('mfa')
+      return
+    }
+    setPendingLoginStage(undefined)
+    setAuthSession(result.session)
+    setAuthenticated(true)
+  }
+
+  async function resumeLoginAccess(verifiedAccessToken?: string) {
+    try { applyLoginAccess(await loadLoginAccess(verifiedAccessToken)) }
+    catch (err) {
+      setAuthenticated(false)
+      setView('access')
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (loginInFlight.current) return
+    loginInFlight.current = true
     setSubmitting(true)
     setError('')
+    setLoginErrorStatus(null)
     setMessage('')
-
+    // Password managers can update native controls before React's onChange runs.
+    const form = new FormData(event.currentTarget)
+    const submittedEmail = String(form.get('email') ?? email)
+    const submittedPassword = String(form.get('password') ?? password)
     try {
-      await loginWithPassword(email, password)
-
-      const factors = await listMfaFactors()
-
-      console.table(
-        factors.map((factor: any) => ({
-          id: factor?.id,
-          nome: factor?.friendly_name,
-          tipo: factor?.factor_type,
-          status: factor?.status,
-          criado_em: factor?.created_at,
-          atualizado_em: factor?.updated_at,
-        }))
-      )
-
-      const verifiedTotp = factors.find(
-        (factor: any) =>
-          factor?.factor_type === 'totp' &&
-          factor?.status === 'verified'
-      )
-
-      if (verifiedTotp?.id) {
-        const challenge = await challengeTotpMfa(verifiedTotp.id)
-
-        if (!challenge?.id) {
-          throw new Error(
-            'Não foi possível iniciar a confirmação de segurança.'
-          )
-        }
-
-        setMfaFactorId(verifiedTotp.id)
-        setMfaChallengeId(challenge.id)
-        setMfaCode('')
-        setView('mfa')
+      try { await loginWithPassword(submittedEmail, submittedPassword) }
+      catch (err) {
+        clearAuthSession()
+        setAuthenticated(false)
+        setLoginErrorStatus(err instanceof AuthTokenError ? err.status : null)
+        setError(err instanceof Error ? err.message : String(err))
         return
       }
-
-      const session = await initializeAuthenticatedSession()
-      setAuthSession(session)
-      setAuthenticated(true)
-    } catch (err) {
-      clearAuthSession()
-      setAuthenticated(false)
-      setError(err instanceof Error ? err.message : String(err))
+      setPassword('')
+      setView('access')
+      await resumeLoginAccess()
     } finally {
+      loginInFlight.current = false
       setSubmitting(false)
     }
+  }
+
+  async function handleAccessRetry() {
+    if (loginInFlight.current) return
+    loginInFlight.current = true
+    setSubmitting(true)
+    setError('')
+    try { await resumeLoginAccess() }
+    finally { loginInFlight.current = false; setSubmitting(false) }
   }
 
   async function handleMfaVerification(
     event: FormEvent<HTMLFormElement>
   ) {
     event.preventDefault()
+    if (loginInFlight.current) return
+    loginInFlight.current = true
     setSubmitting(true)
     setError('')
     setMessage('')
@@ -200,16 +225,15 @@ export function AuthGate({ children }: Props) {
 
       setMfaChallengeId(freshChallenge.id)
 
-      await verifyTotpMfa(
+      const verifiedSession = await verifyTotpMfa(
         mfaFactorId,
         freshChallenge.id,
         code
       )
 
-      const session = await initializeAuthenticatedSession()
-
-      setAuthSession(session)
-      setAuthenticated(true)
+      setPendingLoginStage('profile')
+      setView('access')
+      await resumeLoginAccess(verifiedSession.accessToken)
 
       setMfaFactorId('')
       setMfaChallengeId('')
@@ -217,6 +241,7 @@ export function AuthGate({ children }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
+      loginInFlight.current = false
       setSubmitting(false)
     }
   }
@@ -336,6 +361,7 @@ export function AuthGate({ children }: Props) {
               <span>E-mail</span>
               <input
                 type="email"
+                name="email"
                 autoComplete="off"
                 value={email}
                 onChange={event => setEmail(event.target.value)}
@@ -348,6 +374,7 @@ export function AuthGate({ children }: Props) {
               <span>Senha</span>
               <input
                 type="password"
+                name="password"
                 autoComplete="current-password"
                 value={password}
                 onChange={event => setPassword(event.target.value)}
@@ -367,7 +394,7 @@ export function AuthGate({ children }: Props) {
               Esqueci minha senha
             </button>
 
-            {error && <div className="auth-error" role="alert">{error}</div>}
+            {error && <div className="auth-error" role="alert" data-auth-phase="password" data-auth-status={loginErrorStatus ?? undefined}>{error}</div>}
             {message && <div className="auth-message">{message}</div>}
 
             <button
@@ -380,6 +407,19 @@ export function AuthGate({ children }: Props) {
           </form>
         )}
 
+        {view === 'access' && (
+          <div className="auth-form">
+            <h2>Concluir acesso</h2>
+            <p>Seu login foi recebido. Estamos validando a segurança e o acesso ao ERP.</p>
+            {error && <div className="auth-error" role="alert">{error}</div>}
+            <button type="button" className="primary-button auth-submit" disabled={submitting} onClick={() => void handleAccessRetry()}>
+              {submitting ? 'Validando acesso...' : 'Tentar novamente'}
+            </button>
+            <button type="button" className="auth-link" disabled={submitting} onClick={() => {
+              clearAuthSession(); setError(''); setMessage(''); setView('login')
+            }}>Voltar para o login</button>
+          </div>
+        )}
         {view === 'mfa' && (
           <form
             className="auth-form"

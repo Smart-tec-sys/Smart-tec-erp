@@ -107,7 +107,7 @@ class TestSimularRolo(unittest.TestCase):
         self.assertEqual(resultado["modelo"], "ROLÔ")
         self.assertEqual(resultado["tipo_acionamento"], "MANUAL")
         self.assertEqual(resultado["quantidade_pecas"], 1)
-        self.assertAlmostEqual(resultado["area_total"], Decimal("3.75"))
+        self.assertAlmostEqual(resultado["area_real_m2"], Decimal("3.75"))
 
     def test_entrada_valida_manual_181(self):
         entrada = RoloSimulacaoInput(
@@ -292,7 +292,7 @@ class TestSimularRolo(unittest.TestCase):
         )
         resultado = simular_rolo(self.produto, entrada)
         self.assertEqual(resultado["quantidade_pecas"], 3)
-        self.assertAlmostEqual(float(resultado["area_total"]), 15.0)
+        self.assertAlmostEqual(float(resultado["area_real_m2"]), 15.0)
 
     def test_alertas_incluem_sem_custo(self):
         produto_sem_custo = MockProduto(modelo_tecnico="ROLO", nome="Rolô Manual", valor_custo=0, custo_final=0, valor_venda=0)

@@ -1,0 +1,4 @@
+.sale-detail-page .field input[readonly], .sale-detail-page .field textarea[readonly] { cursor: default; }
+.sale-item-technical { margin-top: 12px; font-size: 10px; }
+.sale-item-technical > summary { color: var(--color-primary); cursor: pointer; }
+.sale-item-technical > .form-grid { margin-top: 12px; }

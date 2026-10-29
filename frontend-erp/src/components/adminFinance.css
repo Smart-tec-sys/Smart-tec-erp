@@ -1,0 +1,24 @@
+.admin-finance { min-width:0; overflow-wrap:anywhere; }
+.admin-payment-card { min-width:0; padding:16px; border:1px solid #e3e6e9; border-radius:10px; background:#fff; overflow-wrap:anywhere; }
+.admin-payment-header { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.admin-payment-header h4 { margin:0; font-size:15px; color:#202938; }
+.admin-payment-badge { padding:5px 9px; border-radius:6px; font-size:11px; font-weight:600; line-height:1.4; background:#f2f4f7; color:#475467; max-width:100%; box-sizing:border-box; }
+.admin-payment-badge--pending { background:#fff7e6; color:#80622b; }
+.admin-payment-badge--paid { background:#edf6f0; color:#326749; }
+.admin-payment-badge--late { background:#fff0e8; color:#9a4d23; }
+.admin-payment-badge--cancelled,.admin-payment-badge--refunded { background:#fcf1f0; color:#9a4943; }
+.admin-payment-identity { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:16px 0; }
+.admin-payment-card dt { font-size:12px; color:#667085; margin-bottom:4px; }
+.admin-payment-card dd { margin:0; font-size:13px; color:#344054; line-height:1.5; }
+.admin-payment-values,.admin-payment-dates { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:14px 0 0; }
+.admin-payment-values { background:#fafbfc; padding:12px; border-radius:6px; }
+.admin-payment-card .admin-payment-amount { font-size:17px; font-weight:600; }
+.admin-payment-cycle,.admin-payment-notes { font-size:12px; color:#667085; line-height:1.5; margin:12px 0 0; }
+.admin-payment-notes { white-space:pre-wrap; }
+.admin-payment-overdue dt,.admin-payment-overdue dd { color:#9a4d23; }
+.admin-payment-actions { display:flex; margin-top:16px; }
+.admin-finance .admin-payment-actions button { min-height:40px; padding:9px 16px; border:1px solid #b4232a; border-radius:7px; background:#b4232a; color:white; font:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.admin-finance .admin-payment-actions button:not(:disabled):hover { background:#941c22; }
+.admin-finance .admin-payment-actions button:disabled { opacity:.6; cursor:wait; }
+.admin-finance .admin-payment-actions button:focus-visible { outline:2px solid #d9938c; outline-offset:2px; }
+@media(max-width:600px) { .admin-payment-identity,.admin-payment-values,.admin-payment-dates { grid-template-columns:minmax(0,1fr); gap:10px; } .admin-payment-actions button { width:100%; max-width:100%; white-space:normal; } .admin-payment-card { padding:14px; } }

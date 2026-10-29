@@ -1306,7 +1306,7 @@ textarea { font: inherit; }
 .section-count { margin-left: auto; padding: 4px 7px; border-radius: 5px; background: var(--color-surface-muted); color: var(--color-muted); font-size: 9px; font-weight: 700; }
 .general-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .relationship-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.product-fields { grid-template-columns: 1.4fr .75fr 1.35fr .72fr .92fr .66fr .66fr .82fr .72fr .82fr; }
+.product-fields { grid-template-columns: 1.4fr 1.8fr 1.35fr .72fr .92fr .66fr .66fr .82fr .82fr; }
 .service-rows, .installment-list { display: grid; gap: 10px; }
 .budget-service-row { padding: 12px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-surface-muted); }
 .service-row-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 10px; }

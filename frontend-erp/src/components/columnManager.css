@@ -1,0 +1,15 @@
+.column-manager-toolbar { display: flex; justify-content: flex-end; padding: 8px 12px; }
+.column-manager-trigger { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border: 1px solid #dedfe3; border-radius: 6px; background: #fff; color: #444; font: inherit; font-size: 12px; cursor: pointer; }
+.column-manager-trigger:hover { background: #f6f6f7; }
+.column-manager-popup { position: fixed; z-index: 210; width: min(280px, calc(100vw - 16px)); max-height: calc(100vh - 16px); display: flex; flex-direction: column; padding: 12px; background: #fff; color: #333; border: 1px solid #dedfe3; border-radius: 8px; box-shadow: 0 6px 20px #0002; font-size: 13px; }
+.column-manager-popup header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.column-manager-popup header button { display: flex; border: 0; background: transparent; padding: 4px; cursor: pointer; color: #737780; }
+.column-manager-options { overflow-y: auto; min-height: 0; max-height: min(280px, calc(100vh - 120px)); }
+.column-manager-options label { display: flex; align-items: center; gap: 9px; padding: 7px 3px; cursor: pointer; }
+.column-manager-options input { width: 15px; height: 15px; margin: 0; accent-color: #b4232c; }
+.column-manager-options small { margin-left: auto; color: #858890; font-size: 11px; }
+.column-manager-reset { align-self: flex-start; margin-top: 9px; border: 0; background: transparent; padding: 4px 0; font: inherit; color: #b4232c; font-size: 12px; cursor: pointer; }
+.column-manager-popup button:focus-visible, .column-manager-trigger:focus-visible { outline: 2px solid #b4232c; outline-offset: 2px; }
+
+.column-manager-popup { box-sizing: border-box; }
+.column-manager-popup header, .column-manager-reset { flex-shrink: 0; }

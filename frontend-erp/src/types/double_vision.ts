@@ -15,7 +15,7 @@ export function doubleVisionKind(p: Pick<ApiProduct, 'modelo_tecnico' | 'modelo'
 export type DoubleVisionResult = {
   modelo: string
   quantidade_pecas: number
-  area_total: number
+  area_real_m2: number; area_faturavel_m2: number; minimo_faturavel_aplicado: boolean
   bitola_tecnica: string
   estado_validacao: 'permitido' | 'requer_validacao' | 'bloqueado'
   requer_validacao_tecido_fornecedor: boolean

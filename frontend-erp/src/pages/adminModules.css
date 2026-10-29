@@ -1,0 +1,21 @@
+.admin-modules { padding:20px; min-width:0; overflow-wrap:anywhere; }
+.admin-modules h3 { margin:0 0 10px; }
+.admin-modules p, .admin-modules small { color:#667085; font-size:12px; }
+.admin-module-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:14px; align-items:end; margin:18px 0; padding:16px; background:#fafbfc; border:1px solid #e7e9ed; border-radius:8px; }
+.admin-module-form label { font-size:12px; color:#667085; }
+.admin-module-form select, .admin-module-form input, .admin-module-form textarea { display:block; width:100%; min-width:0; min-height:40px; margin-top:6px; box-sizing:border-box; padding:8px; border:1px solid #d8dde4; border-radius:6px; background:white; font:inherit; color:#202938; }
+.admin-module-form strong { display:block; margin-top:6px; font-size:13px; }
+.admin-module-head, .admin-module-row { display:grid; grid-template-columns:minmax(100px,1.4fr) minmax(130px,2fr) minmax(85px,.8fr) minmax(90px,.8fr) minmax(90px,.8fr) minmax(120px,1.4fr); gap:14px; padding:14px 0; border-bottom:1px solid #eceff2; }
+.admin-module-head { color:#667085; font-size:12px; font-weight:600; }
+.admin-module-row { align-items:start; font-size:13px; }
+.admin-module-row div { min-width:0; }
+.admin-module-row div>strong, .admin-module-row div>span { display:block; margin-bottom:4px; }
+.admin-module-row small { display:none; }
+@media(max-width:1000px) { .admin-module-head { display:none; } .admin-module-row { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; border:1px solid #e7e9ed; padding:14px; border-radius:8px; margin-bottom:12px; } .admin-module-row small { display:block; margin-bottom:5px; } }
+@media(max-width:480px) { .admin-modules { padding:14px; } .admin-module-row { grid-template-columns:minmax(0,1fr); } .admin-modules button { max-width:100%; white-space:normal; } }
+
+.admin-module-date-help { display:block; margin-top:4px; line-height:1.4; }
+.admin-module-row .admin-module-trial-help { color:#667085; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.admin-modules .secondary-button.admin-module-cancel { color:#b42318; border-color:#e8b9b5; background:transparent; min-width:0; max-width:100%; }
+.admin-modules .secondary-button.admin-module-cancel:not(:disabled):hover { color:#912018; border-color:#d9938c; background:#fff1f0; }
+.admin-modules .secondary-button.admin-module-cancel:focus-visible { outline:2px solid #d9938c; outline-offset:2px; }

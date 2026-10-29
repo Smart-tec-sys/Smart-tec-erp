@@ -1,3 +1,4 @@
+import { ColumnManager } from '../components/ColumnManager'
 import { Search, Filter, ChevronLeft, ChevronRight, X, Package, Eye, ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useState, useMemo } from 'react'
 import { getAllProducts } from '../services/api'
@@ -178,7 +179,7 @@ export function ProductsPage() {
                             <span role="status" style={{ fontSize: 13 }}>{filteredProducts.length} {filteredProducts.length === 1 ? 'produto encontrado' : 'produtos encontrados'}</span>
                         </div>
                         <div className="budget-table-wrap products-table-scroll" tabIndex={0} role="region" aria-label="Tabela de produtos com rolagem horizontal">
-                            <table className="budget-table">
+                            <ColumnManager storageKey="smarttec:columns:products" lockedColumns={['name', 'actions']} columns={[{ id: 'id', label: 'ID', defaultVisible: true }, { id: 'name', label: 'Nome', defaultVisible: true }, { id: 'group', label: 'Grupo Comercial', defaultVisible: true }, { id: 'unit', label: 'Unidade', defaultVisible: true }, { id: 'color', label: 'Cor/Variação', defaultVisible: true }, { id: 'family', label: 'Família', defaultVisible: true }, { id: 'cost', label: 'Custo', defaultVisible: true }, { id: 'finalCost', label: 'Custo Final', defaultVisible: true }, { id: 'price', label: 'Venda', defaultVisible: true }, { id: 'status', label: 'Situação', defaultVisible: true }, { id: 'actions', label: 'Ações', defaultVisible: true }]}><table className="budget-table">
                                 <thead>
                                     <tr>
                                         <th style={{ width: '60px' }}>ID</th>
@@ -231,7 +232,7 @@ export function ProductsPage() {
                                         ))
                                     )}
                                 </tbody>
-                            </table>
+                            </table></ColumnManager>
                         </div>
                         <div className="budget-table-footer">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

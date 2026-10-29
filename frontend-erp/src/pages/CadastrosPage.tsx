@@ -1,6 +1,11 @@
+import { ColumnManager } from '../components/ColumnManager'
 import { useEffect, useMemo, useState } from 'react'
 import { Eye, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import {
+  createCommercialPartner,
+  createRepresentative,
+  getCommercialPartnersCadastro,
+  getRepresentativesCadastro,
   createClienteCadastro,
   createFornecedorCadastro,
   createFuncionarioCadastro,
@@ -18,12 +23,18 @@ import {
   updateFuncionarioCadastro,
   updateTransportadoraCadastro,
   type CadastroPayload,
+  getCommercialPartners,
+  getRepresentatives,
+  type ApiCommercialPartner,
+  type ApiRepresentative,
   type CadastroRecord,
 } from '../services/api'
 import './cadastrosPage.css'
 
 export type CadastroEntity =
   | 'clientes'
+  | 'revendas'
+  | 'representantes'
   | 'fornecedores'
   | 'transportadoras'
   | 'funcionarios'
@@ -46,8 +57,8 @@ type EntityConfig = {
   listColumns: string[]
   load: () => Promise<CadastroRecord[]>
   create: (payload: CadastroPayload) => Promise<CadastroRecord>
-  update: (id: number, payload: CadastroPayload) => Promise<CadastroRecord>
-  remove: (id: number) => Promise<unknown>
+  update?: (id: number, payload: CadastroPayload) => Promise<CadastroRecord>
+  remove?: (id: number) => Promise<unknown>
 }
 
 const situacaoField: FieldConfig = {
@@ -58,6 +69,34 @@ const situacaoField: FieldConfig = {
 }
 
 const configs: Record<CadastroEntity, EntityConfig> = {
+  revendas: {
+    title: 'Revendas', singular: 'Revenda',
+    load: getCommercialPartnersCadastro, create: createCommercialPartner,
+    listColumns: ['nome', 'documento', 'email', 'telefone', 'percentual_padrao'],
+    fields: [
+      { key: 'nome', label: 'Nome', required: true },
+      { key: 'documento', label: 'CPF / CNPJ' },
+      { key: 'email', label: 'E-mail' },
+      { key: 'telefone', label: 'Telefone' },
+      { key: 'percentual_padrao', label: '% revenda padrão', type: 'number', step: '0.0001' },
+      { key: 'observacao', label: 'Observações', type: 'textarea' },
+    ],
+  },
+  representantes: {
+    title: 'Representantes', singular: 'Representante',
+    load: getRepresentativesCadastro, create: createRepresentative,
+    listColumns: ['nome', 'documento', 'email', 'telefone', 'tipo_rt_padrao'],
+    fields: [
+      { key: 'nome', label: 'Nome', required: true },
+      { key: 'documento', label: 'CPF / CNPJ' },
+      { key: 'email', label: 'E-mail' },
+      { key: 'telefone', label: 'Telefone' },
+      { key: 'tipo_rt_padrao', label: 'Tipo de RT padrão', type: 'select', options: ['PERCENTUAL', 'VALOR_FIXO'] },
+      { key: 'percentual_rt_padrao', label: 'Percentual RT padrão (%)', type: 'number', step: '0.0001' },
+      { key: 'valor_rt_padrao', label: 'Valor RT padrão', type: 'number', step: '0.01' },
+      { key: 'observacao', label: 'Observações', type: 'textarea' },
+    ],
+  },
   clientes: {
     title: 'Clientes',
     singular: 'Cliente',
@@ -229,7 +268,8 @@ function emptyPayload(config: EntityConfig): CadastroPayload {
   const payload: CadastroPayload = {}
 
   for (const field of config.fields) {
-    if (field.key === 'situacao') payload[field.key] = 'Ativo'
+    if (field.key === 'tipo_rt_padrao') payload[field.key] = 'PERCENTUAL'
+    else if (field.key === 'situacao') payload[field.key] = 'Ativo'
     else if (field.key === 'permitir_exceder') payload[field.key] = false
     else if (field.key === 'permite_acesso') payload[field.key] = 'Não'
     else if (field.type === 'number') payload[field.key] = 0
@@ -261,6 +301,15 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
   const [form, setForm] = useState<CadastroPayload>(() => emptyPayload(config))
   const [saving, setSaving] = useState(false)
 
+  const [commercialPartners,setCommercialPartners]=
+    useState<ApiCommercialPartner[]>([])
+
+  const [commercialRepresentatives,setCommercialRepresentatives]=
+    useState<ApiRepresentative[]>([])
+
+  const [clientLinkType,setClientLinkType]=useState<
+    'DIRETO'|'PARCEIRO'|'REPRESENTANTE'
+  >('DIRETO')
   const reload = async () => {
     setLoading(true)
     setError('')
@@ -280,6 +329,38 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
     setForm(emptyPayload(config))
     void reload()
   }, [entity])
+  useEffect(()=>{
+    if(entity!=='clientes'){
+      setCommercialPartners([])
+      setCommercialRepresentatives([])
+      return
+    }
+
+    let cancelled=false
+
+    void Promise.all([
+      getCommercialPartners(),
+      getRepresentatives(),
+    ])
+      .then(([partnerRows,representativeRows])=>{
+        if(cancelled)return
+
+        setCommercialPartners(partnerRows)
+        setCommercialRepresentatives(representativeRows)
+      })
+      .catch(err=>{
+        if(cancelled)return
+
+        console.error(
+          'Falha ao carregar vínculos comerciais',
+          err,
+        )
+      })
+
+    return ()=>{
+      cancelled=true
+    }
+  },[entity])
 
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('pt-BR')
@@ -295,6 +376,11 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
   const openCreate = () => {
     setSelected(null)
     setForm(emptyPayload(config))
+
+    if(entity==='clientes'){
+      setClientLinkType('DIRETO')
+    }
+
     setMode('create')
   }
 
@@ -304,7 +390,23 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
     const payload = emptyPayload(config)
     for (const field of config.fields) {
       const value = item[field.key]
-      if (value !== undefined && value !== null) payload[field.key] = value as never
+      if (value !== undefined && value !== null) {
+        payload[field.key] = value as never
+      }
+    }
+
+    if(entity==='clientes'){
+      payload.parceiro_id =
+        item.parceiro_id == null
+          ? null
+          : Number(item.parceiro_id)
+
+      payload.representante_id =
+        item.representante_id == null
+          ? null
+          : Number(item.representante_id)
+
+      setClientLinkType('DIRETO')
     }
 
     setForm(payload)
@@ -343,14 +445,59 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
       return
     }
 
+    if(
+
+      entity==='clientes' &&
+
+      clientLinkType==='PARCEIRO' &&
+
+      !Number(form.parceiro_id)
+
+    ){
+
+      setError('Selecione a revenda.')
+
+      return
+
+    }
+
+
+    if(
+
+      entity==='clientes' &&
+
+      clientLinkType==='REPRESENTANTE' &&
+
+      !Number(form.representante_id)
+
+    ){
+
+      setError('Selecione o representante.')
+
+      return
+
+    }
+
+
+    const payloadToSave: CadastroPayload =
+      entity==='clientes'
+        ? {
+            ...form,
+            parceiro_id:null,
+            representante_id:null,
+          }
+        : form
+
     setSaving(true)
+
     setError('')
 
     try {
       if (mode === 'edit' && selected) {
-        await config.update(selected.id, form)
+        if (!config.update) return
+        await config.update(selected.id, payloadToSave)
       } else {
-        await config.create(form)
+        await config.create(payloadToSave)
       }
 
       closeForm()
@@ -363,6 +510,7 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
   }
 
   const remove = async (item: CadastroRecord) => {
+    if (!config.remove) return
     if (!window.confirm(`Excluir ${config.singular.toLowerCase()} "${displayValue(item.nome)}"?`)) {
       return
     }
@@ -388,7 +536,7 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
 
         <button className="primary-button" onClick={openCreate}>
           <Plus size={18} />
-          Novo {config.singular.toLowerCase()}
+          {config.singular === 'Revenda' ? 'Nova' : 'Novo'} {config.singular.toLowerCase()}
         </button>
       </div>
 
@@ -410,6 +558,8 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
         <span>{filtered.length} registro(s)</span>
       </div>
 
+      {!config.update && <p className="cad-empty">Listagem e inclusão disponíveis. Edição e exclusão aguardam suporte no backend.</p>}
+
       {error && <div className="cad-error">{error}</div>}
 
       <div className="cad-table-card">
@@ -419,7 +569,7 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
           <div className="cad-empty">Nenhum registro encontrado.</div>
         ) : (
           <div className="cad-table-wrap">
-            <table className="cad-table">
+            <ColumnManager key={entity} storageKey={`smarttec:columns:${{ clientes: 'clients', revendas: 'resellers', representantes: 'representatives', fornecedores: 'suppliers', transportadoras: 'carriers', funcionarios: 'employees' }[entity]}`} lockedColumns={['nome', 'actions']} columns={[...config.listColumns.map(id => ({ id, label: labelFor(config, id), defaultVisible: true })), { id: 'actions', label: 'Ações', defaultVisible: true }]}><table className="cad-table">
               <thead>
                 <tr>
                   {config.listColumns.map((column) => (
@@ -452,14 +602,16 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
                         </button>
 
                         <button
-                          title="Editar"
+                          title={config.update ? 'Editar' : 'Edição indisponível: endpoint não implementado'}
+                          disabled={!config.update}
                           onClick={() => openRecord(item, 'edit')}
                         >
                           <Pencil size={16} />
                         </button>
 
                         <button
-                          title="Excluir"
+                          title={config.remove ? 'Excluir' : 'Exclusão indisponível: endpoint não implementado'}
+                          disabled={!config.remove}
                           className="danger"
                           onClick={() => void remove(item)}
                         >
@@ -470,7 +622,7 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></ColumnManager>
           </div>
         )}
       </div>
@@ -492,7 +644,7 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
                 </span>
                 <h2>
                   {mode === 'create'
-                    ? `Novo ${config.singular.toLowerCase()}`
+                    ? `${config.singular === 'Revenda' ? 'Nova' : 'Novo'} ${config.singular.toLowerCase()}`
                     : displayValue(selected?.nome)}
                 </h2>
               </div>
@@ -503,6 +655,7 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
             </div>
 
             <div className="cad-form-grid">
+
               {config.fields.map((field) => {
                 const value = form[field.key]
 

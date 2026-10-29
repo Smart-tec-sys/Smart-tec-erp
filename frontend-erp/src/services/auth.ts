@@ -24,6 +24,7 @@ type StoredSession = {
   refreshToken: string
   expiresAt: number
   empresaId?: number
+  loginStage?: 'security' | 'profile'
 }
 
 type SupabaseTokenResponse = {
@@ -68,6 +69,22 @@ export function clearAuthSession() {
   sessionStorage.removeItem(SESSION_KEY)
 }
 
+// REST equivalent of Supabase auth.signOut() for this app's custom auth client.
+export async function signOut() {
+  if (authEnabled && readSession()) {
+    requireConfig()
+    const token = await getAccessToken()
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/logout?scope=global`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      throw new Error(`Não foi possível encerrar a sessão no Supabase (HTTP ${response.status}). Tente sair novamente.`)
+    }
+  }
+  clearAuthSession()
+}
+
 export function hasStoredAuthSession() {
   return Boolean(readSession())
 }
@@ -84,6 +101,16 @@ export function setEmpresaId(empresaId: number) {
     ...session,
     empresaId,
   })
+}
+
+export class AuthTokenError extends Error {
+  readonly grantType: 'password' | 'refresh_token'
+  readonly status: number
+  constructor(grantType: 'password' | 'refresh_token', status: number, message: string) {
+    super(message)
+    this.grantType = grantType
+    this.status = status
+  }
 }
 
 async function tokenRequest(
@@ -122,7 +149,7 @@ async function tokenRequest(
       throw new Error('Confirme seu e-mail antes de entrar.')
     }
 
-    throw new Error(detail)
+    throw new AuthTokenError(grantType, response.status, detail)
   }
 
   if (!body.access_token || !body.refresh_token) {
@@ -148,8 +175,18 @@ export async function loginWithPassword(email: string, password: string) {
     password,
   })
 
-  saveSession(session)
+  saveSession({ ...session, loginStage: 'security' })
   return session
+}
+
+// A reload resumes the same verified step instead of treating an unfinished login as ready.
+export function getPendingLoginStage() {
+  return readSession()?.loginStage
+}
+
+export function setPendingLoginStage(stage?: 'security' | 'profile') {
+  const session = readSession()
+  if (session) saveSession({ ...session, loginStage: stage })
 }
 
 export async function requestPasswordRecovery(email: string) {
@@ -304,8 +341,12 @@ async function refreshSession() {
   const next = {
     ...refreshed,
     empresaId: current.empresaId,
+    loginStage: current.loginStage,
   }
 
+  if (readSession()?.refreshToken !== current.refreshToken) {
+    throw new Error('Sessão substituída durante a renovação. Entre novamente se necessário.')
+  }
   saveSession(next)
   return next
 }
@@ -340,32 +381,38 @@ export async function getAccessToken() {
   return session.accessToken
 }
 
-export async function getAuthMe(): Promise<AuthMe> {
-  const token = await getAccessToken()
+export async function getAuthMe(verifiedAccessToken?: string): Promise<AuthMe> {
+  const token = verifiedAccessToken ?? await getAccessToken()
 
   if (!token) {
     throw new Error('Autentica??o n?o dispon?vel.')
   }
 
-  const response = await fetch(`${API_URL}/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
+  const endpoint = `${API_URL}/auth/me`
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  } catch (cause) {
+    throw new Error(`GET ${endpoint}: falha de rede ou CORS. ${cause instanceof Error ? cause.message : String(cause)}`)
+  }
 
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('Usu?rio sem acesso autorizado ? Smart-tec ERP.')
-    }
-
-    throw new Error(`Falha ao validar acesso (${response.status}).`)
+    const body = await response.text()
+    let detail = body
+    try {
+      const parsed = JSON.parse(body) as { detail?: unknown }
+      if (typeof parsed.detail === 'string') detail = parsed.detail
+    } catch { /* Preserve the response when it is not JSON. */ }
+    throw new Error(`GET ${endpoint}: HTTP ${response.status}. ${detail}`)
   }
 
   return response.json() as Promise<AuthMe>
 }
 
-export async function initializeAuthenticatedSession() {
-  const me = await getAuthMe()
+export async function initializeAuthenticatedSession(verifiedAccessToken?: string) {
+  const me = await getAuthMe(verifiedAccessToken)
 
   if (!me.empresas.length) {
     throw new Error('Usu?rio sem empresa autorizada.')
@@ -574,19 +621,22 @@ export async function verifyTotpMfa(
     )
   }
 
-  if (body?.access_token) {
-    const current = readSession()
-
-    saveSession({
-      accessToken: body.access_token,
-      refreshToken: body.refresh_token ?? current?.refreshToken ?? '',
-      expiresAt:
-        Date.now() + Number(body.expires_in ?? 3600) * 1000,
-      empresaId: current?.empresaId ?? 1,
-    })
+  if (!body?.access_token || !body?.refresh_token) {
+    throw new Error('A confirmação MFA não retornou uma sessão válida.')
   }
-
-  return body
+  const current = readSession()
+  if (!current || current.accessToken !== accessToken) {
+    throw new Error('Sessão substituída durante a confirmação MFA. Entre novamente.')
+  }
+  const session: StoredSession = {
+    accessToken: body.access_token,
+    refreshToken: body.refresh_token,
+    expiresAt: Date.now() + Number(body.expires_in ?? 3600) * 1000,
+    empresaId: current.empresaId,
+    loginStage: 'profile',
+  }
+  saveSession(session)
+  return session
 }
 
 export async function listMfaFactors() {

@@ -28,13 +28,13 @@ class RomanaSimulacaoTest(unittest.TestCase):
         self.assertEqual(r['fabricacao_por_peca'], asdict(esperado))
         self.assertIsNone(r['custo_tecnico'])
         self.assertEqual(r['defaults_utilizados'], dict(tipo_corrente='SEM_FIM_PRONTA', tipo_comando='NORMAL'))
-        self.assertEqual(r['area_total'], Decimal('2.4'))
+        self.assertEqual(r['area_real_m2'], Decimal('2.4'))
 
     def test_multiplas_pecas_sem_inventar_bom_total(self):
         a, b = (simular_romana(produto(), entrada(quantidade=n)) for n in (1, 3))
         self.assertEqual(a['fabricacao_por_peca'], b['fabricacao_por_peca'])
         self.assertEqual(b['quantidade_pecas'], 3)
-        self.assertEqual(b['area_total'], Decimal('7.2'))
+        self.assertEqual(b['area_real_m2'], Decimal('7.2'))
         self.assertEqual(b['subtotal'], Decimal('402.48'))
 
     def test_invalidos(self):

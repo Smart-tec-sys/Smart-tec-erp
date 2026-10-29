@@ -2,10 +2,10 @@ from decimal import Decimal
 import json
 from calendar import monthrange
 from datetime import date, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,8 @@ from app.admin.dependencies import (
 )
 from app.admin.service import PlatformMemberContext
 from app.database import get_db
+from app.admin import subscriptions
+from app.admin.payment_methods import (AdminPaymentMethodCreate, list_payment_methods, create_payment_method, resolve_order_payment_method)
 
 
 router = APIRouter()
@@ -46,6 +48,7 @@ class AdminModuleOrderCreateInput(BaseModel):
     modulo_id: int
     valor: Decimal = Field(ge=0)
     periodicidade: str
+    forma_pagamento_id: int | None = Field(default=None, gt=0)
     forma_pagamento: str | None = None
     observacoes: str | None = None
 
@@ -177,85 +180,10 @@ def _activate_plan_modules(
     plano_id: int,
     data_fim: date | None,
 ):
-    modules = db.execute(
-        text("""
-            SELECT
-                pm.modulo_id
-            FROM plano_modulos_saas pm
-            JOIN modulos_saas m
-              ON m.id = pm.modulo_id
-            WHERE pm.plano_id = :plano_id
-              AND pm.incluido = TRUE
-              AND m.ativo = TRUE
-        """),
-        {"plano_id": plano_id},
-    ).scalars().all()
-
-    for modulo_id in modules:
-        existing = db.execute(
-            text("""
-                SELECT id
-                FROM empresa_modulos_saas
-                WHERE empresa_id = :empresa_id
-                  AND modulo_id = :modulo_id
-                  AND status IN ('ATIVO', 'PENDENTE')
-                ORDER BY id DESC
-                LIMIT 1
-            """),
-            {
-                "empresa_id": empresa_id,
-                "modulo_id": modulo_id,
-            },
-        ).scalar()
-
-        if existing:
-            db.execute(
-                text("""
-                    UPDATE empresa_modulos_saas
-                    SET
-                        assinatura_id = :assinatura_id,
-                        origem = 'PLANO',
-                        status = 'ATIVO',
-                        data_fim = :data_fim,
-                        atualizado_em = NOW()
-                    WHERE id = :id
-                """),
-                {
-                    "id": existing,
-                    "assinatura_id": assinatura_id,
-                    "data_fim": data_fim,
-                },
-            )
-        else:
-            db.execute(
-                text("""
-                    INSERT INTO empresa_modulos_saas (
-                        empresa_id,
-                        modulo_id,
-                        assinatura_id,
-                        origem,
-                        status,
-                        data_inicio,
-                        data_fim
-                    )
-                    VALUES (
-                        :empresa_id,
-                        :modulo_id,
-                        :assinatura_id,
-                        'PLANO',
-                        'ATIVO',
-                        CURRENT_DATE,
-                        :data_fim
-                    )
-                """),
-                {
-                    "empresa_id": empresa_id,
-                    "modulo_id": modulo_id,
-                    "assinatura_id": assinatura_id,
-                    "data_fim": data_fim,
-                },
-            )
-
+    return subscriptions.activate_plan_modules(
+        db, empresa_id=empresa_id, assinatura_id=assinatura_id,
+        plano_id=plano_id, data_fim=data_fim,
+    )
 
 
 @router.get("/me")
@@ -574,6 +502,9 @@ def admin_empresa_detalhe(
                 a.id,
                 a.status,
                 a.periodicidade,
+                a.plano_id,
+                a.forma_pagamento_id,
+                fp.nome AS forma_pagamento_nome,
                 a.data_inicio_trial,
                 a.data_fim_trial,
                 a.data_inicio_assinatura,
@@ -588,6 +519,7 @@ def admin_empresa_detalhe(
             FROM assinaturas_saas a
             LEFT JOIN planos_saas p
               ON p.id = a.plano_id
+            LEFT JOIN formas_pagamento fp ON fp.id = a.forma_pagamento_id
             WHERE a.empresa_id = :empresa_id
             ORDER BY a.id DESC
             LIMIT 1
@@ -599,6 +531,7 @@ def admin_empresa_detalhe(
         text("""
             SELECT
                 em.id,
+                em.assinatura_id,
                 m.codigo,
                 m.nome,
                 m.produto,
@@ -636,10 +569,13 @@ def admin_empresa_detalhe(
                 pm.data_aprovacao,
                 pm.data_ativacao,
                 pm.forma_pagamento,
+                pm.forma_pagamento_id,
+                COALESCE(fp.nome,pm.forma_pagamento) AS forma_pagamento_nome,
                 pm.observacoes,
                 pm.responsavel_equipe_id,
                 u.nome AS responsavel_nome
             FROM pedidos_modulos_saas pm
+            LEFT JOIN formas_pagamento fp ON fp.id=pm.forma_pagamento_id
             JOIN modulos_saas m
               ON m.id = pm.modulo_id
             LEFT JOIN plataforma_equipe pe
@@ -656,23 +592,56 @@ def admin_empresa_detalhe(
     pagamentos = db.execute(
         text("""
             SELECT
-                id,
-                assinatura_id,
-                pedido_modulo_id,
-                tipo,
-                status,
-                valor,
-                vencimento,
-                pago_em,
-                forma_pagamento,
-                referencia_externa,
-                observacoes,
-                criado_em,
-                atualizado_em
-            FROM pagamentos_saas
-            WHERE empresa_id = :empresa_id
-            ORDER BY id DESC
+                p.id,
+                p.assinatura_id,
+                p.pedido_modulo_id,
+                p.ciclo_inicio,
+                p.ciclo_fim,
+                p.tipo,
+                p.status,
+                p.valor,
+                p.vencimento,
+                p.pago_em,
+                p.forma_pagamento,
+                p.forma_pagamento_id,
+                COALESCE(fp.nome,p.forma_pagamento) AS forma_pagamento_nome,
+                p.referencia_externa,
+                p.observacoes,
+                p.criado_em,
+                p.atualizado_em
+            FROM pagamentos_saas p
+            LEFT JOIN formas_pagamento fp ON fp.id=p.forma_pagamento_id
+            WHERE p.empresa_id = :empresa_id
+            ORDER BY p.id DESC
             LIMIT 20
+        """),
+        {"empresa_id": empresa_id},
+    ).mappings().all()
+
+    cobrancas_assinatura = db.execute(
+        text("""
+            SELECT
+                p.id,
+                p.assinatura_id,
+                p.pedido_modulo_id,
+                p.ciclo_inicio,
+                p.ciclo_fim,
+                p.tipo,
+                p.status,
+                p.valor,
+                p.vencimento,
+                p.pago_em,
+                p.forma_pagamento,
+                p.forma_pagamento_id,
+                COALESCE(fp.nome,p.forma_pagamento) AS forma_pagamento_nome,
+                p.referencia_externa,
+                p.observacoes,
+                p.criado_em,
+                p.atualizado_em
+            FROM pagamentos_saas p
+            LEFT JOIN formas_pagamento fp ON fp.id=p.forma_pagamento_id
+            WHERE p.empresa_id = :empresa_id AND p.tipo = 'ASSINATURA'
+            ORDER BY p.id DESC
         """),
         {"empresa_id": empresa_id},
     ).mappings().all()
@@ -827,6 +796,7 @@ def admin_empresa_detalhe(
         "modulos": [dict(row) for row in modulos],
         "pedidos_modulos": [dict(row) for row in pedidos],
         "pagamentos": [dict(row) for row in pagamentos],
+        "cobrancas_assinatura": [dict(row) for row in cobrancas_assinatura],
         "notas_fiscais": [dict(row) for row in notas],
         "chamados": [dict(row) for row in chamados],
         "acompanhamento_comercial": [
@@ -938,70 +908,65 @@ def admin_iniciar_trial(
         Depends(get_db),
     ],
 ):
-    empresa = _require_admin_empresa(
-        db,
-        empresa_id,
-    )
+    try:
+        # Mesma trava dos contratos; permanece até commit ou rollback.
+        subscriptions._company(db, empresa_id)
 
-    if empresa["status"] != "ATIVA":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="empresa precisa estar ativa",
-        )
-
-    existente = db.execute(
-        text("""
-            SELECT id, status
-            FROM assinaturas_saas
-            WHERE empresa_id = :empresa_id
-              AND status IN (
-                'TRIAL',
-                'ATIVA',
-                'PROXIMA_VENCIMENTO'
-              )
-            ORDER BY id DESC
-            LIMIT 1
-        """),
-        {"empresa_id": empresa_id},
-    ).mappings().first()
-
-    if existente:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "empresa já possui trial ou "
-                "assinatura ativa"
-            ),
-        )
-
-    plano = None
-
-    if payload.plano_id is not None:
-        plano = db.execute(
+        existente = db.execute(
             text("""
-                SELECT
-                    id,
-                    codigo,
-                    nome,
-                    periodicidade,
-                    dias_trial,
-                    ativo
-                FROM planos_saas
-                WHERE id = :id
-            """),
-            {"id": payload.plano_id},
+                SELECT id, status
+                FROM assinaturas_saas
+                WHERE empresa_id = :empresa_id
+                  AND status IN :estados
+                ORDER BY id DESC
+                LIMIT 1
+            """).bindparams(bindparam("estados", expanding=True)),
+            {
+                "empresa_id": empresa_id,
+                "estados": subscriptions.LIVE_CONTRACT_STATUSES,
+            },
         ).mappings().first()
 
-        if plano is None or not plano["ativo"]:
+        if existente:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="plano ativo não encontrado",
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Empresa já possui assinatura vigente; utilize o contrato existente.",
             )
 
-    hoje = date.today()
-    fim = hoje + timedelta(days=payload.dias)
+        plano = None
 
-    try:
+        if payload.plano_id is not None:
+            plano = db.execute(
+                text("""
+                    SELECT
+                        id,
+                        codigo,
+                        nome,
+                        periodicidade,
+                        dias_trial,
+                        ativo
+                    FROM planos_saas
+                    WHERE id = :id
+                """),
+                {"id": payload.plano_id},
+            ).mappings().first()
+
+            if plano is None or not plano["ativo"]:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="plano ativo não encontrado",
+                )
+
+            # Recusa somente zero explicito; configuracoes legadas desconhecidas preservam o fluxo.
+            if type(plano.get("dias_trial")) is int and plano["dias_trial"] == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Trial não permitido para este plano.",
+                )
+
+        hoje = date.today()
+        fim = hoje + timedelta(days=payload.dias)
+
         assinatura_id = db.execute(
             text("""
                 INSERT INTO assinaturas_saas (
@@ -1158,216 +1123,10 @@ def admin_ativar_assinatura(
         Depends(get_db),
     ],
 ):
-    empresa = _require_admin_empresa(
-        db,
-        empresa_id,
+    raise HTTPException(
+        status_code=409,
+        detail="Ativação direta substituída pelo ciclo antecipado: prepare o contrato, gere a cobrança e confirme o pagamento.",
     )
-
-    if empresa["status"] != "ATIVA":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="empresa precisa estar ativa",
-        )
-
-    plano = db.execute(
-        text("""
-            SELECT
-                id,
-                codigo,
-                nome,
-                produto,
-                periodicidade,
-                valor,
-                ativo
-            FROM planos_saas
-            WHERE id = :id
-        """),
-        {"id": payload.plano_id},
-    ).mappings().first()
-
-    if plano is None or not plano["ativo"]:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="plano ativo não encontrado",
-        )
-
-    periodicidade = (
-        payload.periodicidade
-        or plano["periodicidade"]
-    ).upper()
-
-    if periodicidade not in {
-        "MENSAL",
-        "ANUAL",
-    }:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                "assinatura operacional deve ser "
-                "MENSAL ou ANUAL"
-            ),
-        )
-
-    ativa = db.execute(
-        text("""
-            SELECT id
-            FROM assinaturas_saas
-            WHERE empresa_id = :empresa_id
-              AND status IN (
-                'ATIVA',
-                'PROXIMA_VENCIMENTO'
-              )
-            ORDER BY id DESC
-            LIMIT 1
-        """),
-        {"empresa_id": empresa_id},
-    ).scalar()
-
-    if ativa:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="empresa já possui assinatura ativa",
-        )
-
-    hoje = date.today()
-    vencimento = _next_due_date(
-        hoje,
-        periodicidade,
-    )
-
-    valor = (
-        payload.valor
-        if payload.valor is not None
-        else plano["valor"]
-    )
-
-    trial = db.execute(
-        text("""
-            SELECT id
-            FROM assinaturas_saas
-            WHERE empresa_id = :empresa_id
-              AND status IN (
-                'TRIAL',
-                'TRIAL_EXPIRADO'
-              )
-            ORDER BY id DESC
-            LIMIT 1
-        """),
-        {"empresa_id": empresa_id},
-    ).scalar()
-
-    try:
-        if trial:
-            assinatura_id = trial
-
-            db.execute(
-                text("""
-                    UPDATE assinaturas_saas
-                    SET
-                        plano_id = :plano_id,
-                        status = 'ATIVA',
-                        periodicidade = :periodicidade,
-                        data_inicio_assinatura = :inicio,
-                        data_vencimento = :vencimento,
-                        renovacao_automatica = :auto,
-                        valor = :valor,
-                        dias_aviso_vencimento = 10,
-                        observacoes = :observacoes,
-                        atualizado_em = NOW()
-                    WHERE id = :id
-                """),
-                {
-                    "id": assinatura_id,
-                    "plano_id": plano["id"],
-                    "periodicidade": periodicidade,
-                    "inicio": hoje,
-                    "vencimento": vencimento,
-                    "auto": payload.renovacao_automatica,
-                    "valor": valor,
-                    "observacoes": payload.observacoes,
-                },
-            )
-        else:
-            assinatura_id = db.execute(
-                text("""
-                    INSERT INTO assinaturas_saas (
-                        empresa_id,
-                        plano_id,
-                        status,
-                        periodicidade,
-                        data_inicio_assinatura,
-                        data_vencimento,
-                        renovacao_automatica,
-                        valor,
-                        dias_aviso_vencimento,
-                        observacoes
-                    )
-                    VALUES (
-                        :empresa_id,
-                        :plano_id,
-                        'ATIVA',
-                        :periodicidade,
-                        :inicio,
-                        :vencimento,
-                        :auto,
-                        :valor,
-                        10,
-                        :observacoes
-                    )
-                    RETURNING id
-                """),
-                {
-                    "empresa_id": empresa_id,
-                    "plano_id": plano["id"],
-                    "periodicidade": periodicidade,
-                    "inicio": hoje,
-                    "vencimento": vencimento,
-                    "auto": payload.renovacao_automatica,
-                    "valor": valor,
-                    "observacoes": payload.observacoes,
-                },
-            ).scalar_one()
-
-        _activate_plan_modules(
-            db,
-            empresa_id=empresa_id,
-            assinatura_id=assinatura_id,
-            plano_id=plano["id"],
-            data_fim=vencimento,
-        )
-
-        _audit_admin(
-            db,
-            member=member,
-            empresa_id=empresa_id,
-            acao="ASSINATURA_ATIVADA",
-            recurso="assinaturas_saas",
-            recurso_id=assinatura_id,
-            detalhes={
-                "plano_id": plano["id"],
-                "plano": plano["nome"],
-                "periodicidade": periodicidade,
-                "valor": valor,
-                "data_inicio": hoje,
-                "data_vencimento": vencimento,
-            },
-        )
-
-        db.commit()
-
-    except Exception:
-        db.rollback()
-        raise
-
-    return {
-        "ok": True,
-        "assinatura_id": assinatura_id,
-        "status": "ATIVA",
-        "periodicidade": periodicidade,
-        "valor": valor,
-        "data_inicio": hoje,
-        "data_vencimento": vencimento,
-    }
 
 
 # ============================================================
@@ -1418,68 +1177,28 @@ def admin_ativar_modulo(
 
     origem = payload.origem.upper()
 
-    origens_validas = {
-        "PLANO",
-        "AVULSO",
-        "CORTESIA",
-        "TRIAL",
-    }
-
-    if origem not in origens_validas:
+    if origem != "CORTESIA":
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="origem de módulo inválida",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ativação direta disponível somente para CORTESIA. AVULSO deve seguir Pedido; PLANO e TRIAL são gerenciados pela assinatura e pelo trial.",
         )
 
-    if (
-        origem == "CORTESIA"
-        and not member.has_permission(
-            "MODULOS_CORTESIA"
-        )
-    ):
+    if not member.has_permission("MODULOS_CORTESIA"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="sem permissão para conceder cortesia",
         )
 
-    periodicidade = (
-        payload.periodicidade.upper()
-        if payload.periodicidade
-        else (
-            "CORTESIA"
-            if origem in {"CORTESIA", "TRIAL"}
-            else None
+    if payload.valor not in (None, Decimal("0")) or payload.periodicidade not in (None, "CORTESIA"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cortesia não possui valor comercial e deve usar periodicidade CORTESIA.",
         )
-    )
+    if payload.data_fim is not None and payload.data_fim < date.today():
+        raise HTTPException(status_code=400, detail="Data fim da cortesia não pode anteceder a data de início.")
 
+    periodicidade = "CORTESIA"
     effective_data_fim = payload.data_fim
-
-    if origem == "TRIAL":
-        trial = db.execute(
-            text("""
-                SELECT
-                    id,
-                    data_fim_trial
-                FROM assinaturas_saas
-                WHERE empresa_id = :empresa_id
-                  AND status = 'TRIAL'
-                  AND data_fim_trial >= CURRENT_DATE
-                ORDER BY id DESC
-                LIMIT 1
-            """),
-            {"empresa_id": empresa_id},
-        ).mappings().first()
-
-        if trial is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    "empresa não possui trial ativo "
-                    "para vincular este módulo"
-                ),
-            )
-
-        effective_data_fim = trial["data_fim_trial"]
 
     try:
         existente = db.execute(
@@ -1490,7 +1209,8 @@ def admin_ativar_modulo(
                   AND modulo_id = :modulo_id
                   AND status IN (
                     'ATIVO',
-                    'PENDENTE'
+                    'PENDENTE',
+                    'SUSPENSO'
                   )
                 ORDER BY id DESC
                 LIMIT 1
@@ -1502,67 +1222,47 @@ def admin_ativar_modulo(
         ).scalar()
 
         if existente:
-            registro_id = existente
-
-            db.execute(
-                text("""
-                    UPDATE empresa_modulos_saas
-                    SET
-                        origem = :origem,
-                        status = 'ATIVO',
-                        data_fim = :data_fim,
-                        valor = :valor,
-                        periodicidade = :periodicidade,
-                        observacoes = :observacoes,
-                        atualizado_em = NOW()
-                    WHERE id = :id
-                """),
-                {
-                    "id": registro_id,
-                    "origem": origem,
-                    "data_fim": effective_data_fim,
-                    "valor": payload.valor,
-                    "periodicidade": periodicidade,
-                    "observacoes": payload.observacoes,
-                },
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="empresa já possui vínculo vigente ou suspenso para este módulo",
             )
-        else:
-            registro_id = db.execute(
-                text("""
-                    INSERT INTO empresa_modulos_saas (
-                        empresa_id,
-                        modulo_id,
-                        origem,
-                        status,
-                        data_inicio,
-                        data_fim,
-                        valor,
-                        periodicidade,
-                        observacoes
-                    )
-                    VALUES (
-                        :empresa_id,
-                        :modulo_id,
-                        :origem,
-                        'ATIVO',
-                        CURRENT_DATE,
-                        :data_fim,
-                        :valor,
-                        :periodicidade,
-                        :observacoes
-                    )
-                    RETURNING id
-                """),
-                {
-                    "empresa_id": empresa_id,
-                    "modulo_id": modulo_id,
-                    "origem": origem,
-                    "data_fim": effective_data_fim,
-                    "valor": payload.valor,
-                    "periodicidade": periodicidade,
-                    "observacoes": payload.observacoes,
-                },
-            ).scalar_one()
+
+        registro_id = db.execute(
+            text("""
+                INSERT INTO empresa_modulos_saas (
+                    empresa_id,
+                    modulo_id,
+                    origem,
+                    status,
+                    data_inicio,
+                    data_fim,
+                    valor,
+                    periodicidade,
+                    observacoes
+                )
+                VALUES (
+                    :empresa_id,
+                    :modulo_id,
+                    :origem,
+                    'ATIVO',
+                    CURRENT_DATE,
+                    :data_fim,
+                    :valor,
+                    :periodicidade,
+                    :observacoes
+                )
+                RETURNING id
+            """),
+            {
+                "empresa_id": empresa_id,
+                "modulo_id": modulo_id,
+                "origem": origem,
+                "data_fim": effective_data_fim,
+                "valor": payload.valor,
+                "periodicidade": periodicidade,
+                "observacoes": payload.observacoes,
+            },
+        ).scalar_one()
 
         _audit_admin(
             db,
@@ -1627,6 +1327,7 @@ def admin_cancelar_modulo(
         text("""
             SELECT
                 em.id,
+                em.origem,
                 m.nome
             FROM empresa_modulos_saas em
             JOIN modulos_saas m
@@ -1650,6 +1351,13 @@ def admin_cancelar_modulo(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="módulo ativo não encontrado para a empresa",
+        )
+
+    if registro["origem"] in {"PLANO", "TRIAL"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=("Este módulo é gerenciado pela assinatura." if registro["origem"] == "PLANO"
+                    else "Este acesso é gerenciado pelo trial; não pode ser cancelado isoladamente."),
         )
 
     try:
@@ -1766,7 +1474,8 @@ def admin_criar_pedido_modulo(
               AND modulo_id = :modulo_id
               AND status IN (
                   'ATIVO',
-                  'PENDENTE'
+                  'PENDENTE',
+                  'SUSPENSO'
               )
             ORDER BY id DESC
             LIMIT 1
@@ -1780,7 +1489,7 @@ def admin_criar_pedido_modulo(
     if modulo_ativo:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="empresa já possui este módulo ativo",
+            detail="empresa já possui vínculo vigente ou suspenso para este módulo",
         )
 
     pedido_existente = db.execute(
@@ -1813,6 +1522,10 @@ def admin_criar_pedido_modulo(
             ),
         )
 
+    forma_pagamento_id, forma_pagamento = resolve_order_payment_method(
+        db, payload.forma_pagamento_id, payload.forma_pagamento,
+    )
+
     try:
         pedido_id = db.execute(
             text("""
@@ -1825,6 +1538,7 @@ def admin_criar_pedido_modulo(
                     valor,
                     periodicidade,
                     data_pedido,
+                    forma_pagamento_id,
                     forma_pagamento,
                     observacoes,
                     criado_em,
@@ -1839,6 +1553,7 @@ def admin_criar_pedido_modulo(
                     :valor,
                     :periodicidade,
                     NOW(),
+                    :forma_pagamento_id,
                     :forma_pagamento,
                     :observacoes,
                     NOW(),
@@ -1853,11 +1568,8 @@ def admin_criar_pedido_modulo(
                 "equipe_id": member.equipe_id,
                 "valor": payload.valor,
                 "periodicidade": periodicidade,
-                "forma_pagamento": (
-                    payload.forma_pagamento.strip()
-                    if payload.forma_pagamento
-                    else None
-                ),
+                "forma_pagamento_id": forma_pagamento_id,
+                "forma_pagamento": forma_pagamento,
                 "observacoes": (
                     payload.observacoes.strip()
                     if payload.observacoes
@@ -1878,7 +1590,8 @@ def admin_criar_pedido_modulo(
                 "modulo": modulo["nome"],
                 "valor": payload.valor,
                 "periodicidade": periodicidade,
-                "forma_pagamento": payload.forma_pagamento,
+                "forma_pagamento_id": forma_pagamento_id,
+                "forma_pagamento": forma_pagamento,
                 "status": "SOLICITADO",
             },
         )
@@ -1928,6 +1641,7 @@ def admin_alterar_status_pedido_modulo(
                 pm.valor,
                 pm.periodicidade,
                 pm.forma_pagamento,
+                pm.forma_pagamento_id,
                 m.nome AS modulo_nome
             FROM pedidos_modulos_saas pm
             JOIN modulos_saas m
@@ -2044,6 +1758,7 @@ def admin_alterar_status_pedido_modulo(
                             valor,
                             vencimento,
                             pago_em,
+                            forma_pagamento_id,
                             forma_pagamento,
                             referencia_externa,
                             observacoes,
@@ -2059,6 +1774,7 @@ def admin_alterar_status_pedido_modulo(
                             :valor,
                             NULL,
                             NULL,
+                            :forma_pagamento_id,
                             :forma_pagamento,
                             NULL,
                             :observacoes,
@@ -2071,6 +1787,7 @@ def admin_alterar_status_pedido_modulo(
                         "empresa_id": empresa_id,
                         "pedido_id": pedido_id,
                         "valor": pedido["valor"],
+                        "forma_pagamento_id": pedido["forma_pagamento_id"],
                         "forma_pagamento": pedido["forma_pagamento"],
                         "observacoes": (
                             f"Pagamento do pedido de módulo "
@@ -2132,6 +1849,7 @@ def admin_alterar_status_pedido_modulo(
                             valor,
                             vencimento,
                             pago_em,
+                            forma_pagamento_id,
                             forma_pagamento,
                             referencia_externa,
                             observacoes,
@@ -2147,6 +1865,7 @@ def admin_alterar_status_pedido_modulo(
                             :valor,
                             NULL,
                             NOW(),
+                            :forma_pagamento_id,
                             :forma_pagamento,
                             NULL,
                             :observacoes,
@@ -2159,6 +1878,7 @@ def admin_alterar_status_pedido_modulo(
                         "empresa_id": empresa_id,
                         "pedido_id": pedido_id,
                         "valor": pedido["valor"],
+                        "forma_pagamento_id": pedido["forma_pagamento_id"],
                         "forma_pagamento": pedido["forma_pagamento"],
                         "observacoes": (
                             f"Pagamento confirmado do pedido "
@@ -2180,6 +1900,7 @@ def admin_alterar_status_pedido_modulo(
                                 pago_em,
                                 NOW()
                             ),
+                            forma_pagamento_id = COALESCE(:forma_pagamento_id, forma_pagamento_id),
                             forma_pagamento = COALESCE(
                                 :forma_pagamento,
                                 forma_pagamento
@@ -2191,6 +1912,7 @@ def admin_alterar_status_pedido_modulo(
                     {
                         "pagamento_id": pagamento_id,
                         "empresa_id": empresa_id,
+                        "forma_pagamento_id": pedido["forma_pagamento_id"],
                         "forma_pagamento": pedido["forma_pagamento"],
                     },
                 )
@@ -2207,6 +1929,7 @@ def admin_alterar_status_pedido_modulo(
                     "modulo_id": pedido["modulo_id"],
                     "modulo": pedido["modulo_nome"],
                     "valor": pedido["valor"],
+                    "forma_pagamento_id": pedido["forma_pagamento_id"],
                     "forma_pagamento": pedido["forma_pagamento"],
                     "status": "PAGO",
                 },
@@ -2505,3 +2228,77 @@ def admin_alterar_status_pedido_modulo(
         "status": destino,
         "modulo_registro_id": modulo_registro_id,
     }
+
+
+@router.get("/formas-pagamento")
+def admin_list_payment_methods(
+    member: Annotated[PlatformMemberContext, Depends(require_platform_permission("EMPRESAS_VER"))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    return {"items": [dict(row) for row in list_payment_methods(db)]}
+
+
+@router.post("/formas-pagamento", status_code=201)
+def admin_create_payment_method(
+    payload: AdminPaymentMethodCreate,
+    member: Annotated[PlatformMemberContext, Depends(require_platform_permission("FINANCEIRO_EDITAR"))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    try:
+        result = dict(create_payment_method(db, payload))
+        _audit_admin(db, member=member, empresa_id=None, acao="FORMA_PAGAMENTO_ADMIN_CRIADA",
+                     recurso="formas_pagamento", recurso_id=result["id"])
+        db.commit()
+        return result
+    except Exception:
+        db.rollback()
+        raise
+
+
+class AdminSubscriptionContractInput(BaseModel):
+    plano_id: int = Field(gt=0)
+    periodicidade: Literal["MENSAL", "ANUAL"]
+    valor: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    forma_pagamento_id: int = Field(gt=0)
+    renovacao_automatica: bool = False
+    observacoes: str | None = None
+    trial_id: int | None = Field(default=None, gt=0)
+
+
+class AdminSubscriptionChargeInput(BaseModel):
+    ciclo_inicio: date | None = None
+    vencimento: date
+
+
+@router.post("/empresas/{empresa_id}/assinaturas", status_code=201)
+def admin_prepare_subscription(
+    empresa_id: int,
+    payload: AdminSubscriptionContractInput,
+    member: Annotated[PlatformMemberContext, Depends(require_platform_permission("ASSINATURAS_EDITAR"))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    return subscriptions.prepare_contract(db, member=member, empresa_id=empresa_id, **payload.dict())
+
+
+@router.post("/assinaturas/{assinatura_id}/cobrancas", status_code=201)
+def admin_generate_subscription_charge(
+    assinatura_id: int,
+    payload: AdminSubscriptionChargeInput,
+    member: Annotated[PlatformMemberContext, Depends(require_platform_permission("FINANCEIRO_EDITAR"))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    return subscriptions.generate_charge(db, member=member, assinatura_id=assinatura_id, **payload.dict())
+
+
+@router.post("/pagamentos/{pagamento_id}/confirmar-assinatura")
+def admin_confirm_subscription_payment(
+    pagamento_id: int,
+    member: Annotated[PlatformMemberContext, Depends(require_platform_permission("FINANCEIRO_EDITAR"))],
+    db: Annotated[Session, Depends(get_db)],
+):
+    return subscriptions.confirm_payment(db, member=member, pagamento_id=pagamento_id)
+
+
+# Support beta uses the existing administrative permissions and tables.
+from app.admin.support import router as support_router
+router.include_router(support_router)

@@ -47,7 +47,13 @@ class OrcamentoItemInput(BaseModel):
     comprimento_corrente_sem_fim_m: Optional[float] = Field(default=None, allow_inf_nan=False)
 
 class OrcamentoInput(BaseModel):
-    cliente_id: int
+    cliente_final_nome: Optional[str] = None
+    cliente_final_documento: Optional[str] = None
+    cliente_final_telefone: Optional[str] = None
+    cliente_final_email: Optional[str] = None
+    cliente_final_endereco: Optional[str] = None
+
+    cliente_id: Optional[int] = None
     perfil_comercial: Literal["DECORADOR", "VAREJO", "CONSUMIDOR_FINAL"] = "VAREJO"
     status: str = "EM_ABERTO"
     validade: Optional[date] = None
@@ -56,6 +62,37 @@ class OrcamentoInput(BaseModel):
     desconto: float = Field(default=0, ge=0)
     total: float = Field(default=0, ge=0)
     total_final: float = Field(default=0, ge=0)
+
+    parceiro_id: Optional[int] = None
+    percentual_parceiro: float = Field(
+        default=0,
+        ge=0,
+        le=1000,
+    )
+
+    representante_id: Optional[int] = None
+    vendedor_id: Optional[int] = None
+    incluir_rt: bool = False
+    tipo_rt: Optional[
+        Literal["VALOR_FIXO", "PERCENTUAL"]
+    ] = None
+    percentual_rt: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+    valor_rt: float = Field(
+        default=0,
+        ge=0,
+    )
+
+    incluir_taxa_bancaria: bool = False
+    taxa_bancaria_percentual: float = Field(
+        default=0,
+        ge=0,
+        lt=100,
+    )
+
     itens: List[OrcamentoItemInput] = Field(default_factory=list)
 
 class OrcamentoUpdate(OrcamentoInput):

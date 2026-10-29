@@ -36,7 +36,7 @@ def get_auth_mode() -> str:
 
 
 def get_development_tenant() -> TenantContext:
-    """Resolve a Smart-tec somente em ambiente local explicitamente reconhecido."""
+    """Resolve o tenant de desenvolvimento somente em ambiente local explicitamente reconhecido."""
     environment = os.getenv("SMARTTEC_ENV", "development").strip().lower()
 
     if environment not in {"dev", "development", "local"}:

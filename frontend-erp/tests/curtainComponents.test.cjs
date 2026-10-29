@@ -1,0 +1,50 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
+const {pathToFileURL}=require('node:url'),{registerHooks}=require('node:module')
+const compiled=new Map()
+registerHooks({resolve(spec,ctx,next){try{return next(spec,ctx)}catch(e){if(spec.startsWith('.')&&!path.extname(spec)){for(const ext of ['.ts','.tsx'])try{return next(spec+ext,ctx)}catch{}}throw e}},load(url,ctx,next){if(url.endsWith('.css'))return{format:'module',source:'',shortCircuit:true};if(compiled.has(url))return{format:'module',source:compiled.get(url),shortCircuit:true};return next(url,ctx)}})
+;(async()=>{
+ const root=path.join(__dirname,'../src'),u=await import(pathToFileURL(path.join(root,'utils/curtainComponents.ts')))
+ const budget=await import(pathToFileURL(path.join(root,'types/budget.ts')))
+ const p=(id,nome,extra={})=>({id,nome,situacao:'Ativo',grupo_tecnico:'COMPONENTES_CORTINAS',unidade_venda:'M',custo_final:20,valor_custo:99,nome_fornecedor:'AÇÃO DISTRIBUIDORA',codigo:'T1',codigo_fornecedor:'AC001',...extra})
+ const catalog=[p(1,'Trilho Master'),p(2,'Varão'),p(3,'Comando 32 Rolô'),p(4,'Corrente persiana'),p(5,'Suporte',{grupo_tecnico:'COMPONENTES_PERSIANAS'}),p(6,'Trilho inativo',{situacao:'Inativo'}),p(7,'Entretela',{unidade_venda:'ML'}),p(8,'Trilho Romana',{modelo_tecnico:'ROMANA'})]
+ assert.deepEqual(u.searchCurtainComponents(catalog,'trilho').map(p=>p.id),[1])
+ assert.deepEqual(u.searchCurtainComponents(catalog,'varao').map(p=>p.id),[2])
+ assert.deepEqual(u.searchCurtainComponents(catalog,'comando 32'),[])
+ assert.deepEqual(u.searchCurtainComponents(catalog,'corrente'),[])
+ assert.deepEqual(u.searchCurtainComponents(catalog,'AC001').map(p=>p.id),[1,2,7])
+ assert.deepEqual(u.searchCurtainComponents(catalog,'acao').map(p=>p.id),[1,2,7])
+ assert.equal(u.curtainComponentSubtotal({produto_id:1,quantidade:2.5},catalog[0]),50)
+ assert.equal(u.curtainComponentUnit(catalog[0]),'M')
+ const {transformWithOxc}=await import('vite'),file=path.join(root,'components/CurtainComponents.tsx')
+ const source=fs.readFileSync(file,'utf8').replace("import { useState } from 'react'","const useState=v=>[typeof v==='boolean'?true:v,()=>{}]")
+ compiled.set(pathToFileURL(file).href,(await transformWithOxc(source,file,{jsx:{runtime:'automatic'}})).code)
+ const {CurtainComponents}=await import(pathToFileURL(file))
+ const nodes=t=>!t||typeof t!=='object'?[]:Array.isArray(t)?t.flatMap(nodes):[t,...nodes(t.props?.children)]
+ let lines=[{produto_id:1,quantidade:2},{produto_id:2,quantidade:1}],last
+ let tree=CurtainComponents({catalog,lines,onChange:v=>last=v})
+ const rendered=nodes(tree).filter(n=>typeof n.type==='function').map(n=>n.type(n.props))
+ for (const [unit, quantity, expected] of [['ML',2.8,'2,80'],['M',3,'3,00'],['metros',2.8,'2,80'],['Metro linear',3,'3,00'],['ML',2.805,'2,81'],['UN',3,'3']]) {
+  const selected={...catalog[0],unidade_venda:unit},line={produto_id:1,quantidade:quantity}
+  const section=CurtainComponents({catalog:[selected],lines:[line],onChange:v=>last=v})
+  const element=nodes(section).find(n=>typeof n.type==='function')
+  const input=nodes(element.type(element.props)).find(n=>n.props?.['aria-label']==='Quantidade do componente')
+  assert.equal(input.props.value,expected);assert.equal(line.quantidade,quantity)
+  last=[line]
+  input.props.onChange({target:{value:'2,8'}});assert.equal(last[0].quantidade,2.8)
+  input.props.onChange({target:{value:'3.25'}});assert.equal(last[0].quantidade,3.25)
+ }
+ const row=nodes(rendered[0]);assert.equal(row.find(n=>n.props?.role==='option').props.children[0].props.children,'Trilho Master')
+ row.find(n=>n.props?.role==='option'&&n.props?.['aria-selected']).props.onClick()
+ assert.equal(last[0].produto_id,1)
+ row.find(n=>n.props?.['aria-label']==='Quantidade do componente').props.onChange({target:{value:'3,5'}})
+ assert.equal(last[0].quantidade,3.5);assert.equal(u.curtainComponentSubtotal(last[0],catalog[0]),70)
+ row.find(n=>n.props?.['aria-label']==='Remover componente').props.onClick();assert.deepEqual(last,[lines[1]])
+ nodes(tree).find(n=>n.type==='button'&&n.props.children==='+ Adicionar componente').props.onClick();assert.equal(last.length,3)
+ assert.deepEqual(u.curtainComponentLines({componentes:[]},2),[])
+ const base={...budget.emptyProduct(1),curtain:{componentes:lines}}
+ assert.notEqual(budget.curtainKey(base,'Varejo'),budget.curtainKey({...base,curtain:{componentes:[{produto_id:1,quantidade:3}]}},'Varejo'))
+ for(const name of ['NewBudgetPage.tsx','NewSalePage.tsx'])assert.ok(fs.readFileSync(path.join(root,'pages',name),'utf8').includes('BudgetProductRow'))
+ assert.ok(fs.readFileSync(path.join(root,'components/BudgetProductRow.tsx'),'utf8').includes('<CurtainSimulation'))
+ console.log('Quantidade ML/M validada: duas casas e vírgula, valor interno intacto, entrada com ponto/vírgula e UN preservado.')
+ console.log('17 verificações aprovadas: busca exclusiva, código/fornecedor, IDs/custos/unidade, seleção/quantidade/remoção/múltiplos, reatividade e componente compartilhado Orçamento/Venda.')
+})().catch(e=>{console.error(e);process.exitCode=1})

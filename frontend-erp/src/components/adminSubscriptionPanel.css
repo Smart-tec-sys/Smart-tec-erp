@@ -1,0 +1,22 @@
+.admin-subscription { padding:20px; min-width:0; overflow-wrap:anywhere; }
+.admin-subscription h3 { margin:0; }
+.admin-subscription h4 { margin:0 0 12px; color:#b91c1c; }
+.admin-subscription p { color:#667085; font-size:13px; line-height:1.5; }
+.admin-subscription section { border-top:1px solid #e7e9ed; margin-top:20px; padding-top:18px; }
+.admin-subscription .subscription-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:16px; margin:12px 0; }
+.admin-subscription fieldset { border:0; padding:0; min-width:0; }
+.admin-subscription label, .admin-subscription dt { font-size:12px; color:#667085; }
+.admin-subscription input:not([type=checkbox]), .admin-subscription select, .admin-subscription textarea { display:block; width:100%; min-width:0; min-height:40px; margin-top:6px; box-sizing:border-box; padding:8px 10px; border:1px solid #d8dde4; border-radius:6px; background:white; color:#202938; font:inherit; }
+.admin-subscription dd { margin:5px 0 0; font-size:14px; font-weight:600; }
+.admin-subscription .subscription-check { display:flex; align-items:center; gap:8px; }
+.subscription-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+.subscription-history { display:grid; gap:12px; }
+.subscription-charge { padding:16px; border:1px solid #e7e9ed; border-radius:8px; background:#fafbfc; min-width:0; }
+.subscription-status { display:inline-block; font-size:11px; font-weight:700; background:#edf0f4; border-radius:6px; padding:5px 8px; margin-left:10px; }
+.subscription-additional { display:grid; gap:12px; }
+.subscription-additional span { display:block; margin-top:4px; color:#667085; font-size:13px; }
+.admin-subscription .subscription-error { color:#b42318; background:#fff3f2; padding:12px; }
+.admin-subscription .subscription-message { color:#166534; background:#f0fdf4; padding:12px; }
+@media(max-width:600px) { .admin-subscription { padding:14px; } .admin-subscription button { max-width:100%; white-space:normal; } .subscription-status { margin:8px 0; display:table; } }
+
+.admin-dashboard [role=dialog] input, .admin-dashboard [role=dialog] select { box-sizing:border-box; min-width:0; }

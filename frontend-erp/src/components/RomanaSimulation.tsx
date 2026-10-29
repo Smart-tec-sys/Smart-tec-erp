@@ -1,3 +1,4 @@
+import { technicalSimulationError } from '../utils/technicalSimulation'
 import { useEffect } from 'react'
 import { simulateRomana } from '../services/api'
 import { formatCurrency, parseDecimal, type BudgetProduct, type CommercialType, type CommercialProfile } from '../types/budget'
@@ -12,10 +13,11 @@ export function RomanaSimulation({ product, profile, onResult }: Props) {
     if (kind !== 'MANUAL') return
     let cancelled = false
     const [produto_id, width, height, quantidade, desconto, commercial] = JSON.parse(key) as [number, string, string, number, number, CommercialType]
+    if (!produto_id || parseDecimal(width) <= 0 || parseDecimal(height) <= 0 || !Number.isInteger(quantidade) || quantidade <= 0) return
     const timer = setTimeout(() => {
       void simulateRomana({ produto_id, largura: parseDecimal(width), altura: parseDecimal(height), quantidade, desconto, perfil_comercial: profiles[commercial] })
         .then(result => { if (!cancelled) onResult(id, { key, result }) })
-        .catch(error => { if (!cancelled) onResult(id, { key, error: error instanceof Error ? error.message : String(error) }) })
+        .catch(error => { if (!cancelled) onResult(id, { key, error: technicalSimulationError(error) }) })
     }, 350)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [key, id, kind, onResult])
@@ -33,7 +35,7 @@ export function RomanaSimulation({ product, profile, onResult }: Props) {
     {!current && <p>Calculando… Totais ainda não confirmados; aguarde antes de salvar.</p>}
     {current && state?.error && <p role="alert">Não foi possível simular. Revise as medidas ou a conexão. Dados preservados; salvamento bloqueado. {state.error}</p>}
     {r && <>
-      <p>{r.quantidade_pecas} peça(s) · Área total: {Number(r.area_total).toLocaleString('pt-BR')} m²</p>
+      <p>{r.quantidade_pecas} peça(s) · Área total: {Number(r.area_real_m2).toLocaleString('pt-BR')} m²</p>
       <p>Custo cadastrado do produto: {r.custo_cadastrado === null ? 'indisponível' : formatCurrency(Number(r.custo_cadastrado))}. Preço comercial unitário: {r.preco_disponivel ? formatCurrency(Number(r.preco_unitario)) : 'indisponível'} · Subtotal: {formatCurrency(Number(r.subtotal))}</p>
       <p>Defaults do motor: {r.defaults_utilizados.tipo_corrente} / {r.defaults_utilizados.tipo_comando}. Fabricação abaixo: <strong>por peça</strong>, sem multiplicação local.</p>
       <dl>

@@ -19,6 +19,19 @@ class ClienteDB(Base):
     site = Column(String, nullable=True)
     vendedor_responsavel = Column(String, nullable=True)
 
+    # Vínculo comercial
+    # Ambos nulos = cliente direto.
+    # Parceiro OU representante, nunca os dois.
+    parceiro_id = Column(
+        Integer,
+        ForeignKey("parceiros_comerciais.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    representante_id = Column(
+        Integer,
+        ForeignKey("representantes.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Endereço
     cep = Column(String, nullable=True)
     logradouro = Column(String, nullable=True)

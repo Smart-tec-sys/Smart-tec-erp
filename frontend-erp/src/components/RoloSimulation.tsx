@@ -1,3 +1,4 @@
+import { technicalSimulationError } from '../utils/technicalSimulation'
 import { useEffect } from 'react'
 import { simulateRolo } from '../services/api'
 import { formatCurrency, parseDecimal, type BudgetProduct, type CommercialType } from '../types/budget'
@@ -8,13 +9,14 @@ type Props = { product: BudgetProduct; profile: CommercialType; onResult: (id: n
 export function RoloSimulation({ product, profile, onResult }: Props) {
   const key = roloKey(product, profile), id = product.id, kind = product.roloKind
   useEffect(() => {
-    if (kind === 'MOTORIZADA' || kind === 'MANUAL') {
+    if (kind === 'MANUAL') {
       let cancelled = false
       const [produto_id, width, height, quantidade, desconto, commercial, cor, acionamento] = JSON.parse(key) as [number, string, string, number, number, CommercialType, string, string]
-      const timer = setTimeout(() => {
+      if (!produto_id || parseDecimal(width) <= 0 || parseDecimal(height) <= 0 || !Number.isInteger(quantidade) || quantidade <= 0) return
+    const timer = setTimeout(() => {
         void simulateRolo({ produto_id, largura: parseDecimal(width), altura: parseDecimal(height), quantidade, desconto, perfil_comercial: profile === 'Decorador' ? 'DECORADOR' : profile === 'Varejo' ? 'VAREJO' : 'CONSUMIDOR_FINAL', cor: cor || undefined, acionamento: normalizeRoloDrive(acionamento) })
           .then(result => { if (!cancelled) onResult(id, { key, result }) })
-          .catch(error => { if (!cancelled) onResult(id, { key, error: error instanceof Error ? error.message : String(error) }) })
+          .catch(error => { if (!cancelled) onResult(id, { key, error: technicalSimulationError(error) }) })
       }, 350)
       return () => { cancelled = true; clearTimeout(timer) }
     }

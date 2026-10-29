@@ -89,6 +89,7 @@ def verify_supabase_access_token(
             algorithms=[algorithm],
             audience=EXPECTED_AUDIENCE,
             issuer=issuer,
+            leeway=2,
             options={
                 "require": [
                     "exp",

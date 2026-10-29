@@ -1,5 +1,10 @@
+import { CurtainColorField } from './CurtainColorField'
+import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
+import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
+import { fabricDisplay, fabricVariantKey, groupFabricSuggestions } from '../utils/fabricDisplay'
+import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ApiProduct, BudgetProduct, CommercialType } from '../types/budget'
 import { commercialPrice, formatCurrency, normalizeSearch, productColor, productLineSubtotal } from '../types/budget'
 const CREATE_PRODUCT_VALUE = '__CREATE_PRODUCT__'
@@ -31,7 +36,7 @@ type Props = {
   commercialType: CommercialType
   onChange: (next: BudgetProduct) => void
   onRemove: () => void
-  onCreateProduct: (productId: number) => void
+  onCreateProduct?: (productId: number) => void
   onRomana: (id: number, state: RomanaState) => void
   onRomanaTeto: (id: number, state: RomanaTetoState) => void
   onRolo: (id: number, state: RoloState) => void
@@ -41,6 +46,11 @@ type Props = {
 }
 
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
+
+const isCurtainCatalogItem = (p: ApiProduct) =>
+  normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' ||
+  [p.grupo_tecnico, p.grupo_produto].some((group) =>
+    /^TECIDOS? CORTINAS?$/.test(normalizeSearch(group ?? '').replace(/_/g, ' ')))
 
 export function BudgetProductRow({
   product,
@@ -56,7 +66,12 @@ export function BudgetProductRow({
   onCurtain,
   validationAttempted = false,
 }: Props) {
-  const [query, setQuery] = useState(product.product)
+  const isCurtain = product.modelTechnical === 'CORTINA' && product.groupTechnical === 'TECIDOS_CORTINA'
+  const selected = catalog.find((p) => p.id === product.productId)
+  const selectedDisplay = isCurtain
+    ? 'Cortina de tecido'
+    : fabricDisplay(selected ?? { id: product.productId ?? 0, nome: product.product }).name
+  const [query, setQuery] = useState(fabricDisplay({ id: product.productId ?? 0, nome: product.product }).name)
   const update = <K extends keyof BudgetProduct>(key: K, value: BudgetProduct[K]) => onChange({ ...product, [key]: value })
   const matches = useMemo(() => {
     const terms = normalizeSearch(query).split(/\s+/).filter(Boolean)
@@ -65,87 +80,36 @@ export function BudgetProductRow({
       .filter(active)
       .filter((p) => {
         const hay = normalizeSearch(
-          `${p.nome} ${p.codigo_interno || ''} ${p.codigo || ''} ${p.codigo_barras || ''} ${p.grupo_produto || ''} ${p.grupo_tecnico || ''} ${p.familia_tecnica || ''} ${p.modelo_tecnico || ''} ${p.modelo || ''} ${productColor(p)}`
+          `${fabricDisplay(p).name} ${p.nome} ${p.produto_base || ''} ${p.codigo_interno || ''} ${p.codigo || ''} ${p.codigo_barras || ''} ${p.grupo_produto || ''} ${p.grupo_tecnico || ''} ${p.familia_tecnica || ''} ${p.modelo_tecnico || ''} ${p.modelo || ''} ${productColor(p)}`
         )
         return terms.every((t) => hay.includes(t))
       })
-      .slice(0, 12)
+
   }, [catalog, query])
-  const selected = catalog.find((p) => p.id === product.productId)
+  useEffect(() => { setQuery(selectedDisplay) }, [selectedDisplay])
   const variants = useMemo(
-    () => (selected?.familia_tecnica ? catalog.filter((p) => active(p) && p.familia_tecnica === selected.familia_tecnica) : selected ? [selected] : []),
+    () => (selected && fabricDisplay(selected).fabric && productColor(selected) ? catalog.filter(p => active(p) && fabricVariantKey(p) === fabricVariantKey(selected)) : selected?.familia_tecnica ? catalog.filter((p) => active(p) && p.familia_tecnica === selected.familia_tecnica) : selected ? [selected] : []),
     [catalog, selected]
   )
+  const curtainVirtualMatches = useMemo(() => curtainSuggestions(catalog, query), [catalog, query])
   const rankedMatches = useMemo(() => {
     const q = normalizeSearch(query.trim())
-
-    if (!q.includes('CORTINA')) {
-      return matches
-    }
-
-    const curtains = catalog.filter((p) => {
-      const searchable = normalizeSearch([
-        p.nome,
-        p.grupo_produto,
-        p.grupo_tecnico,
-        p.modelo_tecnico,
-        p.tipo_cortina_persiana,
-      ].filter(Boolean).join(' '))
-
-      const isFinalCurtain =
-        normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' &&
-        normalizeSearch(p.grupo_tecnico ?? '') === 'TECIDOS_CORTINA'
-
-      return isFinalCurtain || searchable.includes('CORTINA')
-    })
-
-    const orderedCurtains = [...curtains].sort((a, b) => {
-      const aFinal =
-        normalizeSearch(a.modelo_tecnico ?? '') === 'CORTINA' &&
-        normalizeSearch(a.grupo_tecnico ?? '') === 'TECIDOS_CORTINA'
-
-      const bFinal =
-        normalizeSearch(b.modelo_tecnico ?? '') === 'CORTINA' &&
-        normalizeSearch(b.grupo_tecnico ?? '') === 'TECIDOS_CORTINA'
-
-      if (aFinal !== bFinal) return aFinal ? -1 : 1
-
-      const aName = normalizeSearch(a.nome ?? '')
-      const bName = normalizeSearch(b.nome ?? '')
-
-      const aStarts = aName.startsWith('CORTINA')
-      const bStarts = bName.startsWith('CORTINA')
-
-      if (aStarts !== bStarts) return aStarts ? -1 : 1
-
-      return String(a.nome ?? '').localeCompare(
-        String(b.nome ?? ''),
-        'pt-BR'
-      )
-    })
-
-    const curtainBase = orderedCurtains.find(
-      (p) =>
-        normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' &&
-        normalizeSearch(p.grupo_tecnico ?? '') === 'TECIDOS_CORTINA'
-    )
-
-    if (!curtainBase) {
+    if (q.includes('CORTINA')) {
       return []
     }
+    return groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p)))
+      .slice(0, 12)
+  }, [matches, query])
 
-    return [
-      {
-        ...curtainBase,
-        nome: 'Cortina de tecido',
-        cor: null,
-      },
-    ]
-  }, [catalog, matches, query])
+  // Both sources reach exactly the same rendered dropdown array.
+  const dropdownMatches = [
+    ...rankedMatches.map(p => ({ key: String(p.id), product: p, suggestion: undefined as CurtainSuggestion | undefined })),
+    ...curtainVirtualMatches.map(suggestion => ({ key: suggestion.key, product: undefined, suggestion })),
+  ]
 
   const colors = useMemo(() => {
     const grouped = new Map<string, ApiProduct[]>()
-    variants.forEach((p) => {
+    variants.filter((p) => !isCurtainCatalogItem(p)).forEach((p) => {
       const c = productColor(p)
       if (c) grouped.set(c, [...(grouped.get(c) || []), p])
     })
@@ -153,16 +117,31 @@ export function BudgetProductRow({
   }, [variants])
 
   const fixedFamilyColors =
-    selected?.familia_tecnica
+    selected?.familia_tecnica && !isCurtainCatalogItem(selected)
       ? FAMILY_COLOR_OPTIONS[selected.familia_tecnica] || []
       : []
+
+  const chooseCurtain = (suggestion: CurtainSuggestion) => {
+    const curtain = applyCurtainSuggestion(isCurtain ? product.curtain ?? DEFAULT_CURTAIN : DEFAULT_CURTAIN, suggestion)
+    setQuery('Cortina de tecido')
+    onChange({
+      ...product,
+      productId: null, product: 'Cortina de tecido', code: '', family: '',
+      groupTechnical: 'TECIDOS_CORTINA', modelTechnical: 'CORTINA', unit: 'M²',
+      color: curtain.cor, curtain, price: isCurtain ? product.price : 0,
+      romanaKind: undefined, romana: undefined, romanaTetoKind: undefined, romanaTeto: undefined,
+      roloKind: undefined, rolo: undefined, doubleVisionKind: undefined, doubleVision: undefined,
+      acao_acionamento: undefined, lado_comando: undefined, comprimento_bastao: undefined,
+      comprimento_corrente_sem_fim: undefined, acionamento: undefined,
+    })
+  }
 
   const choose = (p: ApiProduct) => {
     const rKind = romanaKind(p)
     const rtKind = romanaTetoKind(p)
     const rlKind = roloKind(p)
     const dvKind = doubleVisionKind(p)
-    setQuery(p.nome)
+    setQuery(fabricDisplay(p).name)
     onChange({
       ...product,
       productId: p.id,
@@ -176,6 +155,11 @@ export function BudgetProductRow({
       price: rKind ? 0 : rlKind ? 0 : dvKind ? 0 : rtKind ? 0 : commercialPrice(p, commercialType),
       romanaKind: rKind,
       romanaTetoKind: rtKind,
+      romanaTeto: undefined,
+      acao_acionamento: undefined,
+      lado_comando: undefined,
+      comprimento_bastao: undefined,
+      comprimento_corrente_sem_fim: undefined,
       curtain: undefined,
       romana: undefined,
       roloKind: rlKind,
@@ -187,14 +171,14 @@ export function BudgetProductRow({
   }
 
   const handleCreateProductClick = () => {
-    onCreateProduct(product.id)
+    onCreateProduct?.(product.id)
   }
 
   const handleColorChange = (cor: string) => {
     onChange({ ...product, color: cor })
   }
 
-  const hasSelectedProduct = Boolean(product.productId)
+  const hasSelectedProduct = isCurtain || Boolean(product.productId)
   const quantityInvalid =
     hasSelectedProduct &&
     (!Number.isFinite(Number(product.quantity)) || Number(product.quantity) <= 0)
@@ -204,10 +188,10 @@ export function BudgetProductRow({
     hasSelectedProduct &&
     (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0)
 
-  const subtotal = productLineSubtotal(product)
+  const subtotal = productLineSubtotal(product, commercialType)
 
   return (
-    <article className="budget-product-row">
+    <article className="budget-product-row" onFocusCapture={selectZeroOnFocus}>
       <div className="product-row-head">
         <span className="product-row-index">{String(product.id).padStart(2, '0')}</span>
         <strong>Produto</strong>
@@ -219,17 +203,19 @@ export function BudgetProductRow({
         <label className="field product-field-wide product-search-box">
           <span>Produto</span>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex.: rolo bk denver" autoComplete="off" />
-          {query !== product.product && (
+          {query !== selectedDisplay && (
             <div className="product-suggestions">
-              <button type="button" key={CREATE_PRODUCT_VALUE} onClick={handleCreateProductClick} className="create-product-option">
+              {onCreateProduct && <button type="button" key={CREATE_PRODUCT_VALUE} onClick={handleCreateProductClick} className="create-product-option">
                 <PackagePlus size={14} /> + Cadastrar novo produto
-              </button>
-              {rankedMatches.length === 0 ? (
+              </button>}
+              {dropdownMatches.length === 0 ? (
                 <span className="no-matches">Nenhum produto encontrado</span>
               ) : (
-                rankedMatches.map((p) => (
-                  <button type="button" key={p.id} onClick={() => choose(p)}>
-                    <strong>{p.nome}</strong>
+                dropdownMatches.map(match => (
+                  <button type="button" key={match.key}
+                    onClick={() => { if (match.suggestion) chooseCurtain(match.suggestion); else if (match.product) choose(match.product) }}>
+                    <strong>{match.suggestion?.label ?? fabricDisplay(match.product!).name}</strong>
+                    {!match.suggestion && match.product && fabricDisplay(match.product).width && <small>Largura de fornecimento: {fabricDisplay(match.product).width}</small>}
                   </button>
                 ))
               )}
@@ -238,7 +224,9 @@ export function BudgetProductRow({
         </label>
         <label className="field">
           <span>Cor</span>
-          {fixedFamilyColors.length > 0 ? (
+          {isCurtain ? (
+            <CurtainColorField product={product} catalog={catalog} onChange={onChange} />
+          ) : fixedFamilyColors.length > 0 ? (
             <select value={product.color} onChange={(e) => handleColorChange(e.target.value)} disabled={fixedFamilyColors.length === 0}>
               <option value="">Selecione a cor</option>
               {fixedFamilyColors.map((c) => (
@@ -283,19 +271,15 @@ export function BudgetProductRow({
         </label>
         <label className="field">
           <span>Largura</span>
-          <input value={product.width} onChange={(e) => update('width', e.target.value)} />
+          <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.width)} onChange={(e) => update('width', e.target.value)} />
         </label>
         <label className="field">
           <span>Altura</span>
-          <input value={product.height} onChange={(e) => update('height', e.target.value)} />
+          <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.height)} onChange={(e) => update('height', e.target.value)} />
         </label>
         <label className={`field${validationAttempted && valueInvalid ? ' field-invalid' : ''}`}>
           <span>Valor *</span>
-          <input type="number" value={product.price} readOnly />
-        </label>
-        <label className="field">
-          <span>Desconto</span>
-          <input type="number" min="0" step="0.01" value={product.discount} onChange={(e) => update('discount', Number(e.target.value))} />
+          <ZeroNumberInput min="0" step="0.01" value={product.price} readOnly={Boolean(product.romanaKind || product.romanaTetoKind || product.roloKind || product.doubleVisionKind || product.curtain)} onValueChange={value => update('price', value)} />
         </label>
         <div className="product-subtotal">
           <span>Subtotal estimado</span>
@@ -303,7 +287,7 @@ export function BudgetProductRow({
         </div>
       </div>
       <RomanaSimulation product={product} profile={commercialType} onResult={onRomana} />
-      <RomanaTetoSimulation product={product} profile={commercialType} onResult={onRomanaTeto} />
+      <RomanaTetoSimulation product={product} profile={commercialType} onResult={onRomanaTeto} onChange={onChange} />
       <RoloSimulation product={product} profile={commercialType} onResult={onRolo} />
       <DoubleVisionSimulation product={product} profile={commercialType} onResult={onDoubleVision} />
       <CurtainSimulation product={product} catalog={catalog} profile={commercialType} onResult={onCurtain} />

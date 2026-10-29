@@ -1,10 +1,65 @@
+from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 from app.models.cliente import ClienteDB
 from app.schemas.cliente import ClienteCreate, ClienteUpdate
 from app.tenant.context import TenantContext
 from app.tenant.isolation import require_tenant
 
+
+def _validar_vinculo_comercial(
+    db: Session,
+    dados: dict,
+    tenant: TenantContext,
+):
+    empresa_id = require_tenant(tenant)
+
+    parceiro_id = dados.get("parceiro_id")
+    representante_id = dados.get("representante_id")
+
+    if parceiro_id and representante_id:
+        raise ValueError(
+            "Cliente não pode estar vinculado a parceiro e representante ao mesmo tempo."
+        )
+
+    if parceiro_id:
+        parceiro = db.execute(
+            text("""
+                SELECT id
+                FROM parceiros_comerciais
+                WHERE id = :id
+                  AND empresa_id = :empresa_id
+                  AND ativo = TRUE
+            """),
+            {
+                "id": parceiro_id,
+                "empresa_id": empresa_id,
+            },
+        ).first()
+
+        if not parceiro:
+            raise ValueError(
+                "Parceiro comercial inválido para esta empresa."
+            )
+
+    if representante_id:
+        representante = db.execute(
+            text("""
+                SELECT id
+                FROM representantes
+                WHERE id = :id
+                  AND empresa_id = :empresa_id
+                  AND ativo = TRUE
+            """),
+            {
+                "id": representante_id,
+                "empresa_id": empresa_id,
+            },
+        ).first()
+
+        if not representante:
+            raise ValueError(
+                "Representante inválido para esta empresa."
+            )
 
 def get_all(db: Session, tenant: TenantContext):
     """Busca todos os clientes cadastrados no banco de dados."""
@@ -33,6 +88,12 @@ def create(db: Session, data: ClienteCreate, tenant: TenantContext):
     """Cria um novo cliente."""
     try:
         dados_cliente = data.dict()
+
+        _validar_vinculo_comercial(
+            db,
+            dados_cliente,
+            tenant,
+        )
         novo_cliente = ClienteDB(**dados_cliente, empresa_id=require_tenant(tenant))
 
         db.add(novo_cliente)
@@ -58,6 +119,11 @@ def update(db: Session, cliente_id: int, data: ClienteUpdate, tenant: TenantCont
         dados_cliente = data.dict()
         dados_cliente.pop("empresa_id", None)
 
+        _validar_vinculo_comercial(
+            db,
+            dados_cliente,
+            tenant,
+        )
         for campo, valor in dados_cliente.items():
             setattr(cliente, campo, valor)
 

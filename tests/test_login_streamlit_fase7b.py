@@ -104,15 +104,15 @@ class LoginStreamlitFase7BTest(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 401)
 
     def test_auth_me_retorna_somente_vinculo_ativo(self):
-        user = SimpleNamespace(id=1, email="owner@example.com", nome="Owner")
+        user = SimpleNamespace(id=1, email="owner@example.com", nome="Owner", foto_url=None)
         link = SimpleNamespace(empresa_id=1, papel="OWNER")
-        company = SimpleNamespace(id=1, nome="Smart-tec", nome_fantasia="Smart-tec", slug="smart-tec")
+        company = SimpleNamespace(id=1, nome="Smart-tec", nome_fantasia="Smart-tec", slug="smart-tec", logo_url=None)
         result = auth_me(ExternalIdentity("supabase", "subject"), AuthMeSession(user, [link], {1: company}))
         self.assertEqual([item["id"] for item in result["empresas"]], [1])
         self.assertNotIn("provedor_subject", result["user"])
 
     def test_auth_me_sem_vinculo_retorna_403(self):
-        user = SimpleNamespace(id=1, email="owner@example.com", nome="Owner")
+        user = SimpleNamespace(id=1, email="owner@example.com", nome="Owner", foto_url=None)
         with self.assertRaises(HTTPException) as raised:
             auth_me(ExternalIdentity("supabase", "subject"), AuthMeSession(user, [], {}))
         self.assertEqual(raised.exception.status_code, 403)

@@ -14,6 +14,9 @@ class ClienteBase(BaseModel):
     site: Optional[str] = None
     vendedor_responsavel: Optional[str] = None
 
+    # Vínculo comercial
+    parceiro_id: Optional[int] = None
+    representante_id: Optional[int] = None
     # Endereço
     cep: Optional[str] = None
     logradouro: Optional[str] = None

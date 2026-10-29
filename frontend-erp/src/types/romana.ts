@@ -8,7 +8,7 @@ export function romanaKind(p: Pick<ApiProduct, 'modelo_tecnico' | 'modelo' | 'no
   return ['ROMANA', 'ROMANA MANUAL'].includes(normalize(p.modelo_tecnico || '')) ? 'MANUAL' : null
 }
 export type RomanaResult = {
-  modelo: string; quantidade_pecas: number; area_total: number
+  modelo: string; quantidade_pecas: number; area_real_m2: number; area_faturavel_m2: number; minimo_faturavel_aplicado: boolean
   fabricacao_por_peca: Record<string, unknown>
   defaults_utilizados: { tipo_corrente: string; tipo_comando: string }
   custo_tecnico: null; custo_cadastrado: number | null; preco_unitario: number; subtotal: number

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { technicalSimulationError } from '../utils/technicalSimulation'
+import { useEffect } from 'react'
 import { simulateRomanaTeto } from '../services/api'
 import { formatCurrency, parseDecimal, type BudgetProduct, type CommercialType } from '../types/budget'
 import { romanaTetoKey, type RomanaTetoState } from '../types/romana_teto'
@@ -13,26 +14,25 @@ const BASTAO_OPCOES = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25]
 const CORRENTE_SEM_FIM_OPCOES = [0.75, 1.00, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00]
 const LADO_COMANDO_OPCOES = ['ESQUERDA', 'DIREITA'] as const
 
-type Props = { product: BudgetProduct; profile: CommercialType; onResult: (id: number, state: RomanaTetoState) => void }
+type Props = { product: BudgetProduct; profile: CommercialType; onResult: (id: number, state: RomanaTetoState) => void; onChange: (next: BudgetProduct) => void }
 
-export function RomanaTetoSimulation({ product, profile, onResult }: Props) {
+export function RomanaTetoSimulation({ product, profile, onResult, onChange }: Props) {
   const key = romanaTetoKey(product, profile)
   const id = product.id
   const kind = product.romanaTetoKind
-  const [acionamento, setAcionamento] = useState<'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA'>('MANUAL_BASTAO')
-  const [ladoComando, setLadoComando] = useState<'ESQUERDA' | 'DIREITA'>('ESQUERDA')
-  const [comprimentoBastao, setComprimentoBastao] = useState<string>('1.50')
-  const [comprimentoCorrenteSemFim, setComprimentoCorrenteSemFim] = useState<string>('1.50')
+  const acionamento = (product.acao_acionamento || 'MANUAL_BASTAO') as 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA'
+  const ladoComando = (product.lado_comando || 'ESQUERDA') as 'ESQUERDA' | 'DIREITA'
+  const comprimentoBastao = product.comprimento_bastao || '1.50'
+  const comprimentoCorrenteSemFim = product.comprimento_corrente_sem_fim || '1.50'
+  const configure = (values: Partial<BudgetProduct>) => onChange({ ...product, ...values, romanaTeto: undefined })
 
   useEffect(() => {
-    if (kind !== 'MANUAL_BASTAO' && kind !== 'MANUAL_CORRENTE' && kind !== 'MOTORIZADA') return
+    if ((kind !== 'MANUAL_BASTAO' && kind !== 'MANUAL_CORRENTE') || acionamento === 'MOTORIZADA') return
     let cancelled = false
     const [produto_id, width, height, quantidade, desconto, commercial, acionamentoStr, ladoComandoStr, bastaoStr, correnteStr, corStr] = JSON.parse(key) as [number, string, string, number, number, CommercialType, string, string, string, string, string]
-    if (acionamentoStr) setAcionamento(acionamentoStr as 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA')
-    if (ladoComandoStr) setLadoComando(ladoComandoStr as 'ESQUERDA' | 'DIREITA')
-    if (bastaoStr) setComprimentoBastao(bastaoStr)
-    if (correnteStr) setComprimentoCorrenteSemFim(correnteStr)
 
+
+    if (!produto_id || parseDecimal(width) <= 0 || parseDecimal(height) <= 0 || !Number.isInteger(quantidade) || quantidade <= 0) return
     const timer = setTimeout(() => {
       void simulateRomanaTeto({
         produto_id,
@@ -48,7 +48,7 @@ export function RomanaTetoSimulation({ product, profile, onResult }: Props) {
         cor: corStr || undefined,
       })
         .then(result => { if (!cancelled) onResult(id, { key, result }) })
-        .catch(error => { if (!cancelled) onResult(id, { key, error: error instanceof Error ? error.message : String(error) }) })
+        .catch(error => { if (!cancelled) onResult(id, { key, error: technicalSimulationError(error) }) })
     }, 350)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [key, id, kind, onResult, profile, acionamento, ladoComando, comprimentoBastao, comprimentoCorrenteSemFim])
@@ -81,8 +81,8 @@ export function RomanaTetoSimulation({ product, profile, onResult }: Props) {
           <span>Acionamento</span>
           <select
             value={acionamento}
-            onChange={e => setAcionamento(e.target.value as 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA')}
-            disabled={current}
+            onChange={e => configure({ acao_acionamento: e.target.value })}
+            
           >
             {ACIONAMENTO_OPCOES.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
           </select>
@@ -91,7 +91,7 @@ export function RomanaTetoSimulation({ product, profile, onResult }: Props) {
         {acionamento === 'MANUAL_BASTAO' && (
           <label className="field">
             <span>Comprimento do bastão (m)</span>
-            <select value={comprimentoBastao} onChange={e => setComprimentoBastao(e.target.value)} disabled={current}>
+            <select value={comprimentoBastao} onChange={e => configure({ comprimento_bastao: e.target.value })} >
               {BASTAO_OPCOES.map(v => <option key={v} value={v.toFixed(2)}>{v.toFixed(2)}</option>)}
             </select>
           </label>
@@ -101,13 +101,13 @@ export function RomanaTetoSimulation({ product, profile, onResult }: Props) {
           <>
             <label className="field">
               <span>Lado de comando</span>
-              <select value={ladoComando} onChange={e => setLadoComando(e.target.value as 'ESQUERDA' | 'DIREITA')} disabled={current}>
+              <select value={ladoComando} onChange={e => configure({ lado_comando: e.target.value })} >
                 {LADO_COMANDO_OPCOES.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </label>
             <label className="field">
               <span>Comprimento da corrente sem fim (m)</span>
-              <select value={comprimentoCorrenteSemFim} onChange={e => setComprimentoCorrenteSemFim(e.target.value)} disabled={current}>
+              <select value={comprimentoCorrenteSemFim} onChange={e => configure({ comprimento_corrente_sem_fim: e.target.value })} >
                 {CORRENTE_SEM_FIM_OPCOES.map(v => <option key={v} value={v.toFixed(2)}>{v.toFixed(2)}</option>)}
               </select>
             </label>
@@ -115,7 +115,7 @@ export function RomanaTetoSimulation({ product, profile, onResult }: Props) {
         )}
 
         {acionamento === 'MOTORIZADA' && (
-          <p className="api-message" style={{ margin: 0 }}>Motorizada: sem lado de comando, bastão ou corrente sem fim.</p>
+          <p className="api-message" style={{ margin: 0 }}>Romana de teto motorizada: cálculo técnico indisponível. Salvamento bloqueado.</p>
         )}
       </div>
 

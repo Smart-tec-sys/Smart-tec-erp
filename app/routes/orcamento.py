@@ -81,23 +81,9 @@ def simular_cortina_endpoint(
     from app.models.produto import ProdutoDB
     from app.tenant.isolation import require_tenant
 
-    produto = (
-        db.query(ProdutoDB)
-        .filter(
-            ProdutoDB.id == data.produto_id,
-            ProdutoDB.empresa_id == require_tenant(tenant),
-        )
-        .first()
-    )
-
-    if produto is None:
-        raise HTTPException(
-            404,
-            "Produto n?o encontrado para a empresa ativa",
-        )
-
+    from app.services.cortina_simulacao import simular_cortina_catalogo
     try:
-        return simular_cortina(produto, data)
+        return simular_cortina_catalogo(db, data, require_tenant(tenant))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

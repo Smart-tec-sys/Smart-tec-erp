@@ -1,3 +1,11 @@
+import { AdminSupportPanel } from '../components/AdminSupportPanel'
+import { AdminFiscalNoteCard } from '../components/AdminFiscalNoteCard'
+import { AdminPaymentCard } from '../components/AdminPaymentCard'
+import { financePresentation } from '../utils/adminFinance'
+import { AdminModuleOrderCard } from '../components/AdminModuleOrderCard'
+import './adminModules.css'
+import { moduleAction, grantCourtesy, requestModuleOrder } from '../utils/adminModules'
+import { AdminSubscriptionPanel } from '../components/AdminSubscriptionPanel'
 import {
   useEffect,
   useMemo,
@@ -20,8 +28,12 @@ import {
   Users,
 } from 'lucide-react'
 import {
+  confirmAdminSubscriptionPayment,
+  type AdminPayment,
+  getAdminPaymentMethods,
+  createAdminPaymentMethod,
+  type AdminPaymentMethod,
   activateAdminModule,
-  activateAdminSubscription,
   cancelAdminModule,
   createAdminModuleOrder,
   getAdminCompanies,
@@ -30,7 +42,6 @@ import {
   getAdminModulesCatalog,
   getAdminOverview,
   getAdminPlans,
-  startAdminTrial,
   updateAdminModuleOrderStatus,
   type AdminCompanyDetail,
   type AdminCompanyListItem,
@@ -274,22 +285,6 @@ export function AdminDashboardPage({ onBack }: Props) {
   const [moduleCatalog, setModuleCatalog] =
     useState<AdminModuleCatalogItem[]>([])
 
-  const [selectedPlanId, setSelectedPlanId] =
-    useState('')
-
-  const [
-    subscriptionPeriod,
-    setSubscriptionPeriod,
-  ] = useState<'MENSAL' | 'ANUAL'>('MENSAL')
-
-  const [
-    subscriptionValue,
-    setSubscriptionValue,
-  ] = useState('')
-
-  const [autoRenew, setAutoRenew] =
-    useState(false)
-
   const [
     selectedModuleId,
     setSelectedModuleId,
@@ -299,20 +294,11 @@ export function AdminDashboardPage({ onBack }: Props) {
     moduleOrigin,
     setModuleOrigin,
   ] = useState<
-    'AVULSO' | 'CORTESIA' | 'TRIAL'
+    'AVULSO' | 'CORTESIA'
   >('AVULSO')
 
-  const [
-    modulePeriod,
-    setModulePeriod,
-  ] = useState<
-    'MENSAL' | 'ANUAL' | 'UNICO' | 'CORTESIA'
-  >('MENSAL')
-
-  const [
-    moduleValue,
-    setModuleValue,
-  ] = useState('')
+  const [moduleEnd, setModuleEnd] = useState('')
+  const [moduleNotes, setModuleNotes] = useState('')
 
   const [
     orderModuleId,
@@ -332,14 +318,53 @@ export function AdminDashboardPage({ onBack }: Props) {
   ] = useState('')
 
   const [
-    orderPaymentMethod,
-    setOrderPaymentMethod,
+    orderPaymentMethodId,
+    setOrderPaymentMethodId,
   ] = useState('')
 
   const [
     orderNotes,
     setOrderNotes,
   ] = useState('')
+
+  const [paymentMethods, setPaymentMethods] = useState<AdminPaymentMethod[]>([])
+  const [paymentMethodsError, setPaymentMethodsError] = useState('')
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+  const [paymentTarget, setPaymentTarget] = useState<'order' | 'subscription'>('order')
+  const [subscriptionPaymentMethodId, setSubscriptionPaymentMethodId] = useState('')
+  const [paymentName, setPaymentName] = useState('')
+  const [paymentType, setPaymentType] = useState('PIX')
+  const [paymentAvailability, setPaymentAvailability] = useState('RECEBER')
+  const [paymentBusy, setPaymentBusy] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    getAdminPaymentMethods().then(data => {
+      if (!cancelled) setPaymentMethods(data.items)
+    }).catch(err => {
+      if (!cancelled) setPaymentMethodsError(err instanceof Error ? err.message : 'Não foi possível carregar formas de pagamento.')
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  async function savePaymentMethod() {
+    setPaymentBusy(true)
+    setPaymentError('')
+    try {
+      const created = await createAdminPaymentMethod({ nome: paymentName.trim(), tipo: paymentType, disponivel_para: paymentAvailability })
+      // Keep the successful registration selectable even if refreshing the list fails.
+      setPaymentMethods(previous => [...previous.filter(item => item.id !== created.id), created])
+      if (paymentTarget === 'subscription') setSubscriptionPaymentMethodId(String(created.id))
+      else setOrderPaymentMethodId(String(created.id))
+      setPaymentDialogOpen(false)
+      setPaymentName('')
+      setPaymentMethodsError('')
+      try { setPaymentMethods((await getAdminPaymentMethods()).items) } catch { /* retain the registered option */ }
+    } catch (err) {
+      setPaymentError(err instanceof Error ? err.message : 'Falha ao cadastrar forma de pagamento.')
+    } finally { setPaymentBusy(false) }
+  }
 
   const [actionBusy, setActionBusy] =
     useState(false)
@@ -582,8 +607,7 @@ export function AdminDashboardPage({ onBack }: Props) {
           modulo_id: moduloId,
           valor,
           periodicidade: orderPeriod,
-          forma_pagamento:
-            orderPaymentMethod.trim() || null,
+          forma_pagamento_id: orderPaymentMethodId ? Number(orderPaymentMethodId) : null,
           observacoes:
             orderNotes.trim() || null,
         },
@@ -597,7 +621,7 @@ export function AdminDashboardPage({ onBack }: Props) {
 
       setOrderModuleId('')
       setOrderValue('')
-      setOrderPaymentMethod('')
+      setOrderPaymentMethodId('')
       setOrderNotes('')
 
       setActionMessage(
@@ -612,6 +636,22 @@ export function AdminDashboardPage({ onBack }: Props) {
     } finally {
       setActionBusy(false)
     }
+  }
+
+  async function confirmSaasPayment(payment: AdminPayment) {
+    if (!company || actionBusy || !financePresentation(payment, company.pedidos_modulos, company.pagamentos, Boolean(me?.permissions.includes('FINANCEIRO_EDITAR'))).confirm) return
+    if (!window.confirm(`Confirmar o pagamento #${payment.id} de ${money(payment.valor)}?`)) return
+    setActionBusy(true)
+    setActionError('')
+    setActionMessage('')
+    try {
+      if (payment.tipo === 'ASSINATURA') await confirmAdminSubscriptionPayment(payment.id)
+      else await updateAdminModuleOrderStatus(company.empresa.id, payment.pedido_modulo_id!, 'PAGO')
+      setCompany(await getAdminCompany(company.empresa.id))
+      setActionMessage(payment.tipo === 'ASSINATURA' ? 'Pagamento confirmado pelo fluxo de assinatura.' : 'Pagamento confirmado. A ativação do módulo continua na aba Pedidos.')
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally { setActionBusy(false) }
   }
 
   async function changeModuleOrderStatus(
@@ -709,61 +749,6 @@ export function AdminDashboardPage({ onBack }: Props) {
     }
   }
 
-  async function handleStartTrial() {
-    if (!company) return
-
-    await runAdminAction(
-      () =>
-        startAdminTrial(
-          company.empresa.id,
-          {
-            plano_id:
-              selectedPlanId
-                ? Number(selectedPlanId)
-                : null,
-            dias: 7,
-          },
-        ),
-      'Teste gratuito de 7 dias iniciado.',
-    )
-  }
-
-  async function handleActivateSubscription() {
-    if (!company) return
-
-    if (!selectedPlanId) {
-      setActionError(
-        'Selecione um plano para ativar a assinatura.',
-      )
-      return
-    }
-
-    const parsed =
-      subscriptionValue.trim()
-        ? Number(
-            subscriptionValue.replace(',', '.'),
-          )
-        : undefined
-
-    await runAdminAction(
-      () =>
-        activateAdminSubscription(
-          company.empresa.id,
-          {
-            plano_id: Number(selectedPlanId),
-            periodicidade: subscriptionPeriod,
-            valor:
-              parsed !== undefined &&
-              Number.isFinite(parsed)
-                ? parsed
-                : undefined,
-            renovacao_automatica: autoRenew,
-          },
-        ),
-      'Assinatura ativada com sucesso.',
-    )
-  }
-
   async function handleActivateModule() {
     if (!company) return
 
@@ -774,35 +759,16 @@ export function AdminDashboardPage({ onBack }: Props) {
       return
     }
 
-    const parsed =
-      moduleValue.trim()
-        ? Number(
-            moduleValue.replace(',', '.'),
-          )
-        : undefined
-
-    const periodicidade =
-      moduleOrigin === 'CORTESIA' ||
-      moduleOrigin === 'TRIAL'
-        ? 'CORTESIA'
-        : modulePeriod
+    if (moduleOrigin === 'AVULSO') {
+      requestModuleOrder(selectedModuleId, setOrderModuleId, () => setCompanyTab('pedidos'))
+      setActionError('')
+      setActionMessage('Preencha o pedido do módulo. A ativação ocorrerá após pagamento e conclusão das etapas.')
+      return
+    }
 
     await runAdminAction(
-      () =>
-        activateAdminModule(
-          company.empresa.id,
-          Number(selectedModuleId),
-          {
-            origem: moduleOrigin,
-            periodicidade,
-            valor:
-              parsed !== undefined &&
-              Number.isFinite(parsed)
-                ? parsed
-                : undefined,
-          },
-        ),
-      'Módulo ativado com sucesso.',
+      () => grantCourtesy(activateAdminModule, company.empresa.id, Number(selectedModuleId), moduleEnd, moduleNotes),
+      'Cortesia concedida.',
     )
   }
 
@@ -810,6 +776,10 @@ export function AdminDashboardPage({ onBack }: Props) {
     moduleCode: string,
   ) {
     if (!company) return
+
+    const linkedModule = company.modulos.find(item => item.codigo === moduleCode)
+    if (!linkedModule || !moduleAction(linkedModule.origem, linkedModule.status).cancel) return
+    if (!window.confirm(`Cancelar o acesso ao módulo ${linkedModule.nome}?`)) return
 
     const catalogModule =
       moduleCatalog.find(
@@ -834,7 +804,29 @@ export function AdminDashboardPage({ onBack }: Props) {
   }
 
   return (
-    <section>
+    <section className="admin-dashboard">
+      {paymentDialogOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: '#0006', zIndex: 1000, display: 'grid', placeItems: 'center', padding: 16 }}>
+          <form role="dialog" aria-modal="true" aria-labelledby="admin-payment-title"
+            onSubmit={event => { event.preventDefault(); void savePaymentMethod() }}
+            style={{ background: 'white', padding: 24, borderRadius: 8, width: 'min(100%, 420px)', boxSizing: 'border-box', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', display: 'grid', gap: 14 }}>
+            <h3 id="admin-payment-title">Nova forma de pagamento</h3>
+            <label>Nome<input autoFocus required maxLength={80} value={paymentName} onChange={event => setPaymentName(event.target.value)} style={{ width: '100%' }} /></label>
+            <label>Tipo<select value={paymentType} onChange={event => setPaymentType(event.target.value)} style={{ width: '100%' }}>
+              {['DINHEIRO','PIX','BOLETO','CARTAO','TRANSFERENCIA','OUTRO'].map(type => <option key={type} value={type}>{type}</option>)}
+            </select></label>
+            <label>Disponível para<select value={paymentAvailability} onChange={event => setPaymentAvailability(event.target.value)} style={{ width: '100%' }}>
+              <option value="RECEBER">Receber</option><option value="AMBOS">Pagar e receber</option>
+            </select></label>
+            {paymentError && <p role="alert">{paymentError}</p>}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="secondary-button" disabled={paymentBusy} onClick={() => setPaymentDialogOpen(false)}>Cancelar</button>
+              <button type="submit" className="primary-button" disabled={paymentBusy || !paymentName.trim()}>{paymentBusy ? 'Salvando…' : 'Cadastrar'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <div
         style={{
           display: 'flex',
@@ -1726,619 +1718,64 @@ export function AdminDashboardPage({ onBack }: Props) {
           
 
           {companyTab === 'assinatura' && (
-            <article className="panel" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>
-                Assinatura e trial
-              </h3>
-
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns:
-                    'repeat(auto-fit,minmax(190px,1fr))',
-                  gap: 12,
-                  padding: 14,
-                  marginBottom: 18,
-                  background: '#f7f8f9',
-                  borderRadius: 12,
-                  border: '1px solid #e7e9ed',
-                }}
-              >
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Plano
-                  </span>
-
-                  <select
-                    value={selectedPlanId}
-                    onChange={event => {
-                      const value =
-                        event.target.value
-
-                      setSelectedPlanId(value)
-
-                      const plan =
-                        plans.find(
-                          item =>
-                            item.id ===
-                            Number(value),
-                        )
-
-                      if (
-                        plan?.periodicidade ===
-                        'MENSAL'
-                      ) {
-                        setSubscriptionPeriod(
-                          'MENSAL',
-                        )
-                      }
-
-                      if (
-                        plan?.periodicidade ===
-                        'ANUAL'
-                      ) {
-                        setSubscriptionPeriod(
-                          'ANUAL',
-                        )
-                      }
-
-                      if (plan?.valor != null) {
-                        setSubscriptionValue(
-                          String(plan.valor),
-                        )
-                      }
-                    }}
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                    }}
-                  >
-                    <option value="">
-                      Sem plano definido
-                    </option>
-
-                    {plans
-                      .filter(
-                        item => item.ativo,
-                      )
-                      .map(plan => (
-                        <option
-                          key={plan.id}
-                          value={plan.id}
-                        >
-                          {plan.nome}
-                          {' · '}
-                          {plan.periodicidade}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Periodicidade
-                  </span>
-
-                  <select
-                    value={
-                      subscriptionPeriod
-                    }
-                    onChange={event =>
-                      setSubscriptionPeriod(
-                        event.target.value as
-                          | 'MENSAL'
-                          | 'ANUAL',
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                    }}
-                  >
-                    <option value="MENSAL">
-                      Mensal
-                    </option>
-
-                    <option value="ANUAL">
-                      Anual
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Valor
-                  </span>
-
-                  <input
-                    value={subscriptionValue}
-                    onChange={event =>
-                      setSubscriptionValue(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="0,00"
-                    inputMode="decimal"
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </label>
-
-                <label
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    minHeight: 40,
-                    alignSelf: 'end',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={autoRenew}
-                    onChange={event =>
-                      setAutoRenew(
-                        event.target.checked,
-                      )
-                    }
-                  />
-
-                  Renovação automática
-                </label>
-
-                <div
-                  style={{
-                    gridColumn: '1 / -1',
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 8,
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    disabled={
-                      actionBusy ||
-                      company.assinatura
-                        ?.status === 'TRIAL' ||
-                      company.assinatura
-                        ?.status === 'ATIVA' ||
-                      company.assinatura
-                        ?.status ===
-                          'PROXIMA_VENCIMENTO'
-                    }
-                    onClick={() =>
-                      void handleStartTrial()
-                    }
-                  >
-                    Iniciar teste grátis — 7 dias
-                  </button>
-
-                  <button
-                    type="button"
-                    className="primary-button"
-                    disabled={
-                      actionBusy ||
-                      !selectedPlanId ||
-                      company.assinatura
-                        ?.status === 'ATIVA' ||
-                      company.assinatura
-                        ?.status ===
-                          'PROXIMA_VENCIMENTO'
-                    }
-                    onClick={() =>
-                      void handleActivateSubscription()
-                    }
-                  >
-                    Ativar assinatura
-                  </button>
-                </div>
-
-                {!plans.length && (
-                  <div
-                    style={{
-                      gridColumn: '1 / -1',
-                      fontSize: 12,
-                      color: '#747b85',
-                    }}
-                  >
-                    Nenhum plano comercial
-                    cadastrado ainda. O trial
-                    de 7 dias pode ser iniciado
-                    sem plano.
-                  </div>
-                )}
-              </div>
-
-              {company.assinatura ? (
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns:
-                      'repeat(auto-fit,minmax(190px,1fr))',
-                    gap: 18,
-                  }}
-                >
-                  {[
-                    [
-                      'Plano',
-                      company.assinatura.plano_nome ||
-                        company.assinatura.plano_codigo ||
-                        'Não informado',
-                    ],
-                    ['Status', company.assinatura.status],
-                    [
-                      'Periodicidade',
-                      company.assinatura.periodicidade || '—',
-                    ],
-                    [
-                      'Valor',
-                      money(company.assinatura.valor),
-                    ],
-                    [
-                      'Início do trial',
-                      date(
-                        company.assinatura.data_inicio_trial,
-                      ),
-                    ],
-                    [
-                      'Fim do trial',
-                      date(
-                        company.assinatura.data_fim_trial,
-                      ),
-                    ],
-                    [
-                      'Início da assinatura',
-                      date(
-                        company.assinatura
-                          .data_inicio_assinatura,
-                      ),
-                    ],
-                    [
-                      'Vencimento',
-                      date(
-                        company.assinatura.data_vencimento,
-                      ),
-                    ],
-                    [
-                      'Aviso de renovação',
-                      `${company.assinatura
-                        .dias_aviso_vencimento} dias`,
-                    ],
-                    [
-                      'Renovação automática',
-                      company.assinatura.renovacao_automatica
-                        ? 'Sim'
-                        : 'Não',
-                    ],
-                  ].map(([label, value]) => (
-                    <div key={String(label)}>
-                      <span>{label}</span>
-                      <strong
-                        style={{
-                          display: 'block',
-                          marginTop: 3,
-                        }}
-                      >
-                        {value}
-                      </strong>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: '#777f89' }}>
-                  Nenhuma assinatura ou trial cadastrado.
-                </p>
-              )}
-            </article>
+            <AdminSubscriptionPanel key={company.empresa.id} company={company} plans={plans}
+              permissions={me?.permissions ?? []} paymentMethods={paymentMethods}
+              paymentMethodsError={paymentMethodsError} paymentMethodId={subscriptionPaymentMethodId}
+              onPaymentMethodChange={setSubscriptionPaymentMethodId} onRefresh={refreshCompany}
+              onRegisterPaymentMethod={() => { setPaymentTarget('subscription'); setPaymentError(''); setPaymentDialogOpen(true) }} />
           )}
 
           {companyTab === 'modulos' && (
-            <article className="panel" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>
-                Módulos
-              </h3>
-
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns:
-                    'minmax(210px,2fr) repeat(3,minmax(140px,1fr)) auto',
-                  gap: 10,
-                  alignItems: 'end',
-                  padding: 14,
-                  marginBottom: 18,
-                  background: '#f7f8f9',
-                  borderRadius: 12,
-                  border: '1px solid #e7e9ed',
-                }}
-              >
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Módulo
-                  </span>
-
-                  <select
-                    value={selectedModuleId}
-                    onChange={event =>
-                      setSelectedModuleId(
-                        event.target.value,
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                    }}
-                  >
-                    <option value="">
-                      Selecione
-                    </option>
-
-                    {moduleCatalog
-                      .filter(
-                        item => item.ativo,
-                      )
-                      .map(modulo => (
-                        <option
-                          key={modulo.id}
-                          value={modulo.id}
-                        >
-                          {modulo.nome}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Origem
-                  </span>
-
-                  <select
-                    value={moduleOrigin}
-                    onChange={event =>
-                      setModuleOrigin(
-                        event.target.value as
-                          | 'AVULSO'
-                          | 'CORTESIA'
-                          | 'TRIAL',
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                    }}
-                  >
-                    <option value="AVULSO">
-                      Avulso
-                    </option>
-
-                    <option value="CORTESIA">
-                      Cortesia
-                    </option>
-
-                    <option value="TRIAL">
-                      Trial
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Periodicidade
-                  </span>
-
-                  <select
-                    value={
-                      moduleOrigin ===
-                        'CORTESIA' ||
-                      moduleOrigin ===
-                        'TRIAL'
-                        ? 'CORTESIA'
-                        : modulePeriod
-                    }
-                    disabled={
-                      moduleOrigin ===
-                        'CORTESIA' ||
-                      moduleOrigin ===
-                        'TRIAL'
-                    }
-                    onChange={event =>
-                      setModulePeriod(
-                        event.target.value as
-                          | 'MENSAL'
-                          | 'ANUAL'
-                          | 'UNICO'
-                          | 'CORTESIA',
-                      )
-                    }
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                    }}
-                  >
-                    <option value="MENSAL">
-                      Mensal
-                    </option>
-
-                    <option value="ANUAL">
-                      Anual
-                    </option>
-
-                    <option value="UNICO">
-                      Único
-                    </option>
-
-                    <option value="CORTESIA">
-                      Cortesia
-                    </option>
-                  </select>
-                </label>
-
-                <label>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: 12,
-                      marginBottom: 5,
-                    }}
-                  >
-                    Valor
-                  </span>
-
-                  <input
-                    value={moduleValue}
-                    disabled={
-                      moduleOrigin ===
-                        'CORTESIA' ||
-                      moduleOrigin ===
-                        'TRIAL'
-                    }
-                    onChange={event =>
-                      setModuleValue(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="0,00"
-                    inputMode="decimal"
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                      boxSizing: 'border-box',
-                    }}
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={
-                    actionBusy ||
-                    !selectedModuleId
-                  }
-                  onClick={() =>
-                    void handleActivateModule()
-                  }
-                >
-                  Ativar módulo
-                </button>
+            <article className="panel admin-modules">
+              <h3>Módulos</h3>
+              <p>Avulsos seguem Pedido → Pagamento → Ativação. Planos são gerenciados pela assinatura e acessos trial pelo período de avaliação.</p>
+              <div className="admin-module-form">
+                <label>Módulo<select value={selectedModuleId} disabled={actionBusy} onChange={event => setSelectedModuleId(event.target.value)}>
+                  <option value="">Selecione o módulo</option>
+                  {moduleCatalog.filter(item => item.ativo).map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}
+                </select></label>
+                <label>Fluxo<select value={moduleOrigin} disabled={actionBusy} onChange={event => setModuleOrigin(event.target.value as 'AVULSO' | 'CORTESIA')}>
+                  <option value="AVULSO">Avulso — via Pedido</option>
+                  {me?.permissions.includes('MODULOS_CORTESIA') && <option value="CORTESIA">Cortesia administrativa</option>}
+                </select></label>
+                {moduleOrigin === 'CORTESIA' && <>
+                  <div><small>Periodicidade</small><strong>CORTESIA · sem valor comercial</strong></div>
+                  <div><small>Data de início</small><strong>{new Intl.DateTimeFormat('pt-BR').format(new Date())}</strong><small className="admin-module-date-help">Data da concessão</small></div>
+                  <label>Data fim (opcional)<input type="date" value={moduleEnd} onChange={event => setModuleEnd(event.target.value)} /></label>
+                  <label>Observações<textarea rows={2} value={moduleNotes} onChange={event => setModuleNotes(event.target.value)} /></label>
+                </>}
+                <button type="button" className="primary-button"
+                  disabled={actionBusy || !selectedModuleId || !me?.permissions.includes('MODULOS_ATIVAR') || (moduleOrigin === 'CORTESIA' && !me?.permissions.includes('MODULOS_CORTESIA'))}
+                  onClick={() => void handleActivateModule()}>{moduleOrigin === 'AVULSO' ? 'Solicitar módulo' : 'Conceder cortesia'}</button>
               </div>
-
-              {company.modulos.length ? (
-                <div>
-                  {company.modulos.map(modulo => (
-                    <div
-                      key={modulo.id}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns:
-                          'minmax(190px,2fr) repeat(4,minmax(90px,1fr)) auto',
-                        gap: 14,
-                        padding: '12px 0',
-                        borderBottom:
-                          '1px solid #eceff2',
-                      }}
-                    >
-                      <strong>{modulo.nome}</strong>
-                      <span>
-                        {modulo.origem}
-                        {modulo.data_fim
-                          ? ` · até ${date(modulo.data_fim)}`
-                          : ''}
-                      </span>
-                      <span>{modulo.status}</span>
-                      <span>
-                        {modulo.periodicidade || '—'}
-                      </span>
-                      <span>{money(modulo.valor)}</span>
-
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        disabled={
-                          actionBusy ||
-                          modulo.status !== 'ATIVO'
-                        }
-                        onClick={() =>
-                          void handleCancelModule(
-                            modulo.codigo,
-                          )
-                        }
-                      >
-                        Cancelar
-                      </button>
+              {company.modulos.length ? <div className="admin-module-list">
+                <div className="admin-module-head" aria-hidden="true"><span>Módulo</span><span>Origem / Vigência</span><span>Status</span><span>Periodicidade</span><span>Valor</span><span>Ações</span></div>
+                {company.modulos.map(modulo => {
+                  const action = moduleAction(modulo.origem, modulo.status)
+                  return <article key={modulo.id} className="admin-module-row" aria-label={modulo.nome}>
+                    <div><small>Módulo</small><strong>{modulo.nome}</strong></div>
+                    <div><small>Origem / Vigência</small><strong>{modulo.origem}</strong>
+                      <span>Desde {date(modulo.data_inicio)}{modulo.data_fim ? ` · até ${date(modulo.data_fim)}` : ' · sem data fim'}</span>
+                      {modulo.origem === 'PLANO' && modulo.assinatura_id && <span>Assinatura #{modulo.assinatura_id}{company.assinatura?.id === modulo.assinatura_id && company.assinatura.plano_nome ? ` · ${company.assinatura.plano_nome}` : ''}</span>}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: '#777f89' }}>
-                  Nenhum módulo cadastrado.
-                </p>
-              )}
+                    <div><small>Status</small><StatusBadge>{modulo.status}</StatusBadge></div>
+                    <div><small>Periodicidade</small><span>{modulo.periodicidade || '—'}</span></div>
+                    <div><small>Valor</small><span>{modulo.origem === 'CORTESIA' ? 'Sem valor comercial' : money(modulo.valor)}</span></div>
+                    <div><small>Ações</small>{action.cancel && me?.permissions.includes('MODULOS_CANCELAR') ?
+                      <button type="button" className="secondary-button admin-module-cancel" disabled={actionBusy} onClick={() => void handleCancelModule(modulo.codigo)}>Cancelar</button> : <span className={modulo.origem === 'TRIAL' ? 'admin-module-trial-help' : undefined}>{modulo.origem === 'TRIAL' ? 'Gerenciado pelo trial' : action.message || 'Sem ação disponível'}</span>}</div>
+                  </article>
+                })}
+              </div> : <p>Nenhum módulo cadastrado.</p>}
             </article>
           )}
 
           {companyTab === 'pedidos' && (
-            <article className="panel" style={{ padding: 20 }}>
+            <article className="panel admin-orders" style={{ padding: 20 }}> 
               <h3 style={{ marginTop: 0 }}>
                 Pedidos de módulos
               </h3>
 
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns:
-                    'minmax(180px, 1.5fr) repeat(2, minmax(120px, 0.8fr)) minmax(150px, 1fr)',
-                  gap: 10,
-                  alignItems: 'end',
-                  padding: 14,
-                  marginBottom: 16,
-                  border: '1px solid #e3e6e9',
-                  borderRadius: 14,
-                  background: '#fafbfc',
-                }}
-              >
+              <div className="admin-order-form">
                 <label>
                   <span style={{ fontSize: 12 }}>
                     Módulo
@@ -2434,20 +1871,22 @@ export function AdminDashboardPage({ onBack }: Props) {
                     Forma de pagamento
                   </span>
 
-                  <input
-                    value={orderPaymentMethod}
-                    onChange={event =>
-                      setOrderPaymentMethod(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="Ex.: Banco Inter"
-                    style={{
-                      width: '100%',
-                      minHeight: 40,
-                      marginTop: 5,
+                  <select
+                    value={orderPaymentMethodId}
+                    onChange={event => {
+                      if (event.target.value === '__new__') {
+                        setPaymentTarget('order')
+                        setPaymentError('')
+                        setPaymentDialogOpen(true)
+                      } else setOrderPaymentMethodId(event.target.value)
                     }}
-                  />
+                    style={{ width: '100%', minHeight: 40, marginTop: 5 }}
+                  >
+                    <option value="">Selecione a forma de pagamento</option>
+                    {paymentMethods.map(method => <option key={method.id} value={method.id}>{method.nome}</option>)}
+                    {me?.permissions.includes('FINANCEIRO_EDITAR') && <option value="__new__">+ Cadastrar nova forma de pagamento</option>}
+                  </select>
+                  {paymentMethodsError && <small role="alert">{paymentMethodsError}</small>}
                 </label>
 
                 <label
@@ -2478,6 +1917,7 @@ export function AdminDashboardPage({ onBack }: Props) {
                 <button
                   type="button"
                   disabled={actionBusy}
+                  className="admin-order-primary"
                   onClick={() =>
                     void createModuleOrder()
                   }
@@ -2496,196 +1936,10 @@ export function AdminDashboardPage({ onBack }: Props) {
                     gap: 10,
                   }}
                 >
-                  {company.pedidos_modulos.map(
-                    pedido => (
-                      <div
-                        key={pedido.id}
-                        style={{
-                          padding: 14,
-                          border:
-                            '1px solid #e3e6e9',
-                          borderRadius: 14,
-                          display: 'grid',
-                          gap: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent:
-                              'space-between',
-                            gap: 12,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <div>
-                            <strong>
-                              {pedido.modulo_nome}
-                            </strong>
-
-                            <div
-                              style={{
-                                marginTop: 4,
-                                fontSize: 12,
-                                color: '#777f89',
-                              }}
-                            >
-                              Pedido #{pedido.id}
-                              {' · '}
-                              {pedido.periodicidade ??
-                                '—'}
-                              {' · '}
-                              {money(
-                                pedido.valor,
-                              )}
-                            </div>
-                          </div>
-
-                          <StatusBadge>
-                            {pedido.status
-                              .replaceAll('_', ' ')}
-                          </StatusBadge>
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: 16,
-                            flexWrap: 'wrap',
-                            fontSize: 12,
-                            color: '#626a73',
-                          }}
-                        >
-                          <span>
-                            Pagamento:{' '}
-                            {pedido.forma_pagamento ||
-                              'não informado'}
-                          </span>
-
-                          <span>
-                            Responsável:{' '}
-                            {pedido.responsavel_nome?.trim() ||
-                              'não informado'}
-                          </span>
-
-                          <span>
-                            Pedido:{' '}
-                            {date(
-                              pedido.data_pedido.slice(
-                                0,
-                                10,
-                              ),
-                            )}
-                          </span>
-                        </div>
-
-                        {pedido.observacoes && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: '#626a73',
-                            }}
-                          >
-                            {pedido.observacoes}
-                          </div>
-                        )}
-
-                        <div
-                          style={{
-                            display: 'flex',
-                            gap: 8,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          {pedido.status ===
-                            'SOLICITADO' && (
-                            <button
-                              type="button"
-                              disabled={actionBusy}
-                              onClick={() =>
-                                void changeModuleOrderStatus(
-                                  pedido.id,
-                                  'EM_ANALISE',
-                                )
-                              }
-                            >
-                              Iniciar análise
-                            </button>
-                          )}
-
-                          {pedido.status ===
-                            'EM_ANALISE' && (
-                            <button
-                              type="button"
-                              disabled={actionBusy}
-                              onClick={() =>
-                                void changeModuleOrderStatus(
-                                  pedido.id,
-                                  'AGUARDANDO_PAGAMENTO',
-                                )
-                              }
-                            >
-                              Aprovar
-                            </button>
-                          )}
-
-                          {pedido.status ===
-                            'AGUARDANDO_PAGAMENTO' && (
-                            <button
-                              type="button"
-                              disabled={actionBusy}
-                              onClick={() =>
-                                void changeModuleOrderStatus(
-                                  pedido.id,
-                                  'PAGO',
-                                )
-                              }
-                            >
-                              Confirmar pagamento
-                            </button>
-                          )}
-
-                          {pedido.status ===
-                            'PAGO' && (
-                            <button
-                              type="button"
-                              disabled={actionBusy}
-                              onClick={() =>
-                                void changeModuleOrderStatus(
-                                  pedido.id,
-                                  'ATIVADO',
-                                )
-                              }
-                            >
-                              Ativar módulo
-                            </button>
-                          )}
-
-                          {[
-                            'SOLICITADO',
-                            'EM_ANALISE',
-                            'AGUARDANDO_PAGAMENTO',
-                          ].includes(
-                            pedido.status,
-                          ) && (
-                            <button
-                              type="button"
-                              disabled={actionBusy}
-                              onClick={() =>
-                                void changeModuleOrderStatus(
-                                  pedido.id,
-                                  'CANCELADO',
-                                )
-                              }
-                            >
-                              Cancelar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ),
-                  )}
+                  {company.pedidos_modulos.map(pedido => (
+                    <AdminModuleOrderCard key={pedido.id} order={pedido} payments={company.pagamentos} busy={actionBusy}
+                      onChange={(id, status) => void changeModuleOrderStatus(id, status)} />
+                  ))}
                 </div>
               ) : (
                 <p style={{ color: '#777f89' }}>
@@ -2696,7 +1950,7 @@ export function AdminDashboardPage({ onBack }: Props) {
           )}
 
           {companyTab === 'financeiro' && (
-            <article className="panel" style={{ padding: 20 }}>
+            <article className="panel admin-finance" style={{ padding: 20 }}>
               <h3 style={{ marginTop: 0 }}>
                 Financeiro
               </h3>
@@ -2708,145 +1962,8 @@ export function AdminDashboardPage({ onBack }: Props) {
                     gap: 10,
                   }}
                 >
-                  {company.pagamentos.map(
-                    pagamento => (
-                      <div
-                        key={pagamento.id}
-                        style={{
-                          padding: 14,
-                          border:
-                            '1px solid #e3e6e9',
-                          borderRadius: 14,
-                          display: 'grid',
-                          gap: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent:
-                              'space-between',
-                            alignItems: 'center',
-                            gap: 12,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <div>
-                            <strong>
-                              Pagamento #{pagamento.id}
-                            </strong>
-
-                            {pagamento.pedido_modulo_id && (
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 12,
-                                  color: '#777f89',
-                                }}
-                              >
-                                Pedido de módulo #
-                                {pagamento.pedido_modulo_id}
-                              </div>
-                            )}
-                          </div>
-
-                          <StatusBadge>
-                            {pagamento.status.replaceAll(
-                              '_',
-                              ' ',
-                            )}
-                          </StatusBadge>
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns:
-                              'repeat(auto-fit, minmax(140px, 1fr))',
-                            gap: 12,
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Tipo
-                            </div>
-                            <strong>
-                              {pagamento.tipo.replaceAll(
-                                '_',
-                                ' ',
-                              )}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Valor
-                            </div>
-                            <strong>
-                              {money(pagamento.valor)}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Forma de pagamento
-                            </div>
-                            <strong>
-                              {pagamento.forma_pagamento ||
-                                'Não informada'}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Pago em
-                            </div>
-                            <strong>
-                              {pagamento.pago_em
-                                ? date(
-                                    pagamento.pago_em.slice(
-                                      0,
-                                      10,
-                                    ),
-                                  )
-                                : '—'}
-                            </strong>
-                          </div>
-                        </div>
-
-                        {pagamento.observacoes && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: '#626a73',
-                            }}
-                          >
-                            {pagamento.observacoes}
-                          </div>
-                        )}
-                      </div>
-                    ),
-                  )}
+                  {company.pagamentos.map(payment => <AdminPaymentCard key={payment.id} payment={payment} company={company}
+                    canEdit={Boolean(me?.permissions.includes('FINANCEIRO_EDITAR'))} busy={actionBusy} onConfirm={payment => void confirmSaasPayment(payment)} />)}
                 </div>
               ) : (
                 <p style={{ color: '#777f89' }}>
@@ -2857,214 +1974,17 @@ export function AdminDashboardPage({ onBack }: Props) {
           )}
 
           {companyTab === 'fiscal' && (
-            <article className="panel" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>
-                Notas fiscais
-              </h3>
-
-              <p
-                style={{
-                  marginTop: -4,
-                  marginBottom: 16,
-                  color: '#777f89',
-                  fontSize: 12,
-                }}
-              >
-                Registros pendentes ainda não representam
-                emissão na prefeitura.
-              </p>
-
-              {company.notas_fiscais.length ? (
-                <div
-                  style={{
-                    display: 'grid',
-                    gap: 10,
-                  }}
-                >
-                  {company.notas_fiscais.map(
-                    nota => (
-                      <div
-                        key={nota.id}
-                        style={{
-                          padding: 14,
-                          border:
-                            '1px solid #e3e6e9',
-                          borderRadius: 14,
-                          display: 'grid',
-                          gap: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent:
-                              'space-between',
-                            alignItems: 'center',
-                            gap: 12,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <div>
-                            <strong>
-                              {nota.tipo_documento}{' '}
-                              #{nota.id}
-                            </strong>
-
-                            {nota.pagamento_id && (
-                              <div
-                                style={{
-                                  marginTop: 4,
-                                  fontSize: 12,
-                                  color: '#777f89',
-                                }}
-                              >
-                                Pagamento #
-                                {nota.pagamento_id}
-                              </div>
-                            )}
-                          </div>
-
-                          <StatusBadge>
-                            {nota.status.replaceAll(
-                              '_',
-                              ' ',
-                            )}
-                          </StatusBadge>
-                        </div>
-
-                        <div
-                          style={{
-                            display: 'grid',
-                            gridTemplateColumns:
-                              'repeat(auto-fit, minmax(140px, 1fr))',
-                            gap: 12,
-                          }}
-                        >
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Valor do serviço
-                            </div>
-                            <strong>
-                              {money(
-                                nota.valor_servico,
-                              )}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Desconto
-                            </div>
-                            <strong>
-                              {money(
-                                nota.valor_desconto,
-                              )}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Total
-                            </div>
-                            <strong>
-                              {money(nota.valor_total)}
-                            </strong>
-                          </div>
-
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 11,
-                                color: '#777f89',
-                              }}
-                            >
-                              Emissão
-                            </div>
-                            <strong>
-                              {nota.data_emissao
-                                ? date(
-                                    nota.data_emissao.slice(
-                                      0,
-                                      10,
-                                    ),
-                                  )
-                                : 'Pendente'}
-                            </strong>
-                          </div>
-                        </div>
-
-                        {nota.descricao_servico && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: '#626a73',
-                            }}
-                          >
-                            {nota.descricao_servico}
-                          </div>
-                        )}
-
-                        {nota.numero && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: '#626a73',
-                            }}
-                          >
-                            Número: {nota.numero}
-                            {nota.serie
-                              ? ` · Série ${nota.serie}`
-                              : ''}
-                          </div>
-                        )}
-
-                        {nota.erro_mensagem && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: '#b42318',
-                            }}
-                          >
-                            {nota.erro_mensagem}
-                          </div>
-                        )}
-                      </div>
-                    ),
-                  )}
-                </div>
-              ) : (
-                <p style={{ color: '#777f89' }}>
-                  Nenhuma nota fiscal registrada.
-                </p>
-              )}
+            <article className="panel admin-fiscal" style={{ padding: 20 }}>
+              <h3 style={{ marginTop: 0 }}>Notas fiscais</h3>
+              <p style={{ color: '#777f89', fontSize: 12, marginBottom: 16 }}>Notas fiscais preparadas ficam registradas aqui. A emissão na prefeitura será integrada em etapa própria.</p>
+              {company.notas_fiscais.length ? <div style={{ display: 'grid', gap: 10 }}>
+                {company.notas_fiscais.map(note => <AdminFiscalNoteCard key={note.id} note={note} company={company} />)}
+              </div> : <p style={{ color: '#777f89' }}>Nenhuma nota fiscal registrada.</p>}
             </article>
           )}
 
           {companyTab === 'suporte' && (
-            <article className="panel" style={{ padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>
-                Suporte
-              </h3>
-              <AdminRecordList
-                items={company.chamados}
-                emptyText="Nenhum chamado registrado."
-              />
-            </article>
+            <AdminSupportPanel key={company.empresa.id} companyId={company.empresa.id} permissions={me?.permissions ?? []} onRefresh={refreshCompany} />
           )}
 
           {companyTab === 'comercial' && (

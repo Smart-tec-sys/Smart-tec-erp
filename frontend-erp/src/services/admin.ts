@@ -84,6 +84,8 @@ export type AdminModuleOrder = {
   data_pedido: string
   data_aprovacao?: string | null
   data_ativacao?: string | null
+  forma_pagamento_id?: number | null
+  forma_pagamento_nome?: string | null
   forma_pagamento?: string | null
   observacoes?: string | null
   responsavel_equipe_id?: number | null
@@ -94,11 +96,15 @@ export type AdminPayment = {
   id: number
   assinatura_id?: number | null
   pedido_modulo_id?: number | null
+  ciclo_inicio?: string | null
+  ciclo_fim?: string | null
   tipo: string
   status: string
   valor: number
   vencimento?: string | null
   pago_em?: string | null
+  forma_pagamento_id?: number | null
+  forma_pagamento_nome?: string | null
   forma_pagamento?: string | null
   referencia_externa?: string | null
   observacoes?: string | null
@@ -161,6 +167,9 @@ export type AdminCompanyDetail = {
   }>
 
   assinatura?: {
+    plano_id?: number | null
+    forma_pagamento_id?: number | null
+    forma_pagamento_nome?: string | null
     id: number
     status: string
     periodicidade?: string | null
@@ -178,6 +187,7 @@ export type AdminCompanyDetail = {
   } | null
 
   modulos: Array<{
+    assinatura_id?: number | null
     id: number
     codigo: string
     nome: string
@@ -193,6 +203,7 @@ export type AdminCompanyDetail = {
 
   pedidos_modulos: AdminModuleOrder[]
   pagamentos: AdminPayment[]
+  cobrancas_assinatura: AdminPayment[]
   notas_fiscais: AdminFiscalNote[]
   chamados: Array<Record<string, unknown>>
   acompanhamento_comercial: Array<Record<string, unknown>>
@@ -392,7 +403,9 @@ export function createAdminModuleOrder(
       | 'MENSAL'
       | 'ANUAL'
       | 'UNICO'
-    forma_pagamento?: string | null
+    forma_pagamento_id?: number | null
+  forma_pagamento_nome?: string | null
+  forma_pagamento?: string | null
     observacoes?: string | null
   },
 ) {
@@ -431,3 +444,59 @@ export function updateAdminModuleOrderStatus(
     { status },
   )
 }
+
+
+export type AdminPaymentMethod = {
+  id: number
+  nome: string
+  tipo: string
+  disponivel_para: string
+  conta_financeira_id?: number | null
+  conta_financeira_nome?: string | null
+}
+
+export function getAdminPaymentMethods() {
+  return adminFetch<{ items: AdminPaymentMethod[] }>('/admin/formas-pagamento')
+}
+
+export function createAdminPaymentMethod(input: { nome: string; tipo: string; disponivel_para: string }) {
+  return adminMutation<AdminPaymentMethod>('/admin/formas-pagamento', input)
+}
+
+export type AdminContractInput = {
+  plano_id: number
+  periodicidade: 'MENSAL' | 'ANUAL'
+  valor: number
+  forma_pagamento_id: number
+  renovacao_automatica: boolean
+  observacoes?: string | null
+  trial_id?: number
+}
+export function createAdminSubscription(companyId: number, input: AdminContractInput) {
+  return adminMutation<{assinatura_id: number; status: string}>(`/admin/empresas/${companyId}/assinaturas`, input)
+}
+export function createAdminSubscriptionCharge(subscriptionId: number, input: {ciclo_inicio?: string; vencimento: string}) {
+  return adminMutation<{pagamento_id: number; ciclo_inicio: string; ciclo_fim: string}>(`/admin/assinaturas/${subscriptionId}/cobrancas`, input)
+}
+export function confirmAdminSubscriptionPayment(paymentId: number) {
+  return adminMutation<{idempotente?: boolean}>(`/admin/pagamentos/${paymentId}/confirmar-assinatura`)
+}
+
+
+export type AdminSupportTicket = {
+  id: number; codigo: string; empresa_id: number; empresa_nome: string
+  usuario_id: number | null; solicitante_nome: string | null
+  responsavel_equipe_id: number | null; responsavel_nome: string | null
+  status: string; prioridade: string; titulo: string; descricao: string | null
+  resolucao: string | null; criado_em: string; atualizado_em: string; resolvido_em: string | null
+  pagina?: string | null; request_id?: string | null; navegador?: string | null
+  dispositivo?: string | null; versao_frontend?: string | null; versao_backend?: string | null
+  erro_codigo?: string | null; erro_mensagem?: string | null
+}
+export type AdminSupportOptions = { solicitantes: Array<{id:number;nome:string}>; responsaveis: Array<{id:number;nome:string}> }
+export type AdminSupportCreate = { titulo:string; descricao?:string; prioridade:string; usuario_id?:number|null; responsavel_equipe_id?:number|null; pagina?:string; erro_codigo?:string; erro_mensagem?:string }
+export type AdminSupportUpdate = { status?:string; prioridade?:string; responsavel_equipe_id?:number|null; resolucao?:string }
+export const getAdminSupport = (id:number) => adminFetch<{items:AdminSupportTicket[]}>(`/admin/empresas/${id}/chamados`)
+export const getAdminSupportOptions = (id:number) => adminFetch<AdminSupportOptions>(`/admin/empresas/${id}/chamados/opcoes`)
+export const createAdminSupport = (id:number,input:AdminSupportCreate) => adminMutation<AdminSupportTicket>(`/admin/empresas/${id}/chamados`,input)
+export const updateAdminSupport = (id:number,ticket:number,input:AdminSupportUpdate) => adminMutation<AdminSupportTicket>(`/admin/empresas/${id}/chamados/${ticket}/atendimento`,input)

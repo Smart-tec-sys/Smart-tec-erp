@@ -9,6 +9,7 @@
         "lint": "tsc --noEmit"
     },
     "dependencies": {
+        "@react-pdf/renderer": "^4.9.0",
         "@vitejs/plugin-react": "latest",
         "lucide-react": "latest",
         "react": "latest",

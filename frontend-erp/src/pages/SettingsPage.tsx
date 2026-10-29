@@ -1,3 +1,4 @@
+import { GradesVariacoesPage } from './GradesVariacoesPage'
 import { ChangeEvent, useRef, useState } from 'react'
 import { useAuthSession, useRefreshAuthSession } from '../components/AuthGate'
 import { getApiAuthHeaders } from '../services/auth'
@@ -5,6 +6,7 @@ import { getApiAuthHeaders } from '../services/auth'
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
 
 export function SettingsPage() {
+  const [showGrades, setShowGrades] = useState(false)
   const authSession = useAuthSession()
   const refreshAuthSession = useRefreshAuthSession()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -99,6 +101,8 @@ export function SettingsPage() {
     }
   }
 
+  if (showGrades) return <GradesVariacoesPage onBack={() => setShowGrades(false)} />
+
   return (
     <section className="settings-page">
       <div className="page-heading">
@@ -111,6 +115,10 @@ export function SettingsPage() {
         </div>
       </div>
 
+      <div className="settings-card">
+        <div className="settings-card-header"><div><h2>Opções auxiliares</h2><p>Cadastros gerais reutilizáveis do ERP.</p></div></div>
+        <button type="button" className="profile-secondary-button" onClick={() => setShowGrades(true)}>Grades/Variações</button>
+      </div>
       <div className="settings-card">
         <div className="settings-card-header">
           <div>

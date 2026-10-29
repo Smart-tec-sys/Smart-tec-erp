@@ -1,0 +1,12 @@
+.sales-table .sales-actions-cell {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  width: 58px;
+  min-width: 58px;
+  background: #fff;
+  text-align: center;
+  box-shadow: -3px 0 5px #0000000a;
+}
+.sales-table th.sales-actions-cell { z-index: 3; }
+.sales-table .sales-actions-cell .table-action { margin: 0 auto; }

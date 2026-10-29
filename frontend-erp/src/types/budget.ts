@@ -1,3 +1,7 @@
+import { romanaKey } from './romana'
+import { romanaTetoKey } from './romana_teto'
+import { roloKey } from './rolo'
+import { doubleVisionKey } from './double_vision'
 import type { RomanaState } from './romana'
 import type { RomanaTetoState } from './romana_teto'
 import type { RoloState } from './rolo'
@@ -71,6 +75,8 @@ export type ApiClient = {
   documento?: string | null
   site?: string | null
   vendedor_responsavel?: string | null
+  parceiro_id?: number | null
+  representante_id?: number | null
   cep?: string | null
   logradouro?: string | null
   numero?: string | null
@@ -83,9 +89,54 @@ export type ApiClient = {
   observacoes?: string | null
 }
 export type ApiBudgetItem = { dados_tecnicos?: { cortina?: CurtainState } | null; id?:number; tipo_item:string; produto_id?:number|null; descricao:string; codigo_interno?:string|null; grupo_tecnico?:string|null; modelo_tecnico?:string|null; unidade?:string|null; quantidade:number; largura:number; altura:number; area:number; preco_unitario:number; desconto:number; subtotal:number; observacao_item?:string|null; cor?:string|null }
-export type ApiBudget = { id:number; numero:string; cliente_id:number; cliente_nome?:string|null; perfil_comercial?:CommercialProfile; status:string; validade?:string|null; total:number; desconto:number; total_final:number; observacao?:string|null; observacao_interna?:string|null; criado_em?:string|null; atualizado_em?:string|null; itens:ApiBudgetItem[] }
+export type ApiBudget = {
+  cliente_final_nome?: string | null
+  cliente_final_documento?: string | null
+  cliente_final_telefone?: string | null
+  cliente_final_email?: string | null
+  cliente_final_endereco?: string | null
+
+  id:number
+  numero:string
+  cliente_id:number|null
+  cliente_nome?:string|null
+  perfil_comercial?:CommercialProfile
+  status:string
+  validade?:string|null
+
+  total:number
+  desconto:number
+  total_final:number
+
+  observacao?:string|null
+  observacao_interna?:string|null
+
+  parceiro_id?:number|null
+  percentual_parceiro?:number
+
+  representante_id?:number|null
+  vendedor_id?:number|null
+  incluir_rt?:boolean
+  tipo_rt?:'VALOR_FIXO'|'PERCENTUAL'|null
+  percentual_rt?:number
+  valor_rt?:number
+
+  incluir_taxa_bancaria?:boolean
+  taxa_bancaria_percentual?:number
+
+  valor_parceiro?:number
+  base_protegida?:number
+  valor_taxa_bancaria?:number
+  total_cliente_final?:number
+
+  criado_em?:string|null
+  atualizado_em?:string|null
+  itens:ApiBudgetItem[]
+}
 export type BudgetPayload = Omit<ApiBudget, 'id'|'numero'|'cliente_nome'|'criado_em'|'atualizado_em'>
+export type CurtainComponent = { produto_id?: number; quantidade: number }
 export type CurtainState = {
+  componentes?: CurtainComponent[]
   tecido: string
   tecidoProdutoId?: number
   tecidoNome?: string
@@ -95,6 +146,13 @@ export type CurtainState = {
   larguraTecido: 1.4 | 1.5 | 2.8 | 3
   possuiForro: boolean
   tipoForro?: string
+  forroProdutoId?: number
+  larguraForro?: number
+  trilhoProdutoId?: number
+  rodizioProdutoId?: number
+  ganchoProdutoId?: number
+  botaoProdutoId?: number
+  entretelaProdutoId?: number
   modeloPrega: string
   fator: number
   trilhoLinha?: 'MINI' | 'MAX' | 'MASTER'
@@ -121,6 +179,9 @@ export type CurtainState = {
   error?: string
   result?: {
     desenvolvimento_m: number
+    custo_total?: number
+    custo_completo?: boolean
+    pendencias_custo?: string[]
     custo_cadastrado?: number | null
     preco_unitario?: number
     subtotal?: number
@@ -199,7 +260,24 @@ export const commercialPercent:Record<CommercialType,number> = { Decorador:50, V
 export const roundHalfUp = (value:number) => Math.round((value + Number.EPSILON) * 100) / 100
 export const commercialPrice = (product:ApiProduct, type:CommercialType) => roundHalfUp(productCost(product) * (1 + commercialPercent[type] / 100))
 export const usesArea = (model:string) => ['ROLO','ROLÔ','DOUBLE_VISION','DOUBLE VISION','ROMANA','ROMANA_TETO','ROMANA DE TETO'].some(value=>normalizeSearch(model).startsWith(normalizeSearch(value)))
-export const productLineSubtotal = (item:BudgetProduct) => item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : roundHalfUp(Math.max(0,(usesArea(item.modelTechnical)?parseDecimal(item.width)*parseDecimal(item.height)*item.quantity:item.quantity)*item.price-item.discount))
+export const curtainKey = (item:BudgetProduct, profile:CommercialType) => {
+  const c=item.curtain
+  if(!c) return ''
+  return JSON.stringify([Object.entries(profileLabel).find(([,label])=>label===profile)?.[0],item.discount,c.tecidoProdutoId??null,parseDecimal(item.width),parseDecimal(item.height),Math.max(1,item.quantity||1),c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,c.tipoForro??'',c.trilhoLinha??'',c.trilhoModelo??'',c.rodizioTipo??'',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,c.tipoEntretela,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina,c.possuiForro?c.forroProdutoId??null:null,c.possuiForro?c.larguraForro??null:null,c.trilhoProdutoId??null,c.rodizioProdutoId??null,c.ganchoProdutoId??null,c.botaoProdutoId??null,c.entretelaProdutoId??null,c.componentes?.map(l=>[l.produto_id??null,l.quantidade])??null])
+}
+export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType) => {
+  // Um resultado de simulação pertence às entradas que o geraram.
+  if(profile){
+    if(item.romanaKind && (item.romana?.error || item.romana?.key !== romanaKey(item,profile))) return 0
+    if(item.romanaTetoKind && (item.romanaTeto?.error || item.romanaTeto?.key !== romanaTetoKey(item,profile))) return 0
+    if(item.roloKind && (item.rolo?.error || item.rolo?.key !== roloKey(item,profile))) return 0
+    if(item.doubleVisionKind && (item.doubleVision?.error || item.doubleVision?.key !== doubleVisionKey(item,profile))) return 0
+    if(item.curtain){
+      if(item.curtain.error || item.curtain.simulationKey !== curtainKey(item,profile)) return 0
+    }
+  }
+  return item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : roundHalfUp(Math.max(0,(usesArea(item.modelTechnical)?parseDecimal(item.width)*parseDecimal(item.height)*item.quantity:item.quantity)*item.price-item.discount))
+}
 export const profileLabel:Record<CommercialProfile,CommercialType>={DECORADOR:'Decorador',VAREJO:'Varejo',CONSUMIDOR_FINAL:'Consumidor final'}
 export const emptyProduct = (id:number):BudgetProduct => ({ id, productId:null, product:'', code:'', family:'', groupTechnical:'', modelTechnical:'', unit:'', color:'', details:'', quantity:1, width:'0,00', height:'0,00', price:0, discount:0, romanaKind:undefined, romana:undefined, romanaTetoKind:undefined, romanaTeto:undefined, roloKind:undefined, rolo:undefined, doubleVisionKind:undefined, doubleVision:undefined, curtain:undefined, acionamento:undefined, lado_comando:undefined, comprimento_bastao:undefined, comprimento_corrente_sem_fim:undefined })
 

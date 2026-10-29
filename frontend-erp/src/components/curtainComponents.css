@@ -1,0 +1,14 @@
+.curtain-components { margin: 16px 0; padding-top: 12px; border-top: 1px solid #e2e5eb; }
+.curtain-components > p { font-size: 12px; color: #687080; margin: 6px 0 12px; }
+.curtain-component-line { display: grid; grid-template-columns: minmax(180px, 3fr) minmax(100px, 1fr) minmax(45px, .5fr) minmax(75px, 1fr) minmax(75px, 1fr) 28px; align-items: end; gap: 10px; margin-bottom: 12px; }
+.curtain-component-line input { width: 100%; min-width: 0; box-sizing: border-box; }
+.curtain-component-line > div:not(.curtain-component-search) { min-height: 36px; display: flex; flex-direction: column; justify-content: center; }
+.curtain-component-line small { color: #687080; font-size: 11px; }
+.curtain-component-search { position: relative; min-width: 0; }
+.curtain-component-options { position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #dce0e6; border-radius: 6px; z-index: 30; max-height: 240px; overflow: auto; box-shadow: 0 6px 18px #0002; }
+.curtain-component-options button { display: flex; flex-direction: column; width: 100%; text-align: left; border: 0; background: white; padding: 10px; overflow-wrap: anywhere; cursor: pointer; }
+.curtain-component-options button:hover, .curtain-component-options button:focus { background: #fff0f1; }
+.curtain-component-options > span { display: block; padding: 10px; font-size: 12px; }
+.curtain-component-remove { height: 36px; border: 0; background: transparent; color: #b62230; font-size: 22px; cursor: pointer; }
+@media (max-width: 1000px) { .curtain-component-line { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 28px; } .curtain-component-search { grid-column: 1 / -1; } .curtain-component-remove { grid-column: 3; grid-row: 2; } }
+@media (max-width: 480px) { .curtain-component-line { gap: 8px; } }

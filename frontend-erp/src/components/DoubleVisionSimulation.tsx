@@ -1,3 +1,4 @@
+import { technicalSimulationError } from '../utils/technicalSimulation'
 import { useEffect } from 'react'
 import { simulateDoubleVision } from '../services/api'
 import { formatCurrency, parseDecimal, type BudgetProduct, type CommercialType } from '../types/budget'
@@ -11,10 +12,11 @@ export function DoubleVisionSimulation({ product, profile, onResult }: Props) {
     if (kind === 'MANUAL') {
       let cancelled = false
       const [produto_id, width, height, quantidade, desconto, commercial] = JSON.parse(key) as [number, string, string, number, number, CommercialType]
-      const timer = setTimeout(() => {
+      if (!produto_id || parseDecimal(width) <= 0 || parseDecimal(height) <= 0 || !Number.isInteger(quantidade) || quantidade <= 0) return
+    const timer = setTimeout(() => {
         void simulateDoubleVision({ produto_id, largura: parseDecimal(width), altura: parseDecimal(height), quantidade, desconto, perfil_comercial: profile === 'Decorador' ? 'DECORADOR' : profile === 'Varejo' ? 'VAREJO' : 'CONSUMIDOR_FINAL', com_bando: false, tem_validacao_tecido_fornecedor: false })
           .then(result => { if (!cancelled) onResult(id, { key, result }) })
-          .catch(error => { if (!cancelled) onResult(id, { key, error: error instanceof Error ? error.message : String(error) }) })
+          .catch(error => { if (!cancelled) onResult(id, { key, error: technicalSimulationError(error) }) })
       }, 350)
       return () => { cancelled = true; clearTimeout(timer) }
     }
@@ -58,7 +60,7 @@ export function DoubleVisionSimulation({ product, profile, onResult }: Props) {
       )}
       {r && (
         <>
-          <p>{r.quantidade_pecas} peça(s) · Área total: {Number(r.area_total).toLocaleString('pt-BR')} m²</p>
+          <p>{r.quantidade_pecas} peça(s) · Área total: {Number(r.area_real_m2).toLocaleString('pt-BR')} m²</p>
           <p>Bitola selecionada: <strong>{r.bitola_tecnica}</strong> · Estado: {r.estado_validacao}{r.requer_validacao_tecido_fornecedor ? ' ⚠ Requer validação tecido/fornecedor' : ''}</p>
           <p>Custo cadastrado do produto: {r.custo_cadastrado === null ? 'indisponível' : formatCurrency(Number(r.custo_cadastrado))}. Preço comercial unitário: {r.preco_disponivel ? formatCurrency(Number(r.preco_unitario)) : 'indisponível'} · Subtotal: {formatCurrency(Number(r.subtotal))}</p>
           <p>Origem do preço: {r.origem_preco}. {r.aviso}</p>
