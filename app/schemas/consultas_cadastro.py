@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, StrictStr, validator
+from pydantic import BaseModel, Field, StrictStr, ValidationInfo, field_validator
 
 
 def normalizar_cnpj(valor: str) -> str:
@@ -39,7 +39,8 @@ def cnpj_valido(valor: str) -> bool:
 class ConsultaCNPJInput(BaseModel):
     documento: str
 
-    @validator("documento")
+    @field_validator("documento")
+    @classmethod
     def validar_documento(cls, value):
         documento = normalizar_cnpj(value)
         if not cnpj_valido(documento):
@@ -53,7 +54,8 @@ class ConsultaCNPJInput(BaseModel):
 class ConsultaCEPInput(BaseModel):
     cep: str
 
-    @validator("cep")
+    @field_validator("cep")
+    @classmethod
     def validar_cep(cls, value):
         if not re.fullmatch(r"[0-9.\-/\s]+", value.strip()):
             raise ValueError("Informe um CEP com oito dígitos.")
@@ -82,25 +84,28 @@ class ConsultaCadastroResponse(BaseModel):
         cidade: Optional[StrictStr] = None
         estado: Optional[StrictStr] = None
 
-        @validator("razao_social", "nome_fantasia", "cidade", "bairro", "logradouro", "complemento", "numero", "inscricao_estadual", "email", "telefone_comercial", "situacao_cadastral")
-        def validar_tipos_comprimentos(cls, value, field):
+        @field_validator("razao_social", "nome_fantasia", "cidade", "bairro", "logradouro", "complemento", "numero", "inscricao_estadual", "email", "telefone_comercial", "situacao_cadastral")
+        @classmethod
+        def validar_tipos_comprimentos(cls, value, info: ValidationInfo):
             limits = {
                 "razao_social": 255, "nome_fantasia": 255, "situacao_cadastral": 100,
                 "email": 255, "telefone_comercial": 50, "inscricao_estadual": 80,
                 "logradouro": 255, "numero": 30, "complemento": 255, "bairro": 100,
                 "cidade": 150,
             }
-            if value is not None and len(value) > limits[field.name]:
-                raise ValueError(f"{field.name} excede o limite permitido.")
+            if value is not None and len(value) > limits[info.field_name]:
+                raise ValueError(f"{info.field_name} excede o limite permitido.")
             return value
 
-        @validator("cep")
+        @field_validator("cep")
+        @classmethod
         def validar_cep(cls, value):
             if value is not None and not re.fullmatch(r"\d{8}", value):
                 raise ValueError("CEP retornado pelo provedor é inválido.")
             return value
 
-        @validator("estado")
+        @field_validator("estado")
+        @classmethod
         def validar_uf(cls, value):
             if value is not None and value not in {
                 "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
