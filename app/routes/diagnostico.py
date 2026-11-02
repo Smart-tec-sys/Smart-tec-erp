@@ -1,14 +1,20 @@
 """TEMPORARIO: remover este router e seu registro no app apos o diagnostico."""
 
 import os
+import logging
 from secrets import compare_digest
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.database import get_db
+from app.database import engine, get_db
+from app.services.phase1_dry_run import (
+    ArquivoDryRunInvalido,
+    ReversaoDryRunInvalida,
+    executar_dry_run,
+)
 
 
 def autorizar_diagnostico(
@@ -299,3 +305,38 @@ def diagnosticar_destino_banco(
         ) from None
 
     return resultado
+
+
+async def recusar_conteudo_dry_run(request: Request) -> None:
+    if request.query_params or await request.body():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="DRY RUN nao aceita corpo ou parametros de consulta.",
+            headers={"Cache-Control": "no-store"},
+        )
+
+
+@router.post(
+    "/run-phase1-dry-run",
+    include_in_schema=False,
+    dependencies=[Depends(recusar_conteudo_dry_run)],
+)
+def executar_diagnostico_fase1(response: Response):
+    # TEMPORARIO: sem body, caminho ou SQL fornecido pelo solicitante.
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return executar_dry_run(engine)
+    except Exception as erro:
+        tipo = type(erro).__name__
+        mensagem = (
+            str(erro)
+            if isinstance(erro, (ArquivoDryRunInvalido, ReversaoDryRunInvalida))
+            else "Falha ao executar ou verificar o DRY RUN FASE 1."
+        )
+        # Nunca registrar excecao original: driver/SQLAlchemy podem incluir segredos.
+        logging.getLogger(__name__).error("DRY RUN FASE 1 falhou: tipo=%s", tipo)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"ok": False, "error_type": tipo, "message": mensagem},
+            headers={"Cache-Control": "no-store"},
+        ) from None
