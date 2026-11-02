@@ -19,3 +19,4 @@ PyJWT[crypto]
 python-multipart
 python-dotenv==1.2.2
 tzdata==2026.2
+requests==2.32.5
