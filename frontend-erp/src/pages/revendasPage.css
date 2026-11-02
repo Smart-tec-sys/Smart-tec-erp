@@ -1,4 +1,62 @@
-.revenda-modal { width: min(820px, 100%); }
+.revenda-modal-backdrop {
+  align-items: center;
+  padding: 16px;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.cad-modal.revenda-modal {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(820px, 100%);
+  height: min(900px, calc(100vh - 32px));
+  height: min(900px, calc(100dvh - 32px));
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  overflow: hidden;
+}
+.revenda-modal > .cad-modal-header {
+  flex-shrink: 0;
+  padding: 20px 24px;
+}
+.revenda-modal .cad-modal-header > div { min-width: 0; }
+.revenda-modal .cad-modal-header h2 { overflow-wrap: anywhere; }
+.revenda-modal .cad-modal-header button { flex-shrink: 0; }
+.revenda-modal-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.revenda-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  padding: 0 24px;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: #667085 #eaecf0;
+  -webkit-overflow-scrolling: touch;
+}
+.revenda-modal-body::-webkit-scrollbar { width: 14px; }
+.revenda-modal-body::-webkit-scrollbar-track { background: #eaecf0; }
+.revenda-modal-body::-webkit-scrollbar-thumb {
+  background: #667085;
+  border: 3px solid #eaecf0;
+  border-radius: 8px;
+}
+.revenda-modal-body::-webkit-scrollbar-thumb:hover { background: #344054; }
+.revenda-modal-body:focus-visible { outline: 2px solid #e5323b; outline-offset: -2px; }
+.revenda-modal .cad-modal-footer {
+  position: static;
+  bottom: auto;
+  flex-shrink: 0;
+  padding: 16px 24px;
+}
 .revenda-section { padding: 18px 0; border-bottom: 1px solid #eaecf0; }
 .revenda-section h3, .revenda-section summary { margin: 0 0 14px; font-size: 14px; color: #344054; font-weight: 700; }
 .revenda-section summary { cursor: pointer; margin-bottom: 0; }
@@ -14,5 +72,14 @@
 .revenda-suggestions > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 8px; font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
   .revenda-fields { grid-template-columns: 1fr; }
-  .revenda-modal { padding: 16px; }
+  .revenda-modal-backdrop { padding: 8px; }
+  .cad-modal.revenda-modal {
+    height: calc(100vh - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .revenda-modal > .cad-modal-header { gap: 12px; padding: 14px 16px; }
+  .revenda-modal-body { padding: 0 16px; }
+  .revenda-modal .cad-modal-footer { padding: 12px 16px; }
 }

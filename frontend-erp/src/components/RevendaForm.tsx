@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { Loader2, X } from 'lucide-react'
 import { getFuncionariosCadastro } from '../services/api'
 import { consultarCep, consultarCnpj, cnpjValido, cepValido, normalizarCep, normalizarCnpj, consultaAindaAtual } from '../services/cadastroConsultas'
@@ -35,8 +36,42 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
   const [erro, setErro] = useState('')
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const scrollBodyRef = useRef<HTMLDivElement>(null)
   const form = assistido.valores
   const disabled = somenteLeitura || saving
+
+  useEffect(() => {
+    const body = document.body
+    const html = document.documentElement
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const scrollX = window.scrollX
+    const scrollY = window.scrollY
+    const previousBody = {
+      position: body.style.position, top: body.style.top, left: body.style.left,
+      width: body.style.width, overflow: body.style.overflow,
+      paddingRight: body.style.paddingRight, boxSizing: body.style.boxSizing,
+    }
+    const previousOverflow = html.style.overflow
+    const previousScrollBehavior = html.style.scrollBehavior
+    const scrollbarWidth = window.innerWidth - html.clientWidth
+    const paddingRight = Number.parseFloat(window.getComputedStyle(body).paddingRight) || 0
+    Object.assign(body.style, {
+      position: 'fixed', top: '-' + scrollY + 'px', left: '-' + scrollX + 'px',
+      width: '100%', overflow: 'hidden', boxSizing: 'border-box',
+      paddingRight: paddingRight + scrollbarWidth + 'px',
+    })
+    html.style.overflow = 'hidden'
+    scrollBodyRef.current?.focus({ preventScroll: true })
+    return () => {
+      Object.assign(body.style, previousBody)
+      html.style.overflow = previousOverflow
+      html.style.scrollBehavior = 'auto'
+      window.scrollTo(scrollX, scrollY)
+      html.style.scrollBehavior = previousScrollBehavior
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true })
+    }
+  }, [])
 
   useEffect(() => {
     mounted.current = true
@@ -109,7 +144,15 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
       const applied = aplicarConsulta(current.current, dados, origem, snapshot.versao)
       atualizar(applied.estado)
       setSugestoes(previous => ({ ...previous, ...applied.sugestoes }))
-      setStatus({ ...statusInicial, mensagem: `Dados consultados em ${response.fonte}. Revise antes de salvar.` })
+      const ausentes = cnpj
+        ? (['nome_fantasia', 'email', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado'] as const)
+          .filter(campo => !dados[campo]?.trim()).map(campo => labels[campo])
+        : []
+      setStatus({
+        ...statusInicial,
+        mensagem: `Dados consultados em ${response.fonte}. Revise antes de salvar.${ausentes.length
+          ? ` A fonte não informou: ${ausentes.join(', ')}. Complete apenas o que for necessário.` : ''}`,
+      })
     } catch (error) {
       if (validaResposta()) setStatus({ ...statusInicial, erro: `${error instanceof Error ? error.message : 'Consulta indisponível.'} Você pode continuar o cadastro manualmente.` })
     }
@@ -128,6 +171,26 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
   }, [form.cep, disabled])
 
   function close() { if (!savingRef.current) onClose() }
+  function dialogKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      close()
+    }
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]',
+    ) ?? []).filter(element => element.getClientRects().length > 0)
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last?.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first?.focus()
+    }
+  }
   async function save() {
     if (savingRef.current || somenteLeitura) return
     const failure = validarFormularioRevenda(current.current.valores)
@@ -175,14 +238,15 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
     </div>
   }
   const hasSugestoes = Object.keys(sugestoes).length > 0
-  return <div className="cad-modal-backdrop" onMouseDown={close}>
-    <div className="cad-modal revenda-modal" role="dialog" aria-modal="true" aria-label={somenteLeitura ? 'Visualizar revenda' : revenda ? 'Editar revenda' : 'Nova revenda'}
-      onMouseDown={event => event.stopPropagation()}>
+  const modal = <div className="cad-modal-backdrop revenda-modal-backdrop" onMouseDown={close}>
+    <div ref={dialogRef} className="cad-modal revenda-modal" role="dialog" aria-modal="true" aria-label={somenteLeitura ? 'Visualizar revenda' : revenda ? 'Editar revenda' : 'Nova revenda'}
+      onMouseDown={event => event.stopPropagation()} onKeyDown={dialogKeyDown}>
       <div className="cad-modal-header"><div><span>{somenteLeitura ? 'VISUALIZAR CADASTRO' : revenda ? 'EDITAR CADASTRO' : 'NOVA REVENDA'}</span>
         <h2>{revenda?.nome || 'Cadastro de revenda'}</h2><p className="revenda-hint">Informe CNPJ e CEP para agilizar. Apenas o nome de exibição é obrigatório.</p></div>
         <button type="button" aria-label="Fechar" disabled={saving} onClick={close}><X size={19} /></button>
       </div>
-      <form onSubmit={event => { event.preventDefault(); void save() }}>
+      <form className="revenda-modal-form" onSubmit={event => { event.preventDefault(); void save() }}>
+        <div ref={scrollBodyRef} className="revenda-modal-body" role="region" aria-label="Formulário da revenda" tabIndex={0}>
         <section className="revenda-section"><h3>1. Dados gerais</h3><div className="revenda-fields">
           {field('tipo_pessoa', 'Tipo de pessoa', [{ value: '', label: 'Não informado' }, { value: 'FISICA', label: 'Pessoa física' }, { value: 'JURIDICA', label: 'Pessoa jurídica' }])}
           {field('ativo', 'Situação', [{ value: 'true', label: 'Ativo' }, { value: 'false', label: 'Inativo' }])}
@@ -231,10 +295,12 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
           <span>Observações</span><textarea name="observacao" value={form.observacao} disabled={disabled} onChange={event => change('observacao', event.target.value)} />
         </label></section>
         {erro && <div className="cad-error" role="alert">{erro}</div>}
+        </div>
         <div className="cad-modal-footer"><button type="button" className="cad-secondary" disabled={saving} onClick={close}>{somenteLeitura ? 'Voltar' : 'Cancelar'}</button>
           {!somenteLeitura && <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Salvando...' : 'Salvar revenda'}</button>}
         </div>
       </form>
     </div>
   </div>
+  return typeof document === 'undefined' ? modal : createPortal(modal, document.body)
 }

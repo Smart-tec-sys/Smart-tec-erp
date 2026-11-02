@@ -137,6 +137,51 @@ def _inscricao_estadual_ativa(payload, uf_empresa):
     return elegiveis[0] if len(elegiveis) == 1 else None
 
 
+def _telefones_cnpj(payload):
+    telefones = []
+    numeros = set()
+    for key in ("ddd_telefone_1", "ddd_telefone_2"):
+        telefone = _texto(payload, key, 50)
+        if telefone:
+            numero = re.sub(r"\D", "", telefone)
+            if (numero or telefone) not in numeros:
+                telefones.append(telefone)
+                numeros.add(numero or telefone)
+    return " / ".join(telefones) or None
+
+
+def _logradouro_cnpj(payload):
+    logradouro = _texto(payload, "logradouro", 255)
+    tipo = _texto(payload, "descricao_tipo_de_logradouro", 100)
+    if not logradouro or not tipo:
+        return logradouro
+    palavras = logradouro.casefold().split()
+    prefixo = tipo.casefold().split()
+    if palavras[:len(prefixo)] == prefixo:
+        return logradouro
+    return f"{tipo} {logradouro}"
+
+
+def _situacao_cnpj(payload):
+    descricao = _texto(payload, "descricao_situacao_cadastral", 100)
+    if descricao:
+        return descricao
+    codigo = payload.get("situacao_cadastral")
+    if codigo is None:
+        return None
+    situacoes = {1: "NULA", 2: "ATIVA", 3: "SUSPENSA", 4: "INAPTA", 8: "BAIXADA"}
+    if isinstance(codigo, int) and not isinstance(codigo, bool):
+        if codigo not in situacoes:
+            raise ConsultaCadastroError(502, "Provedor retornou situação cadastral inválida.")
+        return situacoes[codigo]
+    texto = _texto(payload, "situacao_cadastral", 100)
+    if texto and texto.isdecimal():
+        if int(texto) not in situacoes:
+            raise ConsultaCadastroError(502, "Provedor retornou situação cadastral inválida.")
+        return situacoes[int(texto)]
+    return texto
+
+
 class BrasilApiCNPJAdapter:
     fonte = "brasilapi"
     base_url = "https://brasilapi.com.br/api/cnpj/v1/"
@@ -151,15 +196,12 @@ class BrasilApiCNPJAdapter:
         dados = {
             "razao_social": _texto(payload, "razao_social", 255),
             "nome_fantasia": _texto(payload, "nome_fantasia", 255),
-            "situacao_cadastral": (
-                _texto(payload, "descricao_situacao_cadastral", 100)
-                or _texto(payload, "situacao_cadastral", 100)
-            ),
+            "situacao_cadastral": _situacao_cnpj(payload),
             "email": (_texto(payload, "email", 255) or "").lower() or None,
-            "telefone_comercial": _texto(payload, "ddd_telefone_1", 50),
+            "telefone_comercial": _telefones_cnpj(payload),
             "inscricao_estadual": _inscricao_estadual_ativa(payload, uf),
             "cep": _cep_normalizado(payload, "cep"),
-            "logradouro": _texto(payload, "logradouro", 255),
+            "logradouro": _logradouro_cnpj(payload),
             "numero": _texto(payload, "numero", 30),
             "complemento": _texto(payload, "complemento", 255),
             "bairro": _texto(payload, "bairro", 100),

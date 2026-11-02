@@ -123,3 +123,48 @@ contagem durante a conferencia posterior. Nenhum DRY RUN separado foi criado.
 Teste simulado:
 `.\.venv\Scripts\python.exe -m unittest tests.test_diag_revendas_v1_up`.
 Criar a rota nao executa a migration. Nao chamar este endpoint sem autorizacao.
+
+## Modal e cobertura de dados CNPJ
+
+O modal de Revendas usa portal em `document.body`, header/footer fora do corpo
+rolavel, layout flex e limite pela viewport (`vh`/`dvh`). Apenas
+`.revenda-modal-body` possui rolagem vertical. O fundo fica travado durante a
+abertura; posicao de rolagem, estilos inline e foco anterior sao restaurados ao
+fechar. Os estilos sao exclusivos de Revendas, sem mudar outros cadastros.
+O modal tem altura definida limitada pela viewport. O corpo usa
+`overflow-y: scroll`, trilho cinza e thumb contrastante; em navegadores WebKit
+a largura e de 14px. Sistemas que usam scrollbars sobrepostas ainda podem
+controlar sua visibilidade conforme a preferencia do sistema operacional.
+
+Validacao local no harness com mocks: viewport 1366x650, wheel, arraste da barra,
+PageDown, acesso a Observacoes e header/footer imoveis; viewport 390x667 sem
+overflow horizontal e com campos inferiores acessiveis. Fundo inicialmente
+rolado em 400px voltou a 400px depois de fechar.
+
+Validacao adicional pela entrada real `index.html`/`App`, via menu Revendas e
+Nova revenda (nao pela pagina do harness): 1366x650 com wheel, arraste da barra
+e PageDown; header/footer permaneceram em y=16/y=561. Em 390x667, modal entre
+y=8 e y=659, barra com 15px no Chromium, sete blocos acessiveis, Fiscal e
+Financeiro expandidos e Observacoes editavel. Chamadas HTTP foram substituidas
+por respostas sinteticas no navegador; nao houve banco nem salvamento real.
+Foi validado preenchimento de contatos/endereco, preservacao de nome fantasia
+e email editados durante consulta e aviso de campos ausentes na fonte.
+Isso nao substitui validacao da versao publicada em staging apos autorizacao
+de publicacao.
+
+O adapter BrasilAPI le `nome_fantasia` e `email`; string vazia ou null nao
+e convertida em dado ficticio. O frontend preserva campos manuais e informa
+quais campos prioritarios a fonte nao retornou. Os dois telefones sao
+aproveitados em `telefone_comercial`, separados por ` / `, sem duplicar numeros
+equivalentes nem presumir que o segundo e celular. O tipo de logradouro
+e acrescentado quando retornado e ainda nao presente no logradouro.
+Situacao numerica RFB e normalizada quando nao houver descricao textual.
+O endereco restante e mapeado diretamente quando disponivel. Nao ha captura
+do payload especifico consultado em staging; nao se pode afirmar quais valores
+a fonte forneceu naquela consulta.
+
+A implementacao publica atual da BrasilAPI encaminha CNPJ ao Minha Receita;
+usar Minha Receita como segunda fonte nao representa enriquecimento independente.
+Um adapter CNPJa e candidato a fallback, sujeito a aprovacao, cobertura e limites
+do plano. Nenhum segundo provider foi implementado nesta etapa. Consultas de
+documentacao publica nao executaram consultas empresariais nem acesso a banco.

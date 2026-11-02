@@ -80,14 +80,17 @@ registerHooks({
   assert.equal(revendas.validarFormularioRevenda(initial), null)
 
   const remote = {
-    razao_social: 'Empresa consultada', nome_fantasia: 'Fantasia', telefone_comercial: '11999999999',
+    razao_social: 'Empresa consultada', nome_fantasia: 'Fantasia', email: 'contato@example.test',
+    telefone_comercial: '1133334444 / 11999999999',
     cep: '01001000', numero: '10', complemento: 'Sala', estado: 'SP',
     ativo: false, percentual_padrao: '99', vendedor_responsavel_id: 2, observacao: 'EXTERNAL',
     limite_credito: 100, responsavel: 'EXTERNAL', isento_ie: true,
   }
   const mapped = revendas.camposConsultaCnpj(remote)
   for (const key of ['ativo', 'percentual_padrao', 'vendedor_responsavel_id', 'observacao', 'limite_credito', 'responsavel', 'isento_ie']) assert.ok(!(key in mapped))
-  assert.equal(mapped.telefone, '11999999999')
+  assert.equal(mapped.telefone, '1133334444 / 11999999999')
+  assert.equal(mapped.nome_fantasia, 'Fantasia')
+  assert.equal(mapped.email, 'contato@example.test')
   assert.equal(mapped.numero, '10')
   assert.equal(revendas.camposConsultaCnpj({}).numero, undefined)
   assert.equal(revendas.camposConsultaCnpj({}).inscricao_estadual, undefined)
@@ -106,6 +109,15 @@ registerHooks({
   assert.equal(next.estado.valores.telefone, '')
   assert.deepEqual(next.sugestoes, { razao_social: 'Outra razão', telefone: '123' })
   assert.equal(next.estado.valores.cidade, 'São Paulo')
+  let protectedContacts = assisted.iniciarPreenchimento(revendas.formularioDaRevenda())
+  for (const [campo, valor] of Object.entries({ nome_fantasia: 'Fantasia manual', email: 'manual@example.test', telefone: 'Telefone manual' })) {
+    protectedContacts = assisted.editarCampo(protectedContacts, campo, valor)
+  }
+  const protectedResult = assisted.aplicarConsulta(protectedContacts, mapped, 'cnpj', protectedContacts.versao)
+  assert.equal(protectedResult.estado.valores.nome_fantasia, 'Fantasia manual')
+  assert.equal(protectedResult.estado.valores.email, 'manual@example.test')
+  assert.equal(protectedResult.estado.valores.telefone, 'Telefone manual')
+  assert.equal(protectedResult.sugestoes.email, 'contato@example.test')
   const manuallyAccepted = assisted.editarCampo(next.estado, 'razao_social', next.sugestoes.razao_social)
   assert.equal(manuallyAccepted.valores.razao_social, 'Outra razão')
   assert.equal(manuallyAccepted.origens.razao_social, 'manual')
@@ -129,6 +141,19 @@ registerHooks({
   assert.equal(consultas.consultaAindaAtual('cep', '01001000', 1, { requestId: 1, documento: '', tipo_pessoa: '', cep: '20000000' }), false)
 
   const html = renderToStaticMarkup(React.createElement(RevendaForm, { onClose() {}, onSaved() {} }))
+  assert.match(html, /class="cad-modal-backdrop revenda-modal-backdrop"/)
+  assert.match(html, /class="revenda-modal-form"/)
+  assert.match(html, /class="revenda-modal-body" role="region" aria-label="Formulário da revenda" tabindex="0"/)
+  const headerPosition = html.indexOf('class="cad-modal-header"')
+  const bodyPosition = html.indexOf('class="revenda-modal-body"')
+  const footerPosition = html.indexOf('class="cad-modal-footer"')
+  assert.ok(headerPosition < bodyPosition && bodyPosition < footerPosition)
+  const scrollStyles = fs.readFileSync(path.join(root, 'src/pages/revendasPage.css'), 'utf8')
+  assert.match(scrollStyles, /\.cad-modal\.revenda-modal\s*\{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*max-height:\s*calc\(100dvh - 32px\);[^}]*overflow:\s*hidden;/)
+  assert.match(scrollStyles, /\.revenda-modal-body\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;[^}]*overflow-y:\s*scroll;/)
+  assert.match(scrollStyles, /scrollbar-color:\s*#667085 #eaecf0;/)
+  assert.match(scrollStyles, /\.revenda-modal-body::-webkit-scrollbar\s*\{\s*width:\s*14px;/)
+  assert.match(scrollStyles, /\.revenda-modal \.cad-modal-footer\s*\{[^}]*position:\s*static;[^}]*flex-shrink:\s*0;/)
   for (const title of ['1. Dados gerais', '2. Contato', '3. Endereço principal', '4. Fiscal', '5. Comercial Smart-tec', '6. Financeiro / Crédito', '7. Observações']) assert.ok(html.includes(title))
   assert.equal((html.match(/ required=""/g) || []).length, 1)
   assert.match(html, /name="limite_credito"[^>]*value=""/)
@@ -137,6 +162,13 @@ registerHooks({
   const view = renderToStaticMarkup(React.createElement(RevendaForm, { revenda: { id: 1, nome: 'Teste', ativo: true, percentual_padrao: '0' }, somenteLeitura: true, onClose() {}, onSaved() {} }))
   assert.ok(!view.includes('Salvar revenda'))
   assert.ok(!view.includes('Consultar CEP'))
+  const missingFields = revendas.camposConsultaCnpj({ razao_social: 'Razão disponível', nome_fantasia: null, email: null })
+  assert.deepEqual(missingFields, { razao_social: 'Razão disponível' })
+  const safeMissing = assisted.aplicarConsulta(
+    assisted.editarCampo(assisted.iniciarPreenchimento(revendas.formularioDaRevenda()), 'email', 'manual@example.invalid'),
+    missingFields, 'cnpj', 1,
+  )
+  assert.equal(safeMissing.estado.valores.email, 'manual@example.invalid')
 
   const calls = []
   global.fetch = async (target, options) => {

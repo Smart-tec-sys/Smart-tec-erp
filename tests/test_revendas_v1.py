@@ -344,6 +344,78 @@ class ConsultationServiceTests(unittest.TestCase):
         self.assertNotIn("dados_internos", serialized["dados"])
         self.assertNotIn("numero", serialized["dados"])
 
+    def test_cnpj_aproveita_segundo_telefone_tipo_logradouro_e_situacao_numerica(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "cnpj": "11222333000181",
+            "razao_social": " Empresa Exemplo ",
+            "nome_fantasia": " Loja Exemplo ",
+            "email": " CONTATO@EXAMPLE.TEST ",
+            "ddd_telefone_1": "",
+            "ddd_telefone_2": "11987654321",
+            "situacao_cadastral": 2,
+            "descricao_tipo_de_logradouro": "AVENIDA",
+            "logradouro": "Paulista",
+            "numero": "100",
+            "complemento": "Sala 2",
+            "bairro": "Bela Vista",
+            "municipio": "São Paulo",
+            "cep": "01310-930",
+            "uf": "sp",
+        }
+        with patch.object(cadastro_adapters.requests, "get", return_value=response):
+            dados = consultas.consultar_cnpj("11222333000181").dados
+        self.assertEqual(dados.razao_social, "Empresa Exemplo")
+        self.assertEqual(dados.nome_fantasia, "Loja Exemplo")
+        self.assertEqual(dados.email, "contato@example.test")
+        self.assertEqual(dados.telefone_comercial, "11987654321")
+        self.assertEqual(dados.situacao_cadastral, "ATIVA")
+        self.assertEqual(dados.logradouro, "AVENIDA Paulista")
+        self.assertEqual(dados.numero, "100")
+        self.assertEqual(dados.complemento, "Sala 2")
+        self.assertEqual(dados.bairro, "Bela Vista")
+        self.assertEqual(dados.cidade, "São Paulo")
+        self.assertEqual(dados.cep, "01310930")
+        self.assertEqual(dados.estado, "SP")
+
+    def test_cnpj_preserva_dois_telefones_sem_inferir_celular_e_sem_duplicar(self):
+        for primeiro, segundo, esperado in (
+            ("1133334444", "11987654321", "1133334444 / 11987654321"),
+            ("(11) 3333-4444", "1133334444", "(11) 3333-4444"),
+            ("1133334444", None, "1133334444"),
+            (None, None, None),
+        ):
+            with self.subTest(primeiro=primeiro, segundo=segundo):
+                response = Mock(status_code=200)
+                response.json.return_value = {
+                    "cnpj": "11222333000181",
+                    "ddd_telefone_1": primeiro,
+                    "ddd_telefone_2": segundo,
+                }
+                with patch.object(cadastro_adapters.requests, "get", return_value=response):
+                    dados = consultas.consultar_cnpj("11222333000181").dados
+                self.assertEqual(dados.telefone_comercial, esperado)
+
+    def test_cnpj_nao_inventa_dados_ausentes_nem_duplica_tipo_logradouro(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {
+            "cnpj": "11222333000181",
+            "nome_fantasia": " ",
+            "email": None,
+            "descricao_tipo_de_logradouro": "AVENIDA",
+            "logradouro": "avenida Paulista",
+            "descricao_situacao_cadastral": "ATIVA",
+            "situacao_cadastral": 8,
+        }
+        with patch.object(cadastro_adapters.requests, "get", return_value=response):
+            dados = consultas.consultar_cnpj("11222333000181").dados
+        self.assertIsNone(dados.nome_fantasia)
+        self.assertIsNone(dados.email)
+        self.assertIsNone(dados.numero)
+        self.assertIsNone(dados.complemento)
+        self.assertEqual(dados.logradouro, "avenida Paulista")
+        self.assertEqual(dados.situacao_cadastral, "ATIVA")
+
     def test_cnpj_mismatch_and_malformed_provider_data_are_sanitized(self):
         mismatch = Mock(status_code=200)
         mismatch.json.return_value = {"cnpj": "00000000000000"}
@@ -398,6 +470,11 @@ class ConsultationServiceTests(unittest.TestCase):
         invalid_payloads = (
             {"cnpj": "11222333000181", "uf": "XX"},
             {"cnpj": "11222333000181", "ddd_telefone_1": 12345},
+            {"cnpj": "11222333000181", "ddd_telefone_2": 12345},
+            {"cnpj": "11222333000181", "situacao_cadastral": 999},
+            {"cnpj": "11222333000181", "situacao_cadastral": True},
+            {"cnpj": "11222333000181", "ddd_telefone_1": "1" * 30, "ddd_telefone_2": "2" * 30},
+            {"cnpj": "11222333000181", "logradouro": "L" * 255, "descricao_tipo_de_logradouro": "AVENIDA"},
             {"cnpj": "11222333000181", "logradouro": "L" * 256},
             {"cnpj": "11222333000181", "cep": "123"},
             {
