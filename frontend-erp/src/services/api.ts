@@ -76,7 +76,7 @@ export const simulateCurtain = (data: {
 
 type AuxOption = { id: number; nome: string; categoria: string; descricao: string | null; situacao: string; ordem: number }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeaders = await getApiAuthHeaders()
   const response = await fetch(`${apiConfig.baseUrl}${path}`, {
     ...init,

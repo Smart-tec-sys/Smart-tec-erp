@@ -1,10 +1,9 @@
 import { ColumnManager } from '../components/ColumnManager'
+import { RevendasPage } from './RevendasPage'
 import { useEffect, useMemo, useState } from 'react'
 import { Eye, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import {
-  createCommercialPartner,
   createRepresentative,
-  getCommercialPartnersCadastro,
   getRepresentativesCadastro,
   createClienteCadastro,
   createFornecedorCadastro,
@@ -68,20 +67,9 @@ const situacaoField: FieldConfig = {
   options: ['Ativo', 'Inativo', 'Bloqueado'],
 }
 
-const configs: Record<CadastroEntity, EntityConfig> = {
-  revendas: {
-    title: 'Revendas', singular: 'Revenda',
-    load: getCommercialPartnersCadastro, create: createCommercialPartner,
-    listColumns: ['nome', 'documento', 'email', 'telefone', 'percentual_padrao'],
-    fields: [
-      { key: 'nome', label: 'Nome', required: true },
-      { key: 'documento', label: 'CPF / CNPJ' },
-      { key: 'email', label: 'E-mail' },
-      { key: 'telefone', label: 'Telefone' },
-      { key: 'percentual_padrao', label: '% revenda padrão', type: 'number', step: '0.0001' },
-      { key: 'observacao', label: 'Observações', type: 'textarea' },
-    ],
-  },
+type CadastroGenericoEntity = Exclude<CadastroEntity, 'revendas'>
+
+const configs: Record<CadastroGenericoEntity, EntityConfig> = {
   representantes: {
     title: 'Representantes', singular: 'Representante',
     load: getRepresentativesCadastro, create: createRepresentative,
@@ -290,6 +278,10 @@ function labelFor(config: EntityConfig, key: string) {
 }
 
 export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
+  return entity === 'revendas' ? <RevendasPage /> : <CadastrosGenericosPage entity={entity} />
+}
+
+function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) {
   const config = configs[entity]
 
   const [items, setItems] = useState<CadastroRecord[]>([])

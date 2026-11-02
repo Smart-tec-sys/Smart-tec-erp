@@ -1,9 +1,13 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.schemas.representante import (
     ParceiroCreate,
+    ParceiroUpdate,
     RepresentanteCreate,
     RTCreate,
     RTPagamentoInput,
@@ -18,6 +22,20 @@ from app.tenant.dependencies import (
 
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error.parceiros")
+
+
+def _erro_banco(db: Session | None = None):
+    if db is not None:
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            logger.error("Falha ao reverter transação de cadastro de parceiros.")
+    logger.error("Falha de persistência no cadastro de parceiros.")
+    raise HTTPException(
+        status_code=500,
+        detail="Erro interno ao acessar cadastro de parceiros.",
+    ) from None
 
 
 @router.get("/parceiros")
@@ -26,11 +44,10 @@ def listar_parceiros(
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(get_current_tenant),
 ):
-    return representante_service.listar_parceiros(
-        db,
-        tenant,
-        ativos,
-    )
+    try:
+        return representante_service.listar_parceiros(db, tenant, ativos)
+    except SQLAlchemyError:
+        _erro_banco()
 
 
 @router.post("/parceiros")
@@ -46,12 +63,56 @@ def criar_parceiro(
             data,
         )
     except ValueError as exc:
-        db.rollback()
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            _erro_banco()
 
         raise HTTPException(
             status_code=400,
             detail=str(exc),
         ) from exc
+    except SQLAlchemyError:
+        _erro_banco(db)
+
+
+@router.get("/parceiros/{parceiro_id}")
+def buscar_parceiro(
+    parceiro_id: int,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant),
+):
+    try:
+        parceiro = representante_service.buscar_parceiro(db, tenant, parceiro_id)
+    except SQLAlchemyError:
+        _erro_banco()
+    if parceiro is None:
+        raise HTTPException(status_code=404, detail="Parceiro não encontrado.")
+    return parceiro
+
+
+@router.patch("/parceiros/{parceiro_id}")
+def atualizar_parceiro(
+    parceiro_id: int,
+    data: ParceiroUpdate,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant),
+):
+    try:
+        parceiro = representante_service.atualizar_parceiro(
+            db, tenant, parceiro_id, data
+        )
+        if parceiro is None:
+            raise HTTPException(status_code=404, detail="Parceiro não encontrado.")
+        return parceiro
+    except ValueError as exc:
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            _erro_banco()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SQLAlchemyError:
+        _erro_banco(db)
 
 
 @router.get("/")

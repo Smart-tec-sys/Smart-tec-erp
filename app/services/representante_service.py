@@ -1,8 +1,28 @@
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import re
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+
+PARCEIRO_RESPONSE_FIELDS = (
+    "id", "empresa_id", "nome", "documento", "email", "telefone",
+    "percentual_padrao", "ativo", "observacao", "criado_em", "atualizado_em",
+    "tipo_pessoa", "nome_fantasia", "razao_social", "situacao_cadastral",
+    "inscricao_estadual", "inscricao_municipal", "tipo_contribuinte", "isento_ie",
+    "telefone_celular", "responsavel", "site", "cep", "logradouro", "numero",
+    "complemento", "bairro", "cidade", "estado", "vendedor_responsavel_id",
+    "limite_credito", "permitir_exceder_limite",
+)
+
+PARCEIRO_UPDATE_FIELDS = frozenset(PARCEIRO_RESPONSE_FIELDS) - {
+    "id", "empresa_id", "criado_em", "atualizado_em",
+}
+
+
+def _parceiro_response(row):
+    return {field: row.get(field) for field in PARCEIRO_RESPONSE_FIELDS}
 
 
 def _empresa_id(tenant) -> int:
@@ -46,6 +66,89 @@ def _percent(valor):
     )
 
 
+def _percentual_parceiro(valor):
+    try:
+        percentual = Decimal(str(valor))
+        if not percentual.is_finite() or percentual < 0 or percentual > 100:
+            raise ValueError("Percentual padrão do parceiro deve ficar entre 0 e 100.")
+        return percentual.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValueError("Percentual padrão inválido.") from exc
+
+
+def _limite_credito(valor):
+    if valor is None:
+        return None
+    try:
+        limite = Decimal(str(valor))
+        if not limite.is_finite() or limite < 0 or limite > Decimal("999999999999.99"):
+            raise ValueError("Limite de crédito deve ficar entre 0 e 999999999999,99.")
+        limite = limite.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except InvalidOperation as exc:
+        raise ValueError("Limite de crédito inválido.") from exc
+    if limite > Decimal("999999999999.99"):
+        raise ValueError("Limite de crédito deve ficar entre 0 e 999999999999,99.")
+    return limite
+
+
+def _normalizar_documento(valor):
+    if valor is None:
+        return None
+    documento = valor.strip()
+    if not documento:
+        return None
+    if re.fullmatch(r"[0-9A-Za-z./\-\s]+", documento):
+        return re.sub(r"[./\-\s]", "", documento).upper() or None
+    return documento
+
+
+def _normalizar_textos(dados):
+    for campo, valor in dados.items():
+        if isinstance(valor, str):
+            dados[campo] = valor.strip() or None
+    if "documento" in dados:
+        dados["documento"] = _normalizar_documento(dados["documento"])
+    if "email" in dados and dados["email"] is not None:
+        dados["email"] = dados["email"].lower()
+    if "estado" in dados and dados["estado"] is not None:
+        dados["estado"] = dados["estado"].upper()
+    if "tipo_pessoa" in dados and dados["tipo_pessoa"] is not None:
+        dados["tipo_pessoa"] = dados["tipo_pessoa"].upper()
+    if "tipo_contribuinte" in dados and dados["tipo_contribuinte"] is not None:
+        dados["tipo_contribuinte"] = dados["tipo_contribuinte"].upper()
+    return dados
+
+
+def _validar_consistencia_fiscal(dados):
+    inscricao = dados.get("inscricao_estadual")
+    isento = dados.get("isento_ie", False)
+    tipo = dados.get("tipo_contribuinte")
+    if isento and inscricao:
+        raise ValueError("Inscrição Estadual não pode ser informada quando isento_ie é verdadeiro.")
+    if isento and tipo not in (None, "ISENTO"):
+        raise ValueError("isento_ie verdadeiro exige tipo_contribuinte ISENTO.")
+    if tipo == "ISENTO" and not isento:
+        raise ValueError("tipo_contribuinte ISENTO exige isento_ie verdadeiro.")
+
+
+def _validar_vendedor_empresa(db, empresa_id, vendedor_id):
+    if vendedor_id is None:
+        return
+    vendedor = db.execute(
+        text(
+            """
+            SELECT id
+            FROM funcionarios
+            WHERE id = :vendedor_id
+              AND empresa_id = :empresa_id
+            """
+        ),
+        {"vendedor_id": vendedor_id, "empresa_id": empresa_id},
+    ).mappings().first()
+    if vendedor is None:
+        raise ValueError("Vendedor responsável não encontrado para a empresa atual.")
+
+
 def listar_parceiros(
     db: Session,
     tenant,
@@ -71,7 +174,22 @@ def listar_parceiros(
         },
     ).mappings().all()
 
-    return [dict(row) for row in rows]
+    return [_parceiro_response(dict(row)) for row in rows]
+
+
+def buscar_parceiro(db: Session, tenant, parceiro_id: int):
+    row = db.execute(
+        text(
+            """
+            SELECT *
+            FROM parceiros_comerciais
+            WHERE id = :parceiro_id
+              AND empresa_id = :empresa_id
+            """
+        ),
+        {"parceiro_id": parceiro_id, "empresa_id": _empresa_id(tenant)},
+    ).mappings().first()
+    return _parceiro_response(dict(row)) if row is not None else None
 
 
 def criar_parceiro(
@@ -81,60 +199,98 @@ def criar_parceiro(
 ):
     empresa_id = _empresa_id(tenant)
 
-    nome = data.nome.strip()
-
+    dados = _normalizar_textos(data.dict())
+    nome = dados.get("nome")
     if not nome:
         raise ValueError(
             "Informe o nome do parceiro."
         )
 
-    percentual = _percent(
-        data.percentual_padrao
-    )
+    dados["percentual_padrao"] = _percentual_parceiro(dados["percentual_padrao"])
+    dados["limite_credito"] = _limite_credito(dados.get("limite_credito"))
+    _validar_consistencia_fiscal(dados)
+    _validar_vendedor_empresa(db, empresa_id, dados.get("vendedor_responsavel_id"))
 
-    if percentual < 0 or percentual > 100:
-        raise ValueError(
-            "Percentual padrão do parceiro deve ficar entre 0 e 100."
-        )
+    fields = (
+        "nome", "documento", "email", "telefone", "percentual_padrao", "observacao",
+        "ativo", "tipo_pessoa", "nome_fantasia", "razao_social", "situacao_cadastral",
+        "inscricao_estadual", "inscricao_municipal", "tipo_contribuinte", "isento_ie",
+        "telefone_celular", "responsavel", "site", "cep", "logradouro", "numero",
+        "complemento", "bairro", "cidade", "estado", "vendedor_responsavel_id",
+        "limite_credito", "permitir_exceder_limite",
+    )
+    columns = ", ".join(("empresa_id", *fields))
+    values = ", ".join(f":{field}" for field in ("empresa_id", *fields))
 
     row = db.execute(
         text(
-            """
+            f"""
             INSERT INTO parceiros_comerciais (
-                empresa_id,
-                nome,
-                documento,
-                email,
-                telefone,
-                percentual_padrao,
-                observacao
+                {columns}
             )
-            VALUES (
-                :empresa_id,
-                :nome,
-                :documento,
-                :email,
-                :telefone,
-                :percentual_padrao,
-                :observacao
-            )
+            VALUES ({values})
             RETURNING *
             """
         ),
-        {
-            "empresa_id": empresa_id,
-            "nome": nome,
-            "documento": data.documento,
-            "email": data.email,
-            "telefone": data.telefone,
-            "percentual_padrao": percentual,
-            "observacao": data.observacao,
-        },
+        {"empresa_id": empresa_id, **{field: dados.get(field) for field in fields}},
     ).mappings().one()
 
     db.commit()
 
-    return dict(row)
+    return _parceiro_response(dict(row))
+
+
+def atualizar_parceiro(db: Session, tenant, parceiro_id: int, data):
+    empresa_id = _empresa_id(tenant)
+    dados = _normalizar_textos(data.dict(exclude_unset=True))
+    if not dados:
+        raise ValueError("Informe ao menos um campo para atualizar.")
+    if "nome" in dados and not dados["nome"]:
+        raise ValueError("Informe o nome do parceiro.")
+    if "percentual_padrao" in dados:
+        dados["percentual_padrao"] = _percentual_parceiro(dados["percentual_padrao"])
+    if "limite_credito" in dados:
+        dados["limite_credito"] = _limite_credito(dados["limite_credito"])
+    if "vendedor_responsavel_id" in dados:
+        _validar_vendedor_empresa(db, empresa_id, dados["vendedor_responsavel_id"])
+
+    existente = db.execute(
+        text(
+            """
+            SELECT *
+            FROM parceiros_comerciais
+            WHERE id = :parceiro_id
+              AND empresa_id = :empresa_id
+            """
+        ),
+        {"parceiro_id": parceiro_id, "empresa_id": empresa_id},
+    ).mappings().first()
+    if existente is None:
+        return None
+
+    dados_completos = dict(existente)
+    dados_completos.update(dados)
+    _validar_consistencia_fiscal(dados_completos)
+    if any(field not in PARCEIRO_UPDATE_FIELDS for field in dados):
+        raise ValueError("Campo não permitido para atualização.")
+
+    set_clause = ", ".join(f"{field} = :{field}" for field in dados)
+    row = db.execute(
+        text(
+            f"""
+            UPDATE parceiros_comerciais
+            SET {set_clause}, atualizado_em = NOW()
+            WHERE id = :parceiro_id
+              AND empresa_id = :empresa_id
+            RETURNING *
+            """
+        ),
+        {**dados, "parceiro_id": parceiro_id, "empresa_id": empresa_id},
+    ).mappings().first()
+    if row is None:
+        return None
+    db.commit()
+    return _parceiro_response(dict(row))
 
 
 def listar_representantes(
