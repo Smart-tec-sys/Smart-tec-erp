@@ -15,6 +15,13 @@ from app.services.phase1_dry_run import (
     ReversaoDryRunInvalida,
     executar_dry_run,
 )
+from app.services.phase1_up import (
+    AplicacaoUpFalhou,
+    ArquivoUpInvalido,
+    BaselineUpDivergente,
+    ValidacaoPosCommitFalhou,
+    executar_up,
+)
 
 
 def autorizar_diagnostico(
@@ -311,7 +318,7 @@ async def recusar_conteudo_dry_run(request: Request) -> None:
     if request.query_params or await request.body():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="DRY RUN nao aceita corpo ou parametros de consulta.",
+            detail="Diagnostico FASE 1 nao aceita corpo ou parametros de consulta.",
             headers={"Cache-Control": "no-store"},
         )
 
@@ -335,6 +342,33 @@ def executar_diagnostico_fase1(response: Response):
         )
         # Nunca registrar excecao original: driver/SQLAlchemy podem incluir segredos.
         logging.getLogger(__name__).error("DRY RUN FASE 1 falhou: tipo=%s", tipo)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"ok": False, "error_type": tipo, "message": mensagem},
+            headers={"Cache-Control": "no-store"},
+        ) from None
+
+
+@router.post(
+    "/run-phase1-up",
+    include_in_schema=False,
+    dependencies=[Depends(recusar_conteudo_dry_run)],
+)
+def aplicar_diagnostico_fase1(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return executar_up(engine)
+    except Exception as erro:
+        tipo = type(erro).__name__
+        mensagem = (
+            str(erro)
+            if isinstance(erro, (
+                ArquivoUpInvalido, BaselineUpDivergente,
+                AplicacaoUpFalhou, ValidacaoPosCommitFalhou,
+            ))
+            else "Falha ao preparar aplicacao da FASE 1."
+        )
+        logging.getLogger(__name__).error("UP FASE 1 falhou: tipo=%s", tipo)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"ok": False, "error_type": tipo, "message": mensagem},
