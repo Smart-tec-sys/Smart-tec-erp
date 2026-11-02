@@ -1,9 +1,9 @@
 import type { ApiBudget,ApiBudgetItem,ApiClient } from '../types/budget'
 export type BudgetPdfMode='direct'|'reseller_internal'|'reseller_client'
-export type BudgetPdfContext={companyName?:string;client?:ApiClient;resellerName?:string;sellerName?:string;representativeName?:string}
-type Item={description:string;observation:string;measure:string;quantity:number;unit:string;color:string}
+export type BudgetPdfContext={companyName?:string;companyTradeName?:string;companyDocument?:string;companyLogo?:string;warnings?:string[];client?:ApiClient;resellerName?:string;sellerName?:string;representativeName?:string}
+type Item={description:string;material:string;observation:string;measure:string;quantity:number;unit:string;color:string}
 type PricedItem=Item&{unitPrice:number|null;discount:number|null;subtotal:number|null}
-type Common={number:string;date:string;validity:string;company:string;customer:{name:string;document:string;phone:string;email:string;address:string};notes:string}
+type Common={number:string;date:string;validity:string;company:string;companyDocument:string;companyLogo?:string;customer:{name:string;document:string;phone:string;email:string;address:string};notes:string}
 export type BudgetPdfData=Common&(
  |{mode:'reseller_client';products:Item[];services:Item[];finance:{kind:'customer';customerTotal:number|null}}
  |{mode:'direct';products:PricedItem[];services:PricedItem[];finance:{kind:'direct';total:number|null;discount:number|null;finalTotal:number|null}}
@@ -18,8 +18,8 @@ export function prepareBudgetPdfData(budget:ApiBudget,mode:BudgetPdfMode,context
  if(!['direct','reseller_internal','reseller_client'].includes(mode))throw new Error('Modo de PDF inválido.')
  if((mode==='direct')!==(budget.parceiro_id==null))throw new Error('Modo de PDF incompatível com a origem do orçamento.')
  const customer=mode==='direct'?{name:budget.cliente_nome||context.client?.nome||(budget.cliente_id==null?'—':`Cliente #${budget.cliente_id}`),document:context.client?.documento||'',phone:context.client?.telefone_celular||context.client?.telefone_comercial||'',email:context.client?.email||'',address:[context.client?.logradouro,context.client?.numero,context.client?.complemento,context.client?.bairro,context.client?.cidade,context.client?.estado,context.client?.cep].filter(Boolean).join(', ')}:{name:budget.cliente_final_nome||'—',document:budget.cliente_final_documento||'',phone:budget.cliente_final_telefone||'',email:budget.cliente_final_email||'',address:budget.cliente_final_endereco||''}
- const common:Common={number:String(budget.numero||budget.id),date:date(budget.criado_em),validity:date(budget.validade),company:context.companyName||'Smart-tec Sistemas',customer,notes:budget.observacao||''}
- const itemData=(item:ApiBudgetItem):Item=>({description:item.descricao,observation:item.observacao_item||'',measure:measure(item),quantity:quantity(item.quantidade),unit:item.unidade||'—',color:item.cor||''})
+ const common:Common={number:String(budget.numero||budget.id),date:date(budget.criado_em),validity:date(budget.validade),company:context.companyTradeName?.trim()||context.companyName?.trim()||'Smart-tec Sistemas',companyDocument:context.companyDocument?.trim()||'',companyLogo:context.companyLogo,customer,notes:budget.observacao||''}
+ const itemData=(item:ApiBudgetItem):Item=>({description:item.descricao,material:'material' in item&&typeof item.material==='string'?item.material.trim():'',observation:item.observacao_item||'',measure:measure(item),quantity:quantity(item.quantidade),unit:item.unidade||'—',color:item.cor||''})
  const products=budget.itens.filter(item=>item.tipo_item!=='SERVICO'),services=budget.itens.filter(item=>item.tipo_item==='SERVICO')
  // Strict allowlist: customer document never receives the source budget or internal item prices.
  if(mode==='reseller_client')return {...common,mode,products:products.map(itemData),services:services.map(itemData),finance:{kind:'customer',customerTotal:numeric(budget.total_cliente_final)}}
