@@ -22,6 +22,8 @@ from app.routes.orcamento import router as router_orcamento
 from app.routes.pedido import router as router_pedido
 from app.routes.contabilidade import router as router_contabilidade
 from app.routes.representante import router as router_representante
+from app.routes.consultas_cadastro import router as router_consultas_cadastro
+from app.routes.diagnostico import router as router_diagnostico
 from app.routes.auth import router as router_auth
 from app.routes.admin import router as router_admin
 from app.routes.equivalencia_tecnica import router as router_equivalencia_tecnica
@@ -122,6 +124,8 @@ app.include_router(router_orcamento, prefix="/orcamentos", tags=["Orçamentos"])
 app.include_router(router_pedido, prefix="/pedidos", tags=["Vendas / Pedidos"])
 app.include_router(router_contabilidade, prefix="/contabilidade", tags=["Contabilidade"])
 app.include_router(router_representante, prefix="/representantes", tags=["Representantes e RT"])
+app.include_router(router_consultas_cadastro, prefix="/consultas", tags=["Consultas cadastrais"])
+app.include_router(router_diagnostico)
 app.include_router(router_auth, prefix="/auth", tags=["Autenticação"])
 app.include_router(router_admin, prefix="/admin", tags=["Administração Smart-tec"])
 app.include_router(router_empresa, prefix="/empresa", tags=["Empresa"])
