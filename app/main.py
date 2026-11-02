@@ -30,7 +30,6 @@ from app.routes.agenda_evento import router as router_agenda_evento
 from app.routes.financeiro_cadastros import router as router_financeiro_cadastros
 from app.routes.financeiro_titulos import router as router_financeiro_titulos
 from app.routes.financeiro_fluxo_caixa import router as router_financeiro_fluxo_caixa
-from app.routes.diagnostico import router as router_diagnostico
 
 # =========================================================
 # INSTANCIAR O FASTAPI
@@ -135,12 +134,6 @@ app.include_router(
     prefix="/equivalencias-tecnicas",
     tags=["Equivalências Técnicas"],
 )
-
-# TEMPORARIO: remover apos confirmar o destino do staging.
-app.include_router(router_diagnostico)
-
-
-
 
 # =========================================================
 # ROTA RAIZ
