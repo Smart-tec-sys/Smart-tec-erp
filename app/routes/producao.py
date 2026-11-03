@@ -13,8 +13,15 @@ from app.services.producao_documentos import etiqueta_da_peca, ficha_html
 from app.tenant.dependencies import get_current_tenant
 from app.tenant.context import TenantContext
 from app.tenant.isolation import TenantContextRequiredError
+from app.settings import producao_v1_habilitada
 
-router = APIRouter()
+
+def exigir_producao_habilitada():
+    if not producao_v1_habilitada():
+        raise HTTPException(503, "Produção V1 desabilitada. Ativação depende de implantação e validação próprias.")
+
+
+router = APIRouter(dependencies=[Depends(exigir_producao_habilitada)])
 T = TypeVar("T")
 
 

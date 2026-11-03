@@ -14,6 +14,7 @@ import {
 import { formatCurrency, type ApiClient } from '../types/budget'
 import './saleDetailPage.css'
 import { ProducaoPanel } from '../components/ProducaoPanel'
+import { producaoV1Enabled } from '../services/producaoFlag'
 
 type Props = { saleId: number; onBack: () => void }
 
@@ -173,10 +174,10 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
           </div>
           <div className="budget-number"><span>NÚMERO</span><strong>{order.numero || `#${order.id}`}</strong></div>
         </section>
-        <button type="button" className="secondary-button" onClick={() => setProducaoAberta(value => !value)}>
+        {producaoV1Enabled && <button type="button" className="secondary-button" onClick={() => setProducaoAberta(value => !value)}>
           {producaoAberta ? 'Fechar produção' : 'Abrir produção V1'}
-        </button>
-        {producaoAberta && <ProducaoPanel key={order.id} pedidoId={order.id} statusVenda={order.status || ''} />}
+        </button>}
+        {producaoV1Enabled && producaoAberta && <ProducaoPanel key={order.id} pedidoId={order.id} statusVenda={order.status || ''} />}
         <div className={`new-budget-layout ${isSummaryCollapsed ? 'summary-collapsed' : ''}`}>
           <div className="new-budget-main">
             <BudgetSection icon={<FileText size={17}/>} title="Dados da venda" subtitle="Número, cliente, vendedor, situação e datas.">

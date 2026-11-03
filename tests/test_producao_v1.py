@@ -34,7 +34,8 @@ def _sqlite_jsonb(tipo, compiler, **kwargs):
 
 
 @pytest.fixture
-def contexto():
+def contexto(monkeypatch):
+    monkeypatch.setenv("PRODUCAO_V1_ENABLED", "true")
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     @event.listens_for(engine, "connect")
     def habilitar_fk(conexao, _):

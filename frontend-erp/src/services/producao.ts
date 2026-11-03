@@ -1,5 +1,6 @@
 import { apiConfig, request } from './api'
 import { getApiAuthHeaders } from './auth'
+import { exigirProducaoHabilitada } from './producaoFlag'
 
 export const statusProducao = ['AGUARDANDO', 'CORTE', 'MONTAGEM', 'CONFERENCIA', 'CONCLUIDA'] as const
 export type StatusProducao = typeof statusProducao[number]
@@ -32,29 +33,36 @@ export type OrdemProducao = {
   calculos_por_peca: Record<string, unknown>
 }
 
+const requestProducao: typeof request = (...args) => {
+  exigirProducaoHabilitada()
+  return request(...args)
+}
+
 export const listarProducao = (pedidoId: number) =>
-  request<OrdemProducao[]>(`/producao/?pedido_id=${pedidoId}`)
+  requestProducao<OrdemProducao[]>(`/producao/?pedido_id=${pedidoId}`)
 export const criarProducao = (pedidoId: number) =>
-  request<OrdemProducao>(`/producao/vendas/${pedidoId}`, {
+  requestProducao<OrdemProducao>(`/producao/vendas/${pedidoId}`, {
     method: 'POST', body: JSON.stringify({ confirmar_fabricacao: true }),
   })
 export const liberarProducao = (ordemId: number) =>
-  request<OrdemProducao>(`/producao/${ordemId}/liberar`, {
+  requestProducao<OrdemProducao>(`/producao/${ordemId}/liberar`, {
     method: 'POST', body: JSON.stringify({ confirmar_fabricacao: true }),
   })
 export const salvarPeca = (ordemId: number, pecaId: number, ambiente: string, observacoes: string) =>
-  request<OrdemProducao>(`/producao/${ordemId}/pecas/${pecaId}`, {
+  requestProducao<OrdemProducao>(`/producao/${ordemId}/pecas/${pecaId}`, {
     method: 'PATCH', body: JSON.stringify({ ambiente, observacoes }),
   })
 export const avancarPeca = (ordemId: number, peca: PecaProducao) => {
+  exigirProducaoHabilitada()
   const index = statusProducao.indexOf(peca.status)
   if (index < 0 || index === statusProducao.length - 1) throw new Error('Peça sem próxima etapa.')
-  return request<OrdemProducao>(`/producao/${ordemId}/pecas/${peca.id}/status`, {
+  return requestProducao<OrdemProducao>(`/producao/${ordemId}/pecas/${peca.id}/status`, {
     method: 'POST', body: JSON.stringify({ status_atual: peca.status, status: statusProducao[index + 1] }),
   })
 }
 
 export async function carregarDocumentoProducao(ordemId: number, pecaId?: number): Promise<string> {
+  exigirProducaoHabilitada()
   const path = pecaId == null ? 'ficha' : `pecas/${pecaId}/etiqueta`
   const response = await fetch(`${apiConfig.baseUrl}/producao/${ordemId}/${path}`, {
     headers: await getApiAuthHeaders(),

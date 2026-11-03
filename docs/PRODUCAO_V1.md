@@ -2,6 +2,36 @@
 
 ## Escopo
 
+## Flag de publicacao (desligada por padrao)
+
+Backend: `PRODUCAO_V1_ENABLED=false` por padrao. Somente `true` explicito
+(sem diferenciar maiusculas/minusculas e com espacos externos removidos) habilita.
+Dependencia global do router retorna 503 "Producao V1 desabilitada" antes de
+resolver banco/tenant e antes de consultar tabelas. Inclui ficha e etiquetas.
+Nao altera protecoes de autenticacao quando habilitada.
+
+Frontend: `VITE_PRODUCAO_V1_ENABLED=false` por padrao, lida no build Vite.
+Sem `true` explicito, acesso na Venda fica oculto, painel nao e montado e todos
+os servicos de Producao recusam chamadas antes de HTTP/auth. A flag frontend
+nao substitui o bloqueio backend. Alterar a flag exige rebuild do frontend.
+
+Ativacao futura SOMENTE apos autorizacao de implantacao propria: conferir
+destino e backup, aplicar migration autorizada, validar persistencia PostgreSQL,
+autenticacao/tenant, unicidade, transicoes, ficha e etiquetas; entao habilitar
+backend e frontend no mesmo ambiente. Nao habilitar para contornar schema
+ausente. Nesta entrega nenhuma migration ou configuracao de ambiente foi alterada.
+Codigo, fichas, etiquetas e SQL preparado permanecem preservados.
+
+Testes da flag: `tests/test_producao_flag.py` verifica todas as rotas com
+banco/tenant proibidos. `producao.test.cjs` sem variavel testa flag desligada;
+`TEST_PRODUCAO_FLAG=true` executa contratos habilitados com mocks.
+Validacao desta protecao: 47 testes backend (flag e contratos de Producao),
+frontend com flag ausente/false/true e build TypeScript/Vite aprovados.
+O marco original permanece na branch de seguranca; a protecao e commit
+subsequente em staging, sem alterar Orcamentos, PDFs, Revendas ou Wix.
+
+## Fluxo quando habilitada
+
 Na visualizacao de Vendas, abrir **Producao V1**. Nenhuma consulta de producao
 ocorre ate abrir o painel. A API usa `/producao` e o mesmo contexto autenticado
 dos demais cadastros. Nao ha baixa/reserva de estoque, financeiro ou OS.

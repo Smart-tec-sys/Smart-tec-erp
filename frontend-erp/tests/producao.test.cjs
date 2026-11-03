@@ -24,10 +24,11 @@ registerHooks({
   const root = path.join(__dirname, '..')
   const url = file => pathToFileURL(path.join(root, file)).href
   compiled.set(url('src/services/auth.ts'), `export const getApiAuthHeaders=async()=>({'X-Empresa-ID':'7',Authorization:'Bearer TEST_ONLY'});`)
-  for (const file of ['src/services/api.ts', 'src/services/producao.ts', 'src/components/ProducaoPanel.tsx']) {
+  const flag = process.env.TEST_PRODUCAO_FLAG
+  for (const file of ['src/services/producaoFlag.ts', 'src/services/api.ts', 'src/services/producao.ts', 'src/components/ProducaoPanel.tsx']) {
     const filename = path.join(root, file)
     const source = fs.readFileSync(filename, 'utf8').replaceAll('import.meta.env',
-      JSON.stringify({ VITE_API_URL: 'https://backend.test.invalid' }))
+      JSON.stringify({ VITE_API_URL: 'https://backend.test.invalid', ...(flag == null ? {} : {VITE_PRODUCAO_V1_ENABLED:flag}) }))
     compiled.set(url(file), (await transformWithOxc(source, filename, { jsx: { runtime: 'automatic' } })).code)
   }
   const service = await import(url('src/services/producao.ts'))
@@ -35,6 +36,24 @@ registerHooks({
   global.fetch = async (target, options) => {
     calls.push({ target, options })
     return Response.json({ id: 1 })
+  }
+  if (flag?.trim().toLowerCase() !== 'true') {
+    for (const action of [
+      () => service.listarProducao(1), () => service.criarProducao(1),
+      () => service.liberarProducao(1), () => service.salvarPeca(1,1,'Sala',''),
+      () => service.avancarPeca(1,{id:1,status:'AGUARDANDO'}),
+      () => service.carregarDocumentoProducao(1), () => service.carregarDocumentoProducao(1,1),
+    ]) await assert.rejects(async()=>action(), /desabilitada/)
+    const React=require('react')
+    const {renderToStaticMarkup}=require('react-dom/server')
+    const {ProducaoPanel}=await import(url('src/components/ProducaoPanel.tsx'))
+    assert.equal(renderToStaticMarkup(React.createElement(ProducaoPanel,{pedidoId:1,statusVenda:'ABERTO'})),'')
+    assert.equal(calls.length,0)
+    const sale=fs.readFileSync(path.join(root,'src/pages/SaleDetailPage.tsx'),'utf8')
+    assert.match(sale,/producaoV1Enabled && <button/)
+    assert.match(sale,/producaoV1Enabled && producaoAberta && <ProducaoPanel/)
+    console.log('Produção desligada: painel vazio, controles ocultos, todos os serviços bloqueados e zero HTTP.')
+    return
   }
   await service.listarProducao(12)
   assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/?pedido_id=12')

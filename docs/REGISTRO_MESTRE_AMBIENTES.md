@@ -104,7 +104,7 @@ O banco com dados reais nao e banco descartavel de teste.
 | Orcamentos/Cortinas | Fluxo de calculo, salvar/reabrir, embalagem, custo por altura e tabelas comerciais | Homologacao autenticada no destino antes de publicar |
 | PDFs | Cliente Final, Revenda comercial e Interno Smart-tec separados por projecao; precos/repasses/sigilo testados | Textos legados sem estrutura reconhecida exigem revisao/avisos; nao inferir condicoes ausentes |
 | Revendas V1 | Modal/scroll, cadastro, protecao manual, BrasilAPI principal e CNPJa opt-in com resiliencia | Limite compartilhado/cache/provedor profissional antes de escalar; confirmar schema e publicacao de cada destino |
-| Producao V1 | OP por venda/empresa e pecas, confirmacao explicita, etapas, ficha e bloqueios tecnicos em testes | Migration preparada NAO executada; tabelas `ordens_producao`/`producao_pecas` nao instaladas no banco local; validacao PostgreSQL autenticada pendente |
+| Producao V1 | Codigo preservado; `PRODUCAO_V1_ENABLED` e `VITE_PRODUCAO_V1_ENABLED` desligadas por padrao, rotas bloqueadas antes de banco/tenant e controles ocultos | Migration preparada NAO executada; tabelas `ordens_producao`/`producao_pecas` nao instaladas; habilitar somente apos implantacao propria e validacao PostgreSQL autenticada |
 | Etiquetas | Gerador/layout existente reutilizado, escape e testes de documento | Impressora fisica/QR opcional e codigo de barras industrial nao certificados nesta etapa |
 
 ## Backups privados deste marco

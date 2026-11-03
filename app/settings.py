@@ -56,3 +56,7 @@ def initialize_backend_configuration() -> None:
 def get_commercial_mode_setting() -> str:
     # Valor bruto e opcional; ausente ou invalido e tratado como off pela integracao.
     return os.getenv("SMARTTEC_COMMERCIAL_MODE", "off").strip().lower()
+
+
+def producao_v1_habilitada() -> bool:
+    return os.getenv("PRODUCAO_V1_ENABLED", "false").strip().lower() == "true"

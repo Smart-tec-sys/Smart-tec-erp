@@ -4,10 +4,15 @@ import {
   salvarPeca, statusProducao, type OrdemProducao, type PecaProducao,
 } from '../services/producao'
 import './producaoPanel.css'
+import { producaoV1Enabled } from '../services/producaoFlag'
 
 type Props = { pedidoId: number; statusVenda: string }
 
 export function ProducaoPanel({ pedidoId, statusVenda }: Props) {
+  return producaoV1Enabled ? <ProducaoPanelHabilitado pedidoId={pedidoId} statusVenda={statusVenda} /> : null
+}
+
+function ProducaoPanelHabilitado({ pedidoId, statusVenda }: Props) {
   const [ordem, setOrdem] = useState<OrdemProducao | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [tentativa, setTentativa] = useState(0)
