@@ -20,6 +20,7 @@ from app.routes.grades_variacoes import router as router_grades_variacoes
 from app.routes.produto import router as router_produto
 from app.routes.orcamento import router as router_orcamento
 from app.routes.pedido import router as router_pedido
+from app.routes.producao import router as router_producao
 from app.routes.contabilidade import router as router_contabilidade
 from app.routes.representante import router as router_representante
 from app.routes.consultas_cadastro import router as router_consultas_cadastro
@@ -122,6 +123,7 @@ app.include_router(router_grades_variacoes, prefix="/grades-variacoes", tags=["G
 app.include_router(router_produto, prefix="/produtos", tags=["Produtos"])
 app.include_router(router_orcamento, prefix="/orcamentos", tags=["Orçamentos"])
 app.include_router(router_pedido, prefix="/pedidos", tags=["Vendas / Pedidos"])
+app.include_router(router_producao, prefix="/producao", tags=["Produção"])
 app.include_router(router_contabilidade, prefix="/contabilidade", tags=["Contabilidade"])
 app.include_router(router_representante, prefix="/representantes", tags=["Representantes e RT"])
 app.include_router(router_consultas_cadastro, prefix="/consultas", tags=["Consultas cadastrais"])

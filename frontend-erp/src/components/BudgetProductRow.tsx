@@ -43,6 +43,7 @@ type Props = {
   onDoubleVision: (id: number, state: DoubleVisionState) => void
   onCurtain: (id: number, state: CurtainState) => void
   validationAttempted?: boolean
+  allowPackageConversion?: boolean
 }
 
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
@@ -55,6 +56,7 @@ const isCurtainCatalogItem = (p: ApiProduct) =>
 export function BudgetProductRow({
   product,
   catalog,
+  allowPackageConversion,
   commercialType,
   onChange,
   onRemove,
@@ -290,7 +292,7 @@ export function BudgetProductRow({
       <RomanaTetoSimulation product={product} profile={commercialType} onResult={onRomanaTeto} onChange={onChange} />
       <RoloSimulation product={product} profile={commercialType} onResult={onRolo} />
       <DoubleVisionSimulation product={product} profile={commercialType} onResult={onDoubleVision} />
-      <CurtainSimulation product={product} catalog={catalog} profile={commercialType} onResult={onCurtain} />
+      <CurtainSimulation product={product} catalog={catalog} profile={commercialType} onResult={onCurtain} allowPackageConversion={allowPackageConversion} />
     </article>
   )
 }

@@ -8,9 +8,26 @@ from app.database import get_db
 from app.models.empresa import EmpresaDB
 from app.tenant.dependencies import get_current_tenant
 from app.tenant.context import TenantContext
+from app.tenant.isolation import require_tenant
 
 
 router = APIRouter()
+
+
+@router.get("/atual")
+def obter_empresa_atual(
+    tenant: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_db),
+):
+    empresa = db.query(EmpresaDB).filter(
+        EmpresaDB.id == require_tenant(tenant), EmpresaDB.status == "ATIVA",
+    ).one_or_none()
+    if empresa is None:
+        raise HTTPException(status_code=404, detail="empresa ativa não encontrada")
+    return {
+        "id": empresa.id, "nome": empresa.nome, "nome_fantasia": empresa.nome_fantasia,
+        "documento": empresa.documento, "logo_url": empresa.logo_url,
+    }
 
 
 @router.post("/logo")

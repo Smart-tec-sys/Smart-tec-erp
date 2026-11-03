@@ -13,6 +13,7 @@ import {
 } from '../services/api'
 import { formatCurrency, type ApiClient } from '../types/budget'
 import './saleDetailPage.css'
+import { ProducaoPanel } from '../components/ProducaoPanel'
 
 type Props = { saleId: number; onBack: () => void }
 
@@ -106,6 +107,7 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
   const [error, setError] = useState('')
   const [notFound, setNotFound] = useState(false)
   const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false)
+  const [producaoAberta, setProducaoAberta] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -171,6 +173,10 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
           </div>
           <div className="budget-number"><span>NÚMERO</span><strong>{order.numero || `#${order.id}`}</strong></div>
         </section>
+        <button type="button" className="secondary-button" onClick={() => setProducaoAberta(value => !value)}>
+          {producaoAberta ? 'Fechar produção' : 'Abrir produção V1'}
+        </button>
+        {producaoAberta && <ProducaoPanel key={order.id} pedidoId={order.id} statusVenda={order.status || ''} />}
         <div className={`new-budget-layout ${isSummaryCollapsed ? 'summary-collapsed' : ''}`}>
           <div className="new-budget-main">
             <BudgetSection icon={<FileText size={17}/>} title="Dados da venda" subtitle="Número, cliente, vendedor, situação e datas.">

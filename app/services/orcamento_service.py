@@ -4,6 +4,8 @@ from app.services.composicao_comercial import (
 )
 from decimal import Decimal, ROUND_HALF_UP
 from app.services.origem_comercial import CLIENTE_FINAL_CAMPOS, validar_origem_comercial
+from app.services.condicoes_revenda import calcular_condicoes_revenda, textos_condicoes_revenda
+from types import SimpleNamespace
 
 from sqlalchemy import Integer, cast, func, text
 from sqlalchemy.orm import Session, joinedload
@@ -273,6 +275,45 @@ def atualizar(db,oid,data,tenant:TenantContext):
         if not o:return None
         _fill(db,o,data,require_tenant(tenant)); db.commit(); return obter(db,o.id,tenant)
     except Exception: db.rollback(); raise
+
+
+def atualizar_condicoes_revenda(db, oid, data, tenant: TenantContext):
+    try:
+        o = db.query(OrcamentoDB).filter(
+            OrcamentoDB.id == oid, OrcamentoDB.empresa_id == require_tenant(tenant),
+        ).with_for_update().first()
+        if o is None:
+            return None
+        if (o.atualizado_em != data.atualizado_em_esperado
+                or Decimal(str(o.total_final)) != Decimal(str(data.base_smarttec_esperada))
+                or Decimal(str(o.total_cliente_final)) != Decimal(str(data.total_cliente_esperado))):
+            raise ValueError("Orcamento alterado. Recarregue e confira os valores antes de salvar.")
+        if not o.parceiro_id or o.status != "EM_ABERTO" or o.incluir_rt or o.incluir_taxa_bancaria:
+            raise ValueError("Condicoes disponiveis somente para revenda em aberto, sem RT ou taxa fixa ativa.")
+        itens = {item.id: item for item in o.itens}
+        if not data.observacoes_itens.keys() <= itens.keys():
+            raise ValueError("Observacao de item nao pertence ao orcamento.")
+        c = calcular_condicoes_revenda(
+            o.total_final, data.percentual_parceiro, data.desconto_pagamento_percentual,
+            data.acrescimo_cartao_percentual, data.parcelas_cartao,
+        )
+        calcular_composicao(o, SimpleNamespace(
+            desconto=o.desconto, parceiro_id=o.parceiro_id,
+            percentual_parceiro=data.percentual_parceiro, incluir_rt=False,
+            incluir_taxa_bancaria=False, taxa_bancaria_percentual=0,
+        ))
+        if o.total_final != c["base_smarttec"] or o.total_cliente_final != c["preco_cliente"]:
+            raise ValueError("Base comercial inconsistente; nenhuma alteracao aplicada.")
+        publico, interno = textos_condicoes_revenda(c)
+        o.observacao = "\n\n".join(filter(None, [data.observacao_comercial.strip(), publico]))
+        o.observacao_interna = "\n\n".join(filter(None, [data.observacao_interna.strip(), interno]))
+        for item_id, observacao in data.observacoes_itens.items():
+            itens[item_id].observacao_item = observacao
+        db.commit()
+        return obter(db, o.id, tenant)
+    except Exception:
+        db.rollback()
+        raise
 
 def remover(db,oid,tenant:TenantContext):
     try:

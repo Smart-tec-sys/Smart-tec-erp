@@ -23,11 +23,13 @@ export type ResultadoConsulta<T> = {
   dados: T
   fonte: string
   consultado_em: string
+  fontes_campos?: Record<string, 'brasilapi' | 'cnpja'> | null
+  avisos?: string[] | null
 }
 
 export const consultarCnpj = (documento: string) =>
   request<ResultadoConsulta<DadosConsultaCnpj>>('/consultas/cnpj', {
-    method: 'POST', body: JSON.stringify({ documento }),
+    method: 'POST', body: JSON.stringify({ documento, enriquecer_contatos: true }),
   })
 
 export const consultarCep = (cep: string) =>

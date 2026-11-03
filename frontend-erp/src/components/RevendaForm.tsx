@@ -151,7 +151,10 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
       setStatus({
         ...statusInicial,
         mensagem: `Dados consultados em ${response.fonte}. Revise antes de salvar.${ausentes.length
-          ? ` A fonte não informou: ${ausentes.join(', ')}. Complete apenas o que for necessário.` : ''}`,
+          ? ` A fonte não informou: ${ausentes.join(', ')}. Complete apenas o que for necessário.` : ''}${
+          Object.values(response.fontes_campos ?? {}).includes('cnpja')
+            ? ' Contatos ausentes complementados pela CNPJá; campos manuais foram preservados.' : ''
+        }${response.avisos?.length ? ` ${response.avisos.join(' ')}` : ''}`,
       })
     } catch (error) {
       if (validaResposta()) setStatus({ ...statusInicial, erro: `${error instanceof Error ? error.message : 'Consulta indisponível.'} Você pode continuar o cadastro manualmente.` })

@@ -20,6 +20,22 @@ def test_mao_de_obra_confirmada(altura,alturas,custo):
     out=simular_cortina(produto(1),entrada(altura=altura))
     assert out['mao_de_obra']==dict(quantidade_alturas=alturas,valor_por_altura=35,total=custo)
 
+
+@pytest.mark.parametrize('largura,altura,alturas,custo',[
+    (3.63,2.81,4,140),(3.20,2.65,3,105),(1.60,2.81,2,70),
+])
+def test_costureira_por_altura_de_tecido(largura,altura,alturas,custo):
+    out=simular_cortina(produto(1),entrada(largura=largura,altura=altura,
+                                          base_mao_obra='ALTURAS_TECIDO',componentes=[]))
+    assert out['quantidade_alturas']==alturas
+    assert out['mao_de_obra']==dict(quantidade_alturas=alturas,valor_por_altura=35,total=custo)
+    assert out['composicao'][-1]['custo_total']==custo
+
+
+def test_base_costureira_invalida():
+    with pytest.raises(ValueError):
+        entrada(base_mao_obra='OUTRA')
+
 def componentes():
     return dict(forro=produto(2,5),trilho=produto(3,20),rodizio=produto(4,.5),entretela=produto(5,1))
 

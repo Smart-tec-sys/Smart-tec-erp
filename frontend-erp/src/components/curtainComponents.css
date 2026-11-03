@@ -10,5 +10,7 @@
 .curtain-component-options button:hover, .curtain-component-options button:focus { background: #fff0f1; }
 .curtain-component-options > span { display: block; padding: 10px; font-size: 12px; }
 .curtain-component-remove { height: 36px; border: 0; background: transparent; color: #b62230; font-size: 22px; cursor: pointer; }
+.curtain-package-conversion { grid-column: 1 / -1; grid-row: 2; }
 @media (max-width: 1000px) { .curtain-component-line { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 28px; } .curtain-component-search { grid-column: 1 / -1; } .curtain-component-remove { grid-column: 3; grid-row: 2; } }
+@media (max-width: 1000px) { .curtain-package-conversion { grid-row: 4; } }
 @media (max-width: 480px) { .curtain-component-line { gap: 8px; } }

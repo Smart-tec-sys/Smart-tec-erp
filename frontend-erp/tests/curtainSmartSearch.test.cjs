@@ -20,6 +20,7 @@ registerHooks({
   const { transformWithOxc } = await import('vite')
   const file = path.join(__dirname, '../src/components/BudgetProductRow.tsx')
   let source = fs.readFileSync(file, 'utf8')
+    .replace("import { CurtainColorField } from './CurtainColorField'", 'const CurtainColorField = () => null')
     .replace("import { useEffect, useMemo, useState } from 'react'", `const useMemo = f => f(); const useEffect = f => { globalThis.__effects.push(f) }; const useState = initial => [globalThis.__query ?? initial, value => { globalThis.__query = value }]`)
     .replace(/import \{ ZeroNumberInput, zeroInputValue \} from '[^']+'/g, 'const ZeroNumberInput = () => null; const zeroInputValue = v => v')
     .replace(/import \{ (\w+Simulation) \} from '[^']+'/g, 'const $1 = () => null')
@@ -71,11 +72,14 @@ registerHooks({
     assert.equal(changed.curtain.tecidoProdutoId,1);assert.equal(changed.curtain.possuiForro,true)
   })
   check('forro inexistente não inventa combinação',()=>assert.equal(curtainSuggestions(catalog,'cortina forro inexistente').length,0))
-  check('Cor principal lista apenas variantes reais e atualiza ID',()=>{
-    const color=nodes(render(undefined,selected)).find(n=>n.type==='select' && n.props['aria-label']==='Cor do tecido')
-    assert.deepEqual(nodes(color).filter(n=>n.type==='option').map(n=>n.props.value),['',3,4])
-    color.props.onChange({target:{value:'4'}})
-    assert.equal(changed.curtain.tecidoProdutoId,4);assert.equal(changed.color,'02');assert.equal(changed.curtain.cor,'02');assert.equal(changed.productId,null)
+  check('Cor principal delega produto, catalogo e alteracao ao componente compartilhado',()=>{
+    const color=nodes(render(undefined,selected)).find(n=>typeof n.type==='function' && n.type.name==='CurtainColorField')
+    assert.ok(color)
+    assert.equal(color.props.product,selected)
+    assert.equal(color.props.catalog,catalog)
+    const updated={...selected,color:'02',curtain:{...selected.curtain,tecidoProdutoId:4,cor:'02'}}
+    color.props.onChange(updated)
+    assert.equal(changed,updated)
   })
   check('Ação/Wiler; JP excluído; histórico e componentes',()=>{
     assert.deepEqual(curtainFabricCatalog(catalog).filter(p=>[1,3,6,7].includes(p.id)).map(p=>p.id),[1,3,6])
@@ -112,7 +116,10 @@ registerHooks({
   })
   // Real technical section render with effects/network disabled, no color control.
   const curtainFile=path.join(__dirname,'../src/components/CurtainSimulation.tsx')
-  const curtainSource=fs.readFileSync(curtainFile,'utf8').replace("import { useEffect } from 'react'",'const useEffect = () => {}').replace("import { simulateCurtain } from '../services/api'",'const simulateCurtain = () => { throw Error("unexpected network") }')
+  const curtainSource=fs.readFileSync(curtainFile,'utf8')
+    .replace("import { useEffect, useRef } from 'react'",'const useEffect=()=>{}; const useRef=value=>({current:value})')
+    .replace("import { CurtainComponents } from './CurtainComponents'",'const CurtainComponents=()=>null')
+    .replace("import { simulateCurtain } from '../services/api'",'const simulateCurtain = () => { throw Error("unexpected network") }')
   compiled.set(pathToFileURL(curtainFile).href,(await transformWithOxc(curtainSource,curtainFile,{jsx:{runtime:'automatic'}})).code)
   const { CurtainSimulation }=await import(pathToFileURL(curtainFile))
   let technical

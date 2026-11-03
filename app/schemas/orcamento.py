@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, conint
 
@@ -97,3 +97,16 @@ class OrcamentoInput(BaseModel):
 
 class OrcamentoUpdate(OrcamentoInput):
     pass
+
+
+class OrcamentoCondicoesRevendaInput(BaseModel):
+    base_smarttec_esperada: float = Field(gt=0, allow_inf_nan=False)
+    total_cliente_esperado: float = Field(ge=0, allow_inf_nan=False)
+    atualizado_em_esperado: Optional[datetime] = Field(...)
+    percentual_parceiro: float = Field(ge=0, le=1000, allow_inf_nan=False)
+    desconto_pagamento_percentual: float = Field(ge=0, lt=100, allow_inf_nan=False)
+    acrescimo_cartao_percentual: float = Field(ge=0, lt=100, allow_inf_nan=False)
+    parcelas_cartao: conint(strict=True, ge=1, le=12)
+    observacao_comercial: str
+    observacao_interna: str
+    observacoes_itens: dict[int, str] = Field(default_factory=dict)

@@ -34,25 +34,27 @@ async function loadCompanyLogo(path:string,apiUrl:string):Promise<string>{
 export async function loadBudgetPdfContext(budget:ApiBudget,mode:BudgetPdfMode):Promise<BudgetPdfContext>{
  const api=await import('./api')
  const auth=await import('./auth')
- const empresaId=auth.getEmpresaId()
+ const empresaId=await budgetPdfCompanyId()
  const internal=mode==='reseller_internal'
+ const resellerDocument=internal||mode==='reseller_commercial'
  let clients,resellers,sellers,representatives,me
  try{
   [clients,resellers,sellers,representatives,me]=await Promise.all([
    mode!=='direct'||budget.cliente_id==null?Promise.resolve([]):api.getClients(),
-   !internal||budget.parceiro_id==null?Promise.resolve([]):api.getCommercialPartners(),
+   !resellerDocument||budget.parceiro_id==null?Promise.resolve([]):api.getCommercialPartners(),
    !internal||budget.vendedor_id==null?Promise.resolve([]):api.getFuncionariosCadastro(),
-   !internal||budget.representante_id==null?Promise.resolve([]):api.getRepresentatives(),auth.getAuthMe()
+   !internal||budget.representante_id==null?Promise.resolve([]):api.getRepresentatives(),
+   auth.authEnabled?auth.getAuthMe():api.request<{id:number;nome:string;nome_fantasia?:string|null;documento?:string|null;logo_url?:string|null}>('/empresa/atual').then(company=>({empresas:[company]}))
   ])
  }catch{throw new Error('Não foi possível carregar os dados da empresa ou dos cadastros para o PDF. Tente novamente.')}
- if(auth.getEmpresaId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
+ if(await budgetPdfCompanyId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
  const company=me.empresas.find(item=>item.id===empresaId)
  if(!company)throw new Error('Empresa ativa não encontrada para gerar o PDF.')
  const client=clients.find(item=>item.id===budget.cliente_id)
  const reseller=resellers.find(item=>item.id===budget.parceiro_id)
  const seller=sellers.find(item=>item.id===budget.vendedor_id)
  const representative=representatives.find(item=>item.id===budget.representante_id)
- if((mode==='direct'&&budget.cliente_id!=null&&!client)||(internal&&budget.parceiro_id!=null&&!reseller)||(internal&&budget.vendedor_id!=null&&!seller)||(internal&&budget.representante_id!=null&&!representative))throw new Error('Cadastro vinculado ao orçamento não encontrado. Confira os dados antes de gerar o PDF.')
+ if((mode==='direct'&&budget.cliente_id!=null&&!client)||(resellerDocument&&budget.parceiro_id!=null&&!reseller)||(internal&&budget.vendedor_id!=null&&!seller)||(internal&&budget.representante_id!=null&&!representative))throw new Error('Cadastro vinculado ao orçamento não encontrado. Confira os dados antes de gerar o PDF.')
  const context:BudgetPdfContext={
   client,resellerName:reseller?.nome,sellerName:seller?String(seller.nome??''):undefined,
   representativeName:representative?.nome,companyName:company.nome,
@@ -66,21 +68,32 @@ export async function loadBudgetPdfContext(budget:ApiBudget,mode:BudgetPdfMode):
  }
  return context
 }
+async function budgetPdfCompanyId():Promise<number>{
+ const auth=await import('./auth')
+ if(auth.authEnabled){
+  const empresaId=auth.getEmpresaId()
+  if(empresaId==null)throw new Error('Empresa ativa não encontrada para gerar o PDF.')
+  return empresaId
+ }
+ const headers=await auth.getApiAuthHeaders()
+ const empresaId=Number(headers['X-Empresa-ID'])
+ if(!Number.isInteger(empresaId)||empresaId<=0)throw new Error('Empresa local não configurada para gerar o PDF.')
+ return empresaId
+}
 export async function prepareSavedBudgetPdf(id:number,mode:BudgetPdfMode){
  const api=await import('./api')
- const auth=await import('./auth')
- const empresaId=auth.getEmpresaId()
+ const empresaId=await budgetPdfCompanyId()
  let budget:ApiBudget
  try{budget=await api.getBudget(id)}
  catch{throw new Error('Não foi possível recarregar o orçamento salvo. Tente novamente.')}
- if(auth.getEmpresaId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
+ if(await budgetPdfCompanyId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
  // Validar o modo antes de consultas auxiliares ou geração.
- prepareBudgetPdfData(budget,mode)
+ const projection=prepareBudgetPdfData(budget,mode)
  const context=await loadBudgetPdfContext(budget,mode)
- if(auth.getEmpresaId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
+ if(await budgetPdfCompanyId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
  const blob=await generateBudgetPdf(budget,mode,context)
- if(auth.getEmpresaId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
- return {budget,blob,warnings:context.warnings??[],filename:budgetPdfFilename(String(budget.numero||budget.id),mode)}
+ if(await budgetPdfCompanyId()!==empresaId)throw new Error('A empresa ativa mudou. Abra novamente o orçamento.')
+ return {budget,blob,warnings:[...(context.warnings??[]),...projection.warnings],filename:budgetPdfFilename(String(budget.numero||budget.id),mode)}
 }
 export function downloadBudgetPdf(blob:Blob,filename:string){
  const url=URL.createObjectURL(blob),link=document.createElement('a')

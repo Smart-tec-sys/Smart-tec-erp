@@ -134,8 +134,9 @@ export type ApiBudget = {
   itens:ApiBudgetItem[]
 }
 export type BudgetPayload = Omit<ApiBudget, 'id'|'numero'|'cliente_nome'|'criado_em'|'atualizado_em'>
-export type CurtainComponent = { produto_id?: number; quantidade: number }
+export type CurtainComponent = { produto_id?: number; quantidade: number; unidades_por_embalagem?: number }
 export type CurtainState = {
+  baseMaoObra?: 'ALTURA_VERTICAL_150' | 'ALTURAS_TECIDO'
   componentes?: CurtainComponent[]
   tecido: string
   tecidoProdutoId?: number
@@ -178,6 +179,7 @@ export type CurtainState = {
   simulationKey?: string
   error?: string
   result?: {
+    composicao?: Array<{componente:string;produto_id:number|null;quantidade:number;custo_unitario:number;custo_total:number;custo_embalagem?:number;unidades_por_embalagem?:number}>
     desenvolvimento_m: number
     custo_total?: number
     custo_completo?: boolean
@@ -263,7 +265,7 @@ export const usesArea = (model:string) => ['ROLO','ROLÔ','DOUBLE_VISION','DOUBL
 export const curtainKey = (item:BudgetProduct, profile:CommercialType) => {
   const c=item.curtain
   if(!c) return ''
-  return JSON.stringify([Object.entries(profileLabel).find(([,label])=>label===profile)?.[0],item.discount,c.tecidoProdutoId??null,parseDecimal(item.width),parseDecimal(item.height),Math.max(1,item.quantity||1),c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,c.tipoForro??'',c.trilhoLinha??'',c.trilhoModelo??'',c.rodizioTipo??'',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,c.tipoEntretela,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina,c.possuiForro?c.forroProdutoId??null:null,c.possuiForro?c.larguraForro??null:null,c.trilhoProdutoId??null,c.rodizioProdutoId??null,c.ganchoProdutoId??null,c.botaoProdutoId??null,c.entretelaProdutoId??null,c.componentes?.map(l=>[l.produto_id??null,l.quantidade])??null])
+  return JSON.stringify([Object.entries(profileLabel).find(([,label])=>label===profile)?.[0],item.discount,c.tecidoProdutoId??null,parseDecimal(item.width),parseDecimal(item.height),Math.max(1,item.quantity||1),c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,c.tipoForro??'',c.trilhoLinha??'',c.trilhoModelo??'',c.rodizioTipo??'',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,c.tipoEntretela,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina,c.possuiForro?c.forroProdutoId??null:null,c.possuiForro?c.larguraForro??null:null,c.trilhoProdutoId??null,c.rodizioProdutoId??null,c.ganchoProdutoId??null,c.botaoProdutoId??null,c.entretelaProdutoId??null,c.componentes?.map(l=>[l.produto_id??null,l.quantidade,l.unidades_por_embalagem??1])??null,c.baseMaoObra??'ALTURA_VERTICAL_150'])
 }
 export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType) => {
   // Um resultado de simulação pertence às entradas que o geraram.

@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, StrictStr, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, StrictBool, StrictStr, ValidationInfo, field_validator
 
 
 def normalizar_cnpj(valor: str) -> str:
@@ -38,6 +38,7 @@ def cnpj_valido(valor: str) -> bool:
 
 class ConsultaCNPJInput(BaseModel):
     documento: str
+    enriquecer_contatos: StrictBool = False
 
     @field_validator("documento")
     @classmethod
@@ -119,7 +120,9 @@ class ConsultaCadastroResponse(BaseModel):
             extra = "forbid"
 
     dados: Dados
-    fonte: Literal["brasilapi", "viacep"]
+    fonte: Literal["brasilapi", "viacep", "cnpja"]
+    fontes_campos: Optional[dict[str, Literal["brasilapi", "cnpja"]]] = None
+    avisos: Optional[list[str]] = None
     consultado_em: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )

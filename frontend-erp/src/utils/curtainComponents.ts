@@ -16,7 +16,12 @@ export function searchCurtainComponents(catalog: ApiProduct[], query: string) {
 }
 
 export const curtainComponentUnit = (product: ApiProduct) => product.unidade_venda || product.unidade || product.unidade_controle || product.unidade_compra || '—'
-export const curtainComponentSubtotal = (line: CurtainComponent, product?: ApiProduct) => product ? line.quantidade * productCost(product) : 0
+export function curtainComponentUnitCost(line: CurtainComponent, product?: ApiProduct) {
+  const units = line.unidades_por_embalagem ?? 1
+  if (!Number.isInteger(units) || units < 1) throw new Error('Informe um inteiro positivo para unidades por embalagem.')
+  return product ? productCost(product) / units : 0
+}
+export const curtainComponentSubtotal = (line: CurtainComponent, product?: ApiProduct) => line.quantidade * curtainComponentUnitCost(line, product)
 
 export function curtainComponentLines(state: CurtainState, width: number): CurtainComponent[] {
   if (state.componentes) return state.componentes

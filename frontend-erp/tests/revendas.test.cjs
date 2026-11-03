@@ -176,11 +176,40 @@ registerHooks({
     assert.equal(new URL(target).hostname, 'backend.test.invalid')
     assert.equal(options.headers['X-Empresa-ID'], '7')
     calls.push({ pathname, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null })
-    if (pathname === '/consultas/cnpj') return Response.json({ dados: mapped, fonte: 'Mock CNPJ', consultado_em: '2026-11-02T12:00:00Z' })
+    if (pathname === '/consultas/cnpj') return Response.json({
+      dados: mapped, fonte: 'brasilapi', consultado_em: '2026-11-02T12:00:00Z',
+      fontes_campos: { email: 'cnpja', telefone_comercial: 'cnpja' },
+      avisos: ['Contato complementar indisponível'],
+    })
     if (pathname === '/consultas/cep') return Response.json({ dados: { cep: '01001000', cidade: 'São Paulo' }, fonte: 'Mock CEP', consultado_em: '2026-11-02T12:00:00Z' })
     return Response.json({ id: 1, nome: 'Teste', ativo: true, percentual_padrao: '0', ...JSON.parse(options.body || '{}') })
   }
-  assert.equal((await consultas.consultarCnpj(cnpj)).fonte, 'Mock CNPJ')
+  const enrichedResponse = await consultas.consultarCnpj(cnpj)
+  assert.equal(enrichedResponse.fonte, 'brasilapi')
+  assert.equal(enrichedResponse.fontes_campos.email, 'cnpja')
+  assert.deepEqual(enrichedResponse.avisos, ['Contato complementar indisponível'])
+  assert.deepEqual(calls[0].body, { documento: cnpj, enriquecer_contatos: true })
+  const fetchCadastro = global.fetch
+  global.fetch = async () => Response.json({
+    dados: { email: 'alternativa@example.test', telefone_comercial: '1133334444' },
+    fonte: 'cnpja', fontes_campos: { email: 'cnpja', telefone_comercial: 'cnpja' },
+    avisos: ['BrasilAPI temporariamente indisponível'],
+    consultado_em: '2026-11-02T12:00:00Z',
+  })
+  const alternative = await consultas.consultarCnpj(cnpj)
+  assert.equal(alternative.fonte, 'cnpja')
+  const manual = assisted.editarCampo(
+    assisted.iniciarPreenchimento(revendas.formularioDaRevenda()), 'email', 'manual@example.test',
+  )
+  const recovered = assisted.aplicarConsulta(manual, revendas.camposConsultaCnpj(alternative.dados), 'cnpj', manual.versao)
+  assert.equal(recovered.estado.valores.email, 'manual@example.test')
+  assert.equal(recovered.estado.valores.telefone, '1133334444')
+  assert.equal(recovered.estado.valores.nome_fantasia, '')
+  global.fetch = async () => Response.json({
+    detail: 'BrasilAPI indisponível; CNPJá indisponível. Continue o cadastro manualmente.',
+  }, { status: 429 })
+  await assert.rejects(consultas.consultarCnpj(cnpj), /manualmente/)
+  global.fetch = fetchCadastro
   await consultas.consultarCep('01001000')
   await api.createCommercialPartner({ nome: 'Cadastro rápido' })
   assert.deepEqual(calls[2].body, { nome: 'Cadastro rápido' })

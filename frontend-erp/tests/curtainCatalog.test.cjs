@@ -77,7 +77,7 @@ registerHooks({
   const selected = { ...state, colecaoTecido: 'COZUMEL', tecidoProdutoId: 9, tecidoNome: catalog.find(p => p.id === 9).nome, cor: '01', result: { subtotal: 244 } }
   assert.equal(selects(render(selected))[2].props.value, 'ARCA')
   selects(render(selected))[2].props.onChange({ target: { value: 'AQUILA' } })
-  assert.equal(changed.tecidoNome, 'AQUILA'); assert.equal(changed.cor, ''); assert.equal(changed.tecidoProdutoId, undefined); assert.equal(changed.result, undefined)
+  assert.equal(changed.tecidoNome, 'AQUILA'); assert.equal(changed.cor, ''); assert.equal(changed.tecidoProdutoId, 7); assert.equal(changed.result, undefined)
   assert.deepEqual(options(colorSelect(changed)).slice(1), [[7, '01 AO 04']])
   selects(render(selected))[1].props.onChange({ target: { value: 'JACQUARD' } })
   assert.equal(changed.colecaoTecido, 'JACQUARD'); assert.equal(changed.tecidoNome, ''); assert.equal(changed.tecido, ''); assert.equal(changed.cor, '')

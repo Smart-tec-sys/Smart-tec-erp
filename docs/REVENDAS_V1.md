@@ -165,6 +165,37 @@ a fonte forneceu naquela consulta.
 
 A implementacao publica atual da BrasilAPI encaminha CNPJ ao Minha Receita;
 usar Minha Receita como segunda fonte nao representa enriquecimento independente.
-Um adapter CNPJa e candidato a fallback, sujeito a aprovacao, cobertura e limites
-do plano. Nenhum segundo provider foi implementado nesta etapa. Consultas de
-documentacao publica nao executaram consultas empresariais nem acesso a banco.
+## Enriquecimento opcional de contatos
+
+Revendas envia `enriquecer_contatos: true` a `/consultas/cnpj`. O padrao e false:
+consumidores legados do endpoint compartilhado mantem o comportamento anterior.
+BrasilAPI permanece principal; CNPJa publica so e consultada se faltar email
+ou telefone. Com opt-in, tambem recupera contatos quando a BrasilAPI retorna
+HTTP 429 ou 503 (incluindo timeout, falha de conexao e HTTP 5xx). Erros 404,
+dados invalidos e CNPJ divergente na principal nao acionam a alternativa.
+Somente esses dois campos ausentes sao complementados, apos validar `taxId`.
+Nome fantasia, endereco e classificacao de celular nao sao enriquecidos.
+Campos manuais/salvos continuam protegidos pelo preenchimento assistido.
+
+`fonte` continua `brasilapi` quando a principal respondeu; passa a `cnpja`
+quando apenas a alternativa recuperou contatos. `fontes_campos` registra a origem de cada campo
+retornado. `avisos` informa falhas, limite ou contatos ainda ausentes, sem
+descartar dados validos da principal. Logs registram apenas fonte, nomes dos
+campos e status; nao incluem CNPJ, contatos ou payloads.
+Se a principal falhar e a alternativa falhar, atingir o limite, divergir no
+CNPJ ou nao retornar contatos, a rota retorna erro explicito e orienta o
+cadastro manual. Nao retorna sucesso vazio nem fabrica dados cadastrais.
+
+`SMARTTEC_CNPJ_CONTATOS_FALLBACK=cnpja` (padrao) habilita o fallback para pedidos
+opt-in; `off` o desabilita. URLs arbitrarias nao sao aceitas.
+As consultas usam timeout de conexao/leitura `(3.05, 10)` segundos e nao seguem
+redirecionamentos. O limite e de cinco chamadas a cada janela movel de 60
+segundos, incluindo falhas, com lock entre threads, sem fila. HTTP 429 bloqueia
+novas tentativas por 60 segundos.
+
+O contador e local ao processo e reinicia com ele. A garantia depende de um
+unico processo/instancia e IP de saida exclusivo para essas consultas (Uvicorn
+sem workers na homologacao atual). Outros processos, servicos no mesmo IP ou
+reinicios exigem controle compartilhado antes de aumentar a escala.
+Nenhuma configuracao Wix, webhook, banco ou migration participa desse fluxo.
+Testes com mocks: `python -m unittest tests.test_cnpj_enriquecimento tests.test_revendas_v1`.

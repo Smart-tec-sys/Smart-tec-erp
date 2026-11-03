@@ -1,4 +1,7 @@
 import re
+import time
+from collections import deque
+from threading import Lock
 from typing import Protocol
 
 import requests
@@ -52,6 +55,8 @@ def _buscar_json(url: str):
 
     if response.status_code == 404:
         raise ConsultaCadastroError(404, "Cadastro não encontrado no provedor.")
+    if response.status_code == 429:
+        raise ConsultaCadastroError(429, "Limite de consultas do provedor atingido.")
     if response.status_code != 200:
         status = 503 if response.status_code >= 500 else 502
         raise ConsultaCadastroError(
@@ -209,6 +214,85 @@ class BrasilApiCNPJAdapter:
             "estado": uf,
         }
         return _resposta(dados, self.fonte)
+
+
+class LimiteCnpja:
+    # Compartilhado pelas threads do processo; o IP de saida deve ser exclusivo.
+    def __init__(self):
+        self._lock = Lock()
+        self._consultas: deque[float] = deque()
+        self._bloqueado_ate = 0.0
+
+    def reservar(self):
+        with self._lock:
+            agora = time.monotonic()
+            while self._consultas and self._consultas[0] <= agora - 60:
+                self._consultas.popleft()
+            if agora < self._bloqueado_ate or len(self._consultas) >= 5:
+                raise ConsultaCadastroError(429, "Limite de enriquecimento atingido. Tente novamente em 60 segundos.")
+            self._consultas.append(agora)
+
+    def bloquear(self):
+        with self._lock:
+            self._bloqueado_ate = time.monotonic() + 60
+
+
+_LIMITE_CNPJA = LimiteCnpja()
+
+
+class CnpjaContatosAdapter:
+    base_url = "https://open.cnpja.com/office/"
+
+    def consultar(self, cnpj: str) -> dict[str, str]:
+        _LIMITE_CNPJA.reservar()
+        try:
+            payload = _buscar_json(f"{self.base_url}{cnpj}")
+        except ConsultaCadastroError as exc:
+            if exc.status_code == 429:
+                _LIMITE_CNPJA.bloquear()
+            raise
+        documento = _texto(payload, "taxId", 18)
+        if documento is None or normalizar_cnpj(documento) != cnpj:
+            raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou CNPJ divergente.")
+        emails = payload.get("emails")
+        phones = payload.get("phones")
+        emails = [] if emails is None else emails
+        phones = [] if phones is None else phones
+        if not isinstance(emails, list) or not isinstance(phones, list):
+            raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou contatos inválidos.")
+        enderecos = set()
+        for item in emails:
+            if not isinstance(item, dict):
+                raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou contatos inválidos.")
+            email = _texto(item, "address", 255)
+            if email:
+                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                    raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou e-mail inválido.")
+                enderecos.add(email.lower())
+        if len(enderecos) > 1:
+            raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou e-mails ambíguos.")
+        numeros = []
+        for item in phones:
+            if not isinstance(item, dict):
+                raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou contatos inválidos.")
+            area = _texto(item, "area", 2)
+            numero = _texto(item, "number", 9)
+            if area is None and numero is None:
+                continue
+            if area is None or numero is None or not re.fullmatch(r"\d{2}", area) or not re.fullmatch(r"\d{8,9}", numero):
+                raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou telefone inválido.")
+            telefone = area + numero
+            if telefone not in numeros:
+                numeros.append(telefone)
+        contatos = {}
+        if enderecos:
+            contatos["email"] = next(iter(enderecos))
+        if numeros:
+            telefone = " / ".join(numeros)
+            if len(telefone) > 50:
+                raise ConsultaCadastroError(502, "Provedor de enriquecimento retornou telefones além do limite.")
+            contatos["telefone_comercial"] = telefone
+        return contatos
 
 
 class ViaCepAdapter:

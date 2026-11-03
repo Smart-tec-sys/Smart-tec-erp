@@ -24,7 +24,9 @@ def consultar_cnpj(
     tenant: TenantContext = Depends(get_current_tenant),
 ):
     try:
-        return consultas_cadastro_service.consultar_cnpj(data.documento)
+        return consultas_cadastro_service.consultar_cnpj(
+            data.documento, enriquecer_contatos=data.enriquecer_contatos
+        )
     except ConsultaCadastroError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

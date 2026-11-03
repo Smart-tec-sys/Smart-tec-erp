@@ -49,7 +49,8 @@ export function BudgetPreviewDialog({ id, onClose }: { id: number; onClose: () =
     {error ? <div className="api-message error" role="alert">{error}</div> : !budget ? <p>Carregando orçamento...</p> : <>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }} aria-label="PDF do orçamento">
         {budget.parceiro_id == null ? <button type="button" className="primary-button" disabled={pdfBusy} onClick={() => void exportPdf('direct')}>Gerar PDF</button> : <>
-          <button type="button" className="secondary-button" disabled={pdfBusy} onClick={() => void exportPdf('reseller_internal')}>PDF interno da Revenda</button>
+          <button type="button" className="secondary-button" disabled={pdfBusy} onClick={() => void exportPdf('reseller_commercial')}>PDF Revenda</button>
+          <button type="button" className="secondary-button" disabled={pdfBusy} onClick={() => void exportPdf('reseller_internal')}>PDF Interno Smart-tec</button>
           <button type="button" className="primary-button" disabled={pdfBusy} onClick={() => void exportPdf('reseller_client')}>PDF Cliente Final</button>
         </>}
         {pdfBusy && <span role="status">Gerando PDF...</span>}

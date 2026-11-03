@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, conint
 class CortinaComponenteInput(BaseModel):
     produto_id: int = Field(gt=0)
     quantidade: float = Field(ge=0, allow_inf_nan=False)
+    unidades_por_embalagem: conint(strict=True, ge=1) = 1
 
 
 class CortinaSimulacaoInput(BaseModel):
@@ -27,6 +28,7 @@ class CortinaSimulacaoInput(BaseModel):
     largura: float = Field(gt=0, allow_inf_nan=False)
     altura: float = Field(gt=0, allow_inf_nan=False)
     quantidade: conint(strict=True, gt=0) = 1
+    base_mao_obra: Literal["ALTURA_VERTICAL_150", "ALTURAS_TECIDO"] = "ALTURA_VERTICAL_150"
     perfil_comercial: Literal["DECORADOR", "VAREJO", "CONSUMIDOR_FINAL"] = "VAREJO"
     desconto: float = Field(default=0, ge=0, allow_inf_nan=False)
 
@@ -130,7 +132,7 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
     pendencias = []
     composicao = []
 
-    def adicionar(papel, quantidade, componente):
+    def adicionar(papel, quantidade, componente, unidades_por_embalagem=1):
         if quantidade <= 0:
             return Decimal('0')
         if componente is None:
@@ -148,10 +150,15 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
         if custo <= 0:
             pendencias.append(papel)
             avisos_preco.append(f'{papel}: produto sem custo ou fallback positivo.')
+        custo_embalagem = custo
+        custo = custo / Decimal(unidades_por_embalagem)
         total = Decimal(str(quantidade)) * custo
         composicao.append(dict(componente=papel, produto_id=componente.id,
                                quantidade=round(quantidade, 4), custo_unitario=float(custo),
                                custo_total=float(_dinheiro(total)), origem_custo=origem))
+        if unidades_por_embalagem != 1:
+            composicao[-1].update(unidades_por_embalagem=unidades_por_embalagem,
+                                  custo_embalagem=float(custo_embalagem))
         return total
 
     desenvolvimento = entrada.largura * entrada.fator
@@ -276,7 +283,8 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
         for linha, componente in zip(entrada.componentes, livres):
             if not componente_cortina_elegivel(componente):
                 raise ValueError('Selecione somente componentes ativos de cortina.')
-            custo_componentes += adicionar(componente.nome, linha.quantidade, componente)
+            custo_componentes += adicionar(componente.nome, linha.quantidade, componente,
+                                           linha.unidades_por_embalagem)
     else:
         # Compatibilidade com documentos anteriores, que já armazenavam IDs explícitos por papel.
         custo_trilho = adicionar('trilho', trilho_ml, componentes.get('trilho'))
@@ -285,7 +293,10 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
         custo_botoes = adicionar('botoes', botoes_wave, componentes.get('botao'))
         custo_entretela = adicionar('entretela', consumo_entretela_ml / entrada.quantidade, componentes.get('entretela'))
         custo_componentes = custo_trilho + custo_rodizios + custo_ganchos + custo_botoes + custo_entretela
-    alturas_costureira = ceil(Decimal(str(entrada.altura)) / Decimal('1.50'))
+    alturas_costureira = (
+        quantidade_alturas if entrada.base_mao_obra == "ALTURAS_TECIDO"
+        else ceil(Decimal(str(entrada.altura)) / Decimal('1.50'))
+    )
     custo_mao_obra = Decimal(alturas_costureira) * Decimal('35.00')
     composicao.append(dict(componente='mao_de_obra', produto_id=None,
                            quantidade=alturas_costureira, custo_unitario=35.0, custo_total=float(custo_mao_obra)))
@@ -449,6 +460,7 @@ def entrada_cortina_item(item, perfil):
         'trilhoProdutoId': 'trilho_produto_id', 'rodizioProdutoId': 'rodizio_produto_id',
         'ganchoProdutoId': 'gancho_produto_id', 'botaoProdutoId': 'botao_produto_id', 'entretelaProdutoId': 'entretela_produto_id',
         'fator': 'fator', 'larguraTecido': 'largura_tecido', 'modeloPrega': 'modelo_prega',
+        'baseMaoObra': 'base_mao_obra',
         'possuiForro': 'possui_forro', 'tipoForro': 'tipo_forro', 'trilhoLinha': 'trilho_linha',
         'trilhoModelo': 'trilho_modelo', 'rodizioTipo': 'rodizio_tipo', 'cabecaCm': 'cabeca_cm',
         'barraCm': 'barra_cm', 'barraDupla': 'barra_dupla', 'usaEntretela': 'usa_entretela',

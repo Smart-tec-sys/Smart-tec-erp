@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas.orcamento import OrcamentoInput, OrcamentoUpdate, RomanaTetoSimulacaoInput
+from app.schemas.orcamento import OrcamentoInput, OrcamentoUpdate, RomanaTetoSimulacaoInput, OrcamentoCondicoesRevendaInput
 from app.services import orcamento_service
 from app.tenant.context import TenantContext
 from app.tenant.dependencies import get_current_tenant
@@ -108,3 +108,16 @@ def atualizar(oid:int,data:OrcamentoUpdate,db:Session=Depends(get_db),tenant:Ten
 @router.delete("/{oid}",status_code=204)
 def remover(oid:int,db:Session=Depends(get_db),tenant:TenantContext=Depends(get_current_tenant)):
     if not orcamento_service.remover(db,oid,tenant):raise HTTPException(404,"Orçamento não encontrado")
+
+
+@router.patch("/{oid}/condicoes-revenda")
+def atualizar_condicoes_revenda(oid: int, data: OrcamentoCondicoesRevendaInput,
+                                db: Session = Depends(get_db),
+                                tenant: TenantContext = Depends(get_current_tenant)):
+    try:
+        r = orcamento_service.atualizar_condicoes_revenda(db, oid, data, tenant)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if r is None:
+        raise HTTPException(404, "Orcamento nao encontrado")
+    return r

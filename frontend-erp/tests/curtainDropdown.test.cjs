@@ -20,6 +20,7 @@ registerHooks({
   const { transformWithOxc } = await import('vite')
   const file = path.join(__dirname, '../src/components/BudgetProductRow.tsx')
   let source = fs.readFileSync(file, 'utf8')
+    .replace("import { CurtainColorField } from './CurtainColorField'", 'const CurtainColorField = () => null')
     .replace("import { useEffect, useMemo, useState } from 'react'", `const useMemo = f => f(); const useEffect = f => { globalThis.__effects.push(f) }; const useState = initial => [globalThis.__query ?? initial, value => { globalThis.__query = value }]`)
     .replace(/import \{ ZeroNumberInput, zeroInputValue \} from '[^']+'/g, 'const ZeroNumberInput = () => null; const zeroInputValue = v => v')
     .replace(/import \{ (\w+Simulation) \} from '[^']+'/g, 'const $1 = () => null')
@@ -52,7 +53,10 @@ registerHooks({
 
   // Real technical component render: classification activates the motor without a base ID.
   const sectionFile=path.join(__dirname,'../src/components/CurtainSimulation.tsx')
-  const sectionSource=fs.readFileSync(sectionFile,'utf8').replace("import { useEffect } from 'react'",'const useEffect=()=>{}').replace("import { simulateCurtain } from '../services/api'",'const simulateCurtain=()=>{throw Error("unexpected network")}')
+  const sectionSource=fs.readFileSync(sectionFile,'utf8')
+    .replace("import { useEffect, useRef } from 'react'",'const useEffect=()=>{}; const useRef=value=>({current:value})')
+    .replace("import { CurtainComponents } from './CurtainComponents'",'const CurtainComponents=()=>null')
+    .replace("import { simulateCurtain } from '../services/api'",'const simulateCurtain=()=>{throw Error("unexpected network")}')
   compiled.set(pathToFileURL(sectionFile).href,(await transformWithOxc(sectionSource,sectionFile,{jsx:{runtime:'automatic'}})).code)
   const { CurtainSimulation }=await import(pathToFileURL(sectionFile))
   options(render('bahamas',catalog)).find(n=>n.key==='curtain-3671').props.onClick()

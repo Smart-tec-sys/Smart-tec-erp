@@ -3,10 +3,6 @@ import io
 import json
 from datetime import date
 
-import streamlit as st
-import streamlit.components.v1 as components
-
-from utils.ui import cabecalho
 from utils.api_client import get_opcoes_auxiliares_por_categoria, criar_opcao_auxiliar
 
 CATEGORIA_MODELOS_ETIQUETA = "modelo_etiqueta_produto"
@@ -36,6 +32,8 @@ CAMPOS_COMPLETO = [campo[0] for campo in CAMPOS_ETIQUETA]
 
 
 def carregar_css_etiquetas():
+    import streamlit as st
+
     st.markdown("""
     <style>
     .block-container {
@@ -736,6 +734,10 @@ def indice_opcao(lista, valor, padrao=0):
 
 
 def telaProdutosEtiquetas():
+    import streamlit as st
+    import streamlit.components.v1 as components
+    from utils.ui import cabecalho
+
     carregar_css_etiquetas()
     cabecalho(titulo="🏷️ Etiquetas", modulo="Produtos", tela_atual="Gerar etiquetas")
 

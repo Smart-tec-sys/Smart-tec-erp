@@ -69,3 +69,23 @@ def test_saved_technical_json_preserves_free_lines():
     item=SimpleNamespace(dados_tecnicos={'cortina':dict(fator=2.5,larguraTecido=3,modeloPrega='WAVE',tecidoProdutoId=1,componentes=[dict(produto_id=2,quantidade=3),dict(quantidade=1)])},quantidade=1,largura=2,altura=2,desconto=0)
     data=entrada_cortina_item(item,'VAREJO')
     assert len(data.componentes)==1 and data.componentes[0].produto_id==2 and data.componentes[0].quantidade==3
+
+
+def test_package_cost_conversion_preserves_catalog_and_physical_quantity():
+    fabric=product(1,'Tecido',grupo_tecnico='TECIDOS_CORTINA')
+    wheels=product(2,'Rodizio cortina',cost=50)
+    data=input(componentes=[dict(produto_id=2,quantidade=64,unidades_por_embalagem=500)])
+    out=simular_cortina(fabric,data,{'livres':[wheels]})
+    row=out['composicao'][1]
+    assert row['quantidade']==64 and row['unidades_por_embalagem']==500
+    assert row['custo_unitario']==.1 and row['custo_embalagem']==50
+    assert row['custo_total']==6.4 and out['custo_total']==124.4
+    assert wheels.custo_final==50
+    data.componentes[0].unidades_por_embalagem=1
+    assert simular_cortina(fabric,data,{'livres':[wheels]})['composicao'][1]['custo_total']==3200
+
+
+@pytest.mark.parametrize('units',[0,-1,1.5,float('nan'),float('inf'),True,'500',None])
+def test_invalid_package_conversion(units):
+    with pytest.raises(ValueError):
+        input(componentes=[dict(produto_id=2,quantidade=64,unidades_por_embalagem=units)])

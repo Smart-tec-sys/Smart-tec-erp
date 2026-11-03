@@ -15,7 +15,7 @@ registerHooks({resolve(s,c,n){try{return n(s,c)}catch(e){if(s.startsWith('.')&&!
  const catalog=names.map((nome,i)=>({id:3985+i,nome,nome_fornecedor:'AÇÃO DISTRIBUIDORA',grupo_tecnico:'TECIDOS_CORTINA',situacao:'Ativo',cor:i?'Branco':'Linho',largura:3,custo_final:i?30.11:31.29}))
  state={...DEFAULT_CURTAIN,fornecedorTecido:'AÇÃO DISTRIBUIDORA',colecaoTecido:'LINHO',componentes:[]}
  const nodes=t=>!t||typeof t!=='object'?[]:Array.isArray(t)?t.flatMap(nodes):[t,...nodes(t.props?.children)]
- const render=()=>{effects=[];return CurtainSimulation({product:{...emptyProduct(1),modelTechnical:'CORTINA',groupTechnical:'TECIDOS_CORTINA',width:'2,80',height:'2,45',curtain:state},catalog,profile:'Varejo',onResult:(_,v)=>state=v})}
+ const render=(allowPackageConversion=false)=>{effects=[];return CurtainSimulation({product:{...emptyProduct(1),modelTechnical:'CORTINA',groupTechnical:'TECIDOS_CORTINA',width:'2,80',height:'2,45',curtain:state},catalog,profile:'Varejo',allowPackageConversion,onResult:(_,v)=>state=v})}
  let tree=render();nodes(tree).filter(n=>n.type==='select')[2].props.onChange({target:{value:'LINHO MOOREA'}})
  assert.equal(state.tecidoProdutoId,3985);assert.equal(state.tecidoNome,'LINHO MOOREA');assert.equal(state.cor,'');assert.deepEqual(state.componentes,[])
  tree=render();assert.ok(!JSON.stringify(tree).includes('Selecione o tecido real e informe largura'))
@@ -26,5 +26,16 @@ registerHooks({resolve(s,c,n){try{return n(s,c)}catch(e){if(s.startsWith('.')&&!
  assert.equal(state.tecidoProdutoId,3986);assert.deepEqual(state.componentes,[{produto_id:700,quantidade:3}])
  tree=render();effects.forEach(f=>f());timers.splice(0).forEach(f=>f());await new Promise(setImmediate)
  assert.deepEqual(request.componentes,[{produto_id:700,quantidade:3}]);assert.equal(request.tecido_produto_id,3986)
+ state={...state,componentes:[{produto_id:700,quantidade:64,unidades_por_embalagem:500}]}
+ tree=render();effects.forEach(f=>f());timers.splice(0).forEach(f=>f());await new Promise(setImmediate)
+ assert.deepEqual(request.componentes,[{produto_id:700,quantidade:64,unidades_por_embalagem:500}])
+ assert.equal(request.base_mao_obra,'ALTURA_VERTICAL_150')
+ assert.ok(!JSON.stringify(render()).includes('Base de calculo da costureira'))
+ tree=render(true)
+ const labor=nodes(tree).find(n=>n.type==='select'&&n.props.value==='ALTURA_VERTICAL_150')
+ labor.props.onChange({target:{value:'ALTURAS_TECIDO'}})
+ assert.equal(state.baseMaoObra,'ALTURAS_TECIDO')
+ tree=render(true);effects.forEach(f=>f());timers.splice(0).forEach(f=>f());await new Promise(setImmediate)
+ assert.equal(request.base_mao_obra,'ALTURAS_TECIDO')
  console.log('MOOREA aprovado: seleção sem cor preserva ID real; 2,80 × 2,45 chegam ao motor; resultado renderiza consumo/mão de obra; variante BRANCO atualiza ID; componentes livres preservados no payload.')
 })().catch(e=>{console.error(e);process.exitCode=1})

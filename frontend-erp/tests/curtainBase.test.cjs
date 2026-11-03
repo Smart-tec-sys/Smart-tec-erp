@@ -20,6 +20,7 @@ registerHooks({
   const { transformWithOxc } = await import('vite')
   const file = path.join(__dirname, '../src/components/BudgetProductRow.tsx')
   let source = fs.readFileSync(file, 'utf8')
+    .replace("import { CurtainColorField } from './CurtainColorField'", 'const CurtainColorField = () => null')
     .replace("import { useEffect, useMemo, useState } from 'react'", `const useMemo = f => f(); const useEffect = f => { globalThis.__effects.push(f) }; const useState = initial => [globalThis.__query ?? initial, value => { globalThis.__query = value }]`)
     .replace(/import \{ ZeroNumberInput, zeroInputValue \} from '[^']+'/g, 'const ZeroNumberInput = () => null; const zeroInputValue = v => v')
     .replace(/import \{ (\w+Simulation) \} from '[^']+'/g, 'const $1 = () => null')

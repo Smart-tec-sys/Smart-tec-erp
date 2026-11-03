@@ -12,6 +12,7 @@ type Props = {
   product: BudgetProduct
   catalog: ApiProduct[]
   onResult: (id: number, state: CurtainState) => void
+  allowPackageConversion?: boolean
 }
 
 function isCurtain(product: BudgetProduct) {
@@ -21,7 +22,7 @@ function isCurtain(product: BudgetProduct) {
   return model === 'CORTINA' && group === 'TECIDOS_CORTINA'
 }
 
-export function CurtainSimulation({ product, catalog, profile, onResult }: Props) {
+export function CurtainSimulation({ product, catalog, profile, onResult, allowPackageConversion }: Props) {
   const applicable = isCurtain(product)
   const state = product.curtain
 
@@ -116,7 +117,7 @@ export function CurtainSimulation({ product, catalog, profile, onResult }: Props
     const timer = window.setTimeout(() => {
       void simulateCurtain({
         tecido_produto_id: resolvedProductId!,
-        componentes: curtainComponentLines(current, width).filter(l => l.produto_id).map(l => ({ produto_id: l.produto_id!, quantidade: l.quantidade })),
+        componentes: curtainComponentLines(current, width).filter(l => l.produto_id).map(l => ({ ...l, produto_id: l.produto_id! })),
         forro_produto_id: current.possuiForro ? current.forroProdutoId : undefined,
         largura_forro: current.possuiForro ? current.larguraForro : undefined,
         trilho_produto_id: current.trilhoProdutoId,
@@ -127,6 +128,7 @@ export function CurtainSimulation({ product, catalog, profile, onResult }: Props
         largura: width,
         altura: height,
         quantidade: quantity,
+        base_mao_obra: current.baseMaoObra ?? 'ALTURA_VERTICAL_150',
         perfil_comercial: commercialProfile,
         desconto: product.discount,
         fator: current.fator,
@@ -599,7 +601,16 @@ const fabrics = curtainFabricCatalog(catalog)
         </label>
       </div>
 
-      <CurtainComponents catalog={catalog} lines={curtainComponentLines(current, width)} onChange={lines => update('componentes', lines)} />
+      {allowPackageConversion && <label className="field">
+        <span>Base de calculo da costureira</span>
+        <select value={current.baseMaoObra ?? 'ALTURA_VERTICAL_150'} onChange={event => {
+          if (event.target.value === 'ALTURAS_TECIDO' || event.target.value === 'ALTURA_VERTICAL_150') update('baseMaoObra', event.target.value)
+        }}>
+          <option value="ALTURA_VERTICAL_150">Regra anterior: altura vertical / 1,50 m, arredondada acima</option>
+          <option value="ALTURAS_TECIDO">R$ 35,00 por altura de tecido cortada</option>
+        </select>
+      </label>}
+      <CurtainComponents catalog={catalog} lines={curtainComponentLines(current, width)} onChange={lines => update('componentes', lines)} allowPackageConversion={allowPackageConversion} />
 
       {(!resolvedProductId || width <= 0 || height <= 0) && (
         <div className="api-message" role="status">
