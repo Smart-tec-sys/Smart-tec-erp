@@ -30,6 +30,25 @@ ITEM_PERSISTED_FIELDS = {
 MULTIPLICADORES = {"DECORADOR": Decimal("1.5"), "VAREJO": Decimal("2.0"), "CONSUMIDOR_FINAL": Decimal("2.5")}
 MODELOS_POR_AREA = {"ROLO", "ROLÔ", "ROLO_MOTORIZADA", "ROLÔ MOTORIZADA", "DOUBLE_VISION", "DOUBLE VISION", "DOUBLE VISION MOTORIZADA", "ROMANA", "ROMANA MOTORIZADA", "ROMANA_TETO", "ROMANA DE TETO"}
 
+UNIDADES_METRO_LINEAR = {"ML", "M", "METRO", "METROLINEAR"}
+UNIDADES_METRO_QUADRADO = {"M2", "METROQUADRADO", "MQ"}
+
+
+def _normalizar_unidade_comercial(unidade):
+    texto = str(unidade or "").upper().replace("²", "2")
+    return "".join(c for c in texto if c.isalnum())
+
+
+def calcular_base_comercial(unidade_venda, modelo, largura, area_faturavel, quantidade):
+    """Retorna a base de cobrança sem alterar o preço unitário cadastrado."""
+    unidade = _normalizar_unidade_comercial(unidade_venda)
+    quantidade_d = Decimal(str(quantidade))
+    if unidade in UNIDADES_METRO_LINEAR:
+        return Decimal(str(largura)) * quantidade_d
+    if unidade in UNIDADES_METRO_QUADRADO or modelo in MODELOS_POR_AREA:
+        return area_faturavel.area_faturavel_m2
+    return quantidade_d
+
 def _dinheiro(valor):
     return Decimal(str(valor or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -160,11 +179,16 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 unidade_venda=unidade_venda,
             )
 
-            # Para modelos por área, usa área faturável; para outros, usa quantidade
-            if modelo in MODELOS_POR_AREA:
-                base = area_faturavel.area_faturavel_m2
-            else:
-                base = Decimal(str(item.quantidade))
+            # A unidade comercial prevalece: ML usa comprimento, M² usa área e
+            # as demais unidades usam quantidade. O modelo mantém a compatibilidade
+            # dos produtos por área que ainda não possuem unidade normalizada.
+            base = calcular_base_comercial(
+                unidade_venda=unidade_venda,
+                modelo=modelo,
+                largura=item.largura,
+                area_faturavel=area_faturavel,
+                quantidade=item.quantidade,
+            )
 
             subtotal = max(Decimal("0"), (base * preco) - Decimal(str(item.desconto or 0)))
             valores["preco_unitario"] = preco

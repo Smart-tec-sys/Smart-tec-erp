@@ -262,6 +262,8 @@ export const commercialPercent:Record<CommercialType,number> = { Decorador:50, V
 export const roundHalfUp = (value:number) => Math.round((value + Number.EPSILON) * 100) / 100
 export const commercialPrice = (product:ApiProduct, type:CommercialType) => roundHalfUp(productCost(product) * (1 + commercialPercent[type] / 100))
 export const usesArea = (model:string) => ['ROLO','ROLÔ','DOUBLE_VISION','DOUBLE VISION','ROMANA','ROMANA_TETO','ROMANA DE TETO'].some(value=>normalizeSearch(model).startsWith(normalizeSearch(value)))
+export const usesLinearMeter = (unit:string) => ['ML','M','METRO','METRO LINEAR'].includes(normalizeSearch(unit))
+export const usesSquareMeter = (unit:string) => ['M2','M²','METRO QUADRADO','MQ'].includes(normalizeSearch(unit))
 export const curtainKey = (item:BudgetProduct, profile:CommercialType) => {
   const c=item.curtain
   if(!c) return ''
@@ -278,7 +280,12 @@ export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType)
       if(item.curtain.error || item.curtain.simulationKey !== curtainKey(item,profile)) return 0
     }
   }
-  return item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : roundHalfUp(Math.max(0,(usesArea(item.modelTechnical)?parseDecimal(item.width)*parseDecimal(item.height)*item.quantity:item.quantity)*item.price-item.discount))
+  const commercialBase = usesLinearMeter(item.unit)
+    ? parseDecimal(item.width) * item.quantity
+    : usesSquareMeter(item.unit) || usesArea(item.modelTechnical)
+      ? parseDecimal(item.width) * parseDecimal(item.height) * item.quantity
+      : item.quantity
+  return item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : roundHalfUp(Math.max(0,commercialBase*item.price-item.discount))
 }
 export const profileLabel:Record<CommercialProfile,CommercialType>={DECORADOR:'Decorador',VAREJO:'Varejo',CONSUMIDOR_FINAL:'Consumidor final'}
 export const emptyProduct = (id:number):BudgetProduct => ({ id, productId:null, product:'', code:'', family:'', groupTechnical:'', modelTechnical:'', unit:'', color:'', details:'', quantity:1, width:'0,00', height:'0,00', price:0, discount:0, romanaKind:undefined, romana:undefined, romanaTetoKind:undefined, romanaTeto:undefined, roloKind:undefined, rolo:undefined, doubleVisionKind:undefined, doubleVision:undefined, curtain:undefined, acionamento:undefined, lado_comando:undefined, comprimento_bastao:undefined, comprimento_corrente_sem_fim:undefined })

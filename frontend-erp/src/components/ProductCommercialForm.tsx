@@ -6,6 +6,7 @@ const textFields = ['grupo_produto', 'unidade_venda', 'cor', 'cor_componente', '
 const labels = { grupo_produto: 'Grupo do produto', unidade_venda: 'Unidade de venda', cor: 'Cor', cor_componente: 'Cor do componente', variacao_cor: 'Variação de cor', situacao: 'Situação', status_comercial: 'Status comercial' }
 const optionsWithCurrent = (options: string[], current: string) => [...new Set([current, ...options].filter(Boolean))]
 const moneyInput = (value: unknown) => String(value ?? '').replace('.', ',')
+const decimalInput = (value: number) => String(Math.round((value + Number.EPSILON) * 100) / 100).replace('.', ',')
 
 export function parseCommercialValue(raw: string): number {
     const value = raw.trim()
@@ -27,7 +28,8 @@ export function ProductCommercialForm({ product, catalog, onCancel, onSaved, onB
         nome: original.nome ?? '', grupo_produto: original.grupo_produto ?? '', unidade_venda: original.unidade_venda ?? '',
         cor: original.cor ?? '', cor_componente: original.cor_componente ?? '', variacao_cor: original.variacao_cor ?? '',
         situacao: original.situacao ?? '', status_comercial: original.status_comercial ?? '', varia_cor: Boolean(original.varia_cor),
-        valor_custo: moneyInput(original.valor_custo), valor_venda: moneyInput(original.valor_venda),
+        valor_custo: moneyInput(original.valor_custo), margem_lucro: moneyInput(original.margem_lucro),
+        valor_venda: moneyInput(original.valor_venda),
     }))
     const [groups, setGroups] = useState<string[]>([])
     const [units, setUnits] = useState<string[]>([])
@@ -64,7 +66,7 @@ export function ProductCommercialForm({ product, catalog, onCancel, onSaved, onB
                 }
             }
             if (draft.varia_cor !== Boolean(original.varia_cor)) { payload.varia_cor = draft.varia_cor; changed = true }
-            for (const field of ['valor_custo', 'valor_venda'] as const) {
+            for (const field of ['valor_custo', 'margem_lucro', 'valor_venda'] as const) {
                 if (draft[field] !== moneyInput(original[field])) { payload[field] = parseCommercialValue(draft[field]); changed = true }
             }
             if (!changed) { onCancel(); return }
@@ -84,6 +86,19 @@ export function ProductCommercialForm({ product, catalog, onCancel, onSaved, onB
                 : /Failed to fetch|NetworkError/i.test(message) ? 'Não foi possível confirmar o salvamento. Verifique a conexão e consulte o produto antes de tentar novamente.' : message)
         } finally { inFlight.current = false; setSaving(false); onBusy(false) }
     }
+
+    const recalculateSalePrice = () => {
+        try {
+            setError('')
+            const finalCost = parseCommercialValue(draft.valor_custo)
+                + Number(original.despesas_acessorias || 0)
+                + Number(original.outras_despesas || 0)
+            const margin = parseCommercialValue(draft.margem_lucro || '0')
+            setDraft({ ...draft, valor_venda: decimalInput(finalCost * (1 + margin / 100)) })
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e))
+        }
+    }
     return <form onSubmit={e => { e.preventDefault(); void save() }} aria-busy={saving}>
         <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
@@ -94,10 +109,13 @@ export function ProductCommercialForm({ product, catalog, onCancel, onSaved, onB
                     </select> : <input value={draft[field]} onChange={e => setDraft({ ...draft, [field]: e.target.value })} />}
                 </label>)}
                 <label className="modal-field">Varia cor<select value={String(draft.varia_cor)} onChange={e => setDraft({ ...draft, varia_cor: e.target.value === 'true' })}><option value="true">Sim</option><option value="false">Não</option></select></label>
-                {(['valor_custo', 'valor_venda'] as const).map(field => <label className="modal-field" key={field}>{field === 'valor_custo' ? 'Valor de custo (R$)' : 'Valor de venda (R$)'}<input required={creating && field === 'valor_custo'} inputMode="decimal" value={draft[field]} onChange={e => setDraft({ ...draft, [field]: e.target.value })} placeholder="1.234,56" /></label>)}
+                <label className="modal-field">Valor de custo (R$)<input required={creating} inputMode="decimal" value={draft.valor_custo} onChange={e => setDraft({ ...draft, valor_custo: e.target.value })} placeholder="1.234,56" /></label>
+                <label className="modal-field">Margem de lucro (%)<input inputMode="decimal" value={draft.margem_lucro} onChange={e => setDraft({ ...draft, margem_lucro: e.target.value })} placeholder="150,00" /></label>
+                <label className="modal-field">Valor de venda (R$)<input inputMode="decimal" value={draft.valor_venda} onChange={e => setDraft({ ...draft, valor_venda: e.target.value })} placeholder="1.234,56" /></label>
+                <div className="modal-field"><span>Recalcular preço</span><button type="button" className="secondary-button" onClick={recalculateSalePrice}>Usar custo final + margem</button></div>
                 {product && <label className="modal-field">Custo final atual<input readOnly value={formatCurrency(Number(product.custo_final || 0))} /></label>}
             </div>
-            <p>Ao salvar, o sistema recalcula o custo final: custo + despesas acessórias + outras despesas. Custo final e indicador Ativo não têm edição direta.</p>
+            <p>Ao salvar, o sistema recalcula o custo final: custo + despesas acessórias + outras despesas. O valor de venda manual é preservado; use “Usar custo final + margem” quando desejar recalculá-lo.</p>
             {loading && <p role="status">Carregando grupos e unidades...</p>}
             {optionError && <p role="alert">{optionError}</p>}
             {error && <div className="modal-error" role="alert">{error}</div>}

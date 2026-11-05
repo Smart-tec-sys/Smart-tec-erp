@@ -104,7 +104,7 @@ export async function getAllProducts(): Promise<ApiProduct[]> {
 export const getClients = () => request<ApiClient[]>('/clientes/')
 export type ProductCommercialUpdate = { nome: string } & Partial<Pick<ApiProduct,
   'grupo_produto' | 'unidade_venda' | 'cor' | 'cor_componente' | 'variacao_cor' |
-  'varia_cor' | 'situacao' | 'status_comercial'>> & { valor_custo?: number; valor_venda?: number }
+  'varia_cor' | 'situacao' | 'status_comercial' | 'margem_lucro'>> & { valor_custo?: number; valor_venda?: number }
 
 export const updateProductCommercial = (id: number, data: ProductCommercialUpdate) =>
   request<ApiProduct>(`/produtos/${id}`, { method: 'PUT', body: JSON.stringify(data) })
