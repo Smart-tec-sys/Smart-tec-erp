@@ -165,13 +165,15 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
 
     modelo_prega_norm = entrada.modelo_prega.strip().upper()
     rendimento_util_altura_m = 1.50
-    quantidade_alturas = ceil(
-        desenvolvimento / (
-            rendimento_util_altura_m
-            if modelo_prega_norm == "WAVE"
-            else entrada.largura_tecido
-        )
+    alturas_corte = ceil(desenvolvimento / entrada.largura_tecido)
+    alturas_equivalentes = (
+        ceil(desenvolvimento / rendimento_util_altura_m)
+        if modelo_prega_norm == "WAVE"
+        else alturas_corte
     )
+    # Compatibilidade: consumidores existentes continuam recebendo a quantidade
+    # usada para confecção/mão de obra no campo legado de topo.
+    quantidade_alturas = alturas_equivalentes
 
     # Regra confirmada:
     # 1 rod?zio a cada 10 cm da largura da cortina.
@@ -258,7 +260,7 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
 
     consumo_tecido_total_ml = (
         consumo_por_altura_m
-        * quantidade_alturas
+        * alturas_corte
         * entrada.quantidade
     )
 
@@ -298,7 +300,8 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
         custo_entretela = adicionar('entretela', consumo_entretela_ml / entrada.quantidade, componentes.get('entretela'))
         custo_componentes = custo_trilho + custo_rodizios + custo_ganchos + custo_botoes + custo_entretela
     alturas_costureira = (
-        quantidade_alturas if modelo_prega_norm == "WAVE" or entrada.base_mao_obra == "ALTURAS_TECIDO"
+        alturas_equivalentes if modelo_prega_norm == "WAVE"
+        else alturas_corte if entrada.base_mao_obra == "ALTURAS_TECIDO"
         else ceil(Decimal(str(entrada.altura)) / Decimal('1.50'))
     )
     custo_mao_obra = Decimal(alturas_costureira) * Decimal('35.00')
@@ -324,6 +327,8 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
 
         "desenvolvimento_m": round(desenvolvimento, 4),
         "quantidade_alturas": quantidade_alturas,
+        "alturas_equivalentes": alturas_equivalentes,
+        "alturas_corte": alturas_corte,
 
         "mao_de_obra": {
             "quantidade_alturas": alturas_costureira,
@@ -396,7 +401,9 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
         },
 
         "tecido": {
-            "quantidade_alturas": quantidade_alturas,
+            "quantidade_alturas": alturas_corte,
+            "alturas_equivalentes": alturas_equivalentes,
+            "alturas_corte": alturas_corte,
             "cabeca_cm": round(entrada.cabeca_cm, 2),
             "barra_cm": round(entrada.barra_cm, 2),
             "barra_dupla": entrada.barra_dupla,

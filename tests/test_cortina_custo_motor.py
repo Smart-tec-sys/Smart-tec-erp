@@ -32,44 +32,75 @@ def test_costureira_por_altura_de_tecido(largura,altura,alturas,custo):
     assert out['composicao'][-1]['custo_total']==custo
 
 
-def test_wave_quatro_alturas_aplica_mesma_quantidade_na_costureira():
+@pytest.mark.parametrize('largura_tecido,alturas_corte,consumo_ml', [
+    (1.50, 4, 10.4),
+    (3.00, 2, 5.2),
+])
+def test_wave_separa_alturas_equivalentes_de_cortes_fisicos(
+    largura_tecido, alturas_corte, consumo_ml,
+):
     out = simular_cortina(produto(1), entrada(
-        largura=2.20, altura=2.30, fator=2.5, largura_tecido=1.50,
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=largura_tecido,
         modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
         componentes=[],
     ))
     assert out['desenvolvimento_m'] == 5.5
     assert out['quantidade_alturas'] == 4
-    assert out['tecido']['consumo_total_ml'] == 10.4
+    assert out['alturas_equivalentes'] == 4
+    assert out['alturas_corte'] == alturas_corte
+    assert out['tecido']['quantidade_alturas'] == alturas_corte
+    assert out['tecido']['alturas_equivalentes'] == 4
+    assert out['tecido']['alturas_corte'] == alturas_corte
+    assert out['tecido']['consumo_total_ml'] == consumo_ml
     assert out['mao_de_obra'] == dict(quantidade_alturas=4, valor_por_altura=35, total=140)
 
 
-@pytest.mark.parametrize('largura_tecido', [1.40, 1.50, 2.80, 3.00])
-def test_wave_largura_nominal_nao_sobrescreve_alturas(largura_tecido):
+@pytest.mark.parametrize('largura_tecido,alturas_corte', [
+    (1.40, 4), (1.50, 4), (2.80, 2), (3.00, 2),
+])
+def test_wave_largura_nominal_altera_cortes_sem_sobrescrever_costureira(
+    largura_tecido, alturas_corte,
+):
     out = simular_cortina(produto(1), entrada(
         largura=2.20, altura=2.30, fator=2.5, largura_tecido=largura_tecido,
         modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
         componentes=[],
     ))
     assert out['quantidade_alturas'] == 4
+    assert out['alturas_equivalentes'] == 4
+    assert out['alturas_corte'] == alturas_corte
     assert out['mao_de_obra']['quantidade_alturas'] == 4
 
 
 def test_wave_quantidade_comercial_multiplica_consumo_e_subtotal_sem_duplicar_mao_de_obra_unitaria():
     unitario = simular_cortina(produto(1), entrada(
-        largura=2.20, altura=2.30, fator=2.5, largura_tecido=2.80,
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=3.00,
         modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
         quantidade=1, componentes=[],
     ))
     multiplo = simular_cortina(produto(1), entrada(
-        largura=2.20, altura=2.30, fator=2.5, largura_tecido=2.80,
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=3.00,
         modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
         quantidade=3, componentes=[],
     ))
     assert multiplo['quantidade_alturas'] == 4
-    assert multiplo['tecido']['consumo_total_ml'] == 31.2
+    assert multiplo['alturas_equivalentes'] == 4
+    assert multiplo['alturas_corte'] == 2
+    assert multiplo['tecido']['consumo_total_ml'] == 15.6
     assert multiplo['mao_de_obra']['total'] == 140
     assert multiplo['subtotal'] == unitario['preco_unitario'] * 3
+
+
+def test_modelo_nao_wave_preserva_alturas_de_corte_e_consumo():
+    out = simular_cortina(produto(1), entrada(
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=3.00,
+        modelo_prega='PREGA', cabeca_cm=10, barra_cm=10, barra_dupla=True,
+        componentes=[],
+    ))
+    assert out['quantidade_alturas'] == 2
+    assert out['alturas_equivalentes'] == 2
+    assert out['alturas_corte'] == 2
+    assert out['tecido']['consumo_total_ml'] == 5.2
 
 
 def test_base_costureira_invalida():

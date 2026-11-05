@@ -55,7 +55,7 @@ def db():
 
 
 @pytest.mark.parametrize("perfil,unitario,total", [
-    ("DECORADOR", 259.5, 519), ("VAREJO", 346, 692), ("CONSUMIDOR_FINAL", 432.5, 865),
+    ("DECORADOR", 364.5, 729), ("VAREJO", 486, 972), ("CONSUMIDOR_FINAL", 607.5, 1215),
 ])
 def test_salvar_reabrir_cortina_tres_tabelas(db, perfil, unitario, total):
     entrada = OrcamentoInput(
@@ -91,10 +91,12 @@ def test_salvar_reabrir_cortina_tres_tabelas(db, perfil, unitario, total):
     assert item["material"] == "Tecido sintetico de teste" and item["cor"] == "Branco"
     assert item["largura"] == item["altura"] == 2
     resultado = item["dados_tecnicos"]["cortina"]["result"]
-    assert resultado["custo_total"] == 173
+    assert resultado["custo_total"] == 243
     assert resultado["tecido"]["consumo_total_ml"] == 9.6
     assert resultado["tecido"]["consumo_por_altura_m"] == 2.4
-    assert resultado["quantidade_alturas"] == 2
+    assert resultado["quantidade_alturas"] == 4
+    assert resultado["alturas_equivalentes"] == 4
+    assert resultado["alturas_corte"] == 2
     assert orcamento_service.obter(db, salvo["id"], TenantContext(empresa_id=2)) is None
     if os.getenv("CURTAIN_PDF_FIXTURE_OUTPUT"):
         destino = Path(os.environ["CURTAIN_PDF_FIXTURE_OUTPUT"])
@@ -108,7 +110,7 @@ def test_salvar_reabrir_cortina_tres_tabelas(db, perfil, unitario, total):
         db, salvo["id"], entrada.model_copy(update={"perfil_comercial": "DECORADOR"}), tenant,
     )
     assert alterado["perfil_comercial"] == "DECORADOR"
-    assert alterado["total_final"] == 519
+    assert alterado["total_final"] == 729
     assert orcamento_service.obter(db, salvo["id"], tenant)["perfil_comercial"] == "DECORADOR"
 
 
@@ -124,7 +126,7 @@ def test_empresa_pdf_respeita_empresa_ativa(db):
 
 
 @pytest.mark.parametrize("base,largura,alturas,total", [
-    ("ALTURA_VERTICAL_150",2,2,186.6),("ALTURAS_TECIDO",3.63,4,363.6),
+    ("ALTURA_VERTICAL_150",2,4,291.6),("ALTURAS_TECIDO",3.63,7,521.1),
 ])
 def test_salvar_reabrir_conversao_embalagem_sem_alterar_produto(db,base,largura,alturas,total):
     produto=db.get(ProdutoDB,3)
