@@ -163,15 +163,19 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
 
     desenvolvimento = entrada.largura * entrada.fator
 
+    modelo_prega_norm = entrada.modelo_prega.strip().upper()
+    rendimento_util_altura_m = 1.50
     quantidade_alturas = ceil(
-        desenvolvimento / entrada.largura_tecido
+        desenvolvimento / (
+            rendimento_util_altura_m
+            if modelo_prega_norm == "WAVE"
+            else entrada.largura_tecido
+        )
     )
 
     # Regra confirmada:
     # 1 rod?zio a cada 10 cm da largura da cortina.
     quantidade_rodizios = ceil(entrada.largura / 0.10)
-
-    modelo_prega_norm = entrada.modelo_prega.strip().upper()
 
     if modelo_prega_norm == "WAVE":
         abertura_central = entrada.abertura_cortina == "CENTRAL"
@@ -294,7 +298,7 @@ def simular_cortina(produto, entrada: CortinaSimulacaoInput, componentes=None) -
         custo_entretela = adicionar('entretela', consumo_entretela_ml / entrada.quantidade, componentes.get('entretela'))
         custo_componentes = custo_trilho + custo_rodizios + custo_ganchos + custo_botoes + custo_entretela
     alturas_costureira = (
-        quantidade_alturas if entrada.base_mao_obra == "ALTURAS_TECIDO"
+        quantidade_alturas if modelo_prega_norm == "WAVE" or entrada.base_mao_obra == "ALTURAS_TECIDO"
         else ceil(Decimal(str(entrada.altura)) / Decimal('1.50'))
     )
     custo_mao_obra = Decimal(alturas_costureira) * Decimal('35.00')

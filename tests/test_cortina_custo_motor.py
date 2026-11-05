@@ -32,6 +32,46 @@ def test_costureira_por_altura_de_tecido(largura,altura,alturas,custo):
     assert out['composicao'][-1]['custo_total']==custo
 
 
+def test_wave_quatro_alturas_aplica_mesma_quantidade_na_costureira():
+    out = simular_cortina(produto(1), entrada(
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=1.50,
+        modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
+        componentes=[],
+    ))
+    assert out['desenvolvimento_m'] == 5.5
+    assert out['quantidade_alturas'] == 4
+    assert out['tecido']['consumo_total_ml'] == 10.4
+    assert out['mao_de_obra'] == dict(quantidade_alturas=4, valor_por_altura=35, total=140)
+
+
+@pytest.mark.parametrize('largura_tecido', [1.40, 1.50, 2.80, 3.00])
+def test_wave_largura_nominal_nao_sobrescreve_alturas(largura_tecido):
+    out = simular_cortina(produto(1), entrada(
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=largura_tecido,
+        modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
+        componentes=[],
+    ))
+    assert out['quantidade_alturas'] == 4
+    assert out['mao_de_obra']['quantidade_alturas'] == 4
+
+
+def test_wave_quantidade_comercial_multiplica_consumo_e_subtotal_sem_duplicar_mao_de_obra_unitaria():
+    unitario = simular_cortina(produto(1), entrada(
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=2.80,
+        modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
+        quantidade=1, componentes=[],
+    ))
+    multiplo = simular_cortina(produto(1), entrada(
+        largura=2.20, altura=2.30, fator=2.5, largura_tecido=2.80,
+        modelo_prega='WAVE', cabeca_cm=10, barra_cm=10, barra_dupla=True,
+        quantidade=3, componentes=[],
+    ))
+    assert multiplo['quantidade_alturas'] == 4
+    assert multiplo['tecido']['consumo_total_ml'] == 31.2
+    assert multiplo['mao_de_obra']['total'] == 140
+    assert multiplo['subtotal'] == unitario['preco_unitario'] * 3
+
+
 def test_base_costureira_invalida():
     with pytest.raises(ValueError):
         entrada(base_mao_obra='OUTRA')
