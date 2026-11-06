@@ -89,6 +89,16 @@ export type ApiClient = {
   observacoes?: string | null
 }
 export type ApiBudgetItem = { dados_tecnicos?: { cortina?: CurtainState } | null; id?:number; tipo_item:string; produto_id?:number|null; descricao:string; codigo_interno?:string|null; grupo_tecnico?:string|null; modelo_tecnico?:string|null; unidade?:string|null; quantidade:number; largura:number; altura:number; area:number; preco_unitario:number; desconto:number; subtotal:number; observacao_item?:string|null; cor?:string|null }
+export type PaymentMode = 'AVISTA' | 'PARCELADO' | 'ENTRADA_SALDO'
+export type BudgetPaymentInstallment = {
+  id?: number
+  numero: number
+  tipo: 'PARCELA' | 'ENTRADA' | 'SALDO'
+  valor: number
+  vencimento: string
+  forma_pagamento_id: number
+  forma_pagamento_nome?: string
+}
 export type ApiBudget = {
   cliente_final_nome?: string | null
   cliente_final_documento?: string | null
@@ -128,6 +138,13 @@ export type ApiBudget = {
   base_protegida?:number
   valor_taxa_bancaria?:number
   total_cliente_final?:number
+
+  pagamento_modalidade?:PaymentMode|null
+  pagamento_numero_parcelas?:number|null
+  pagamento_intervalo_dias?:number|null
+  pagamento_primeiro_vencimento?:string|null
+  pagamento_total?:number
+  pagamento_parcelas?:BudgetPaymentInstallment[]
 
   criado_em?:string|null
   atualizado_em?:string|null

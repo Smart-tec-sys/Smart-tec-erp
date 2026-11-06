@@ -12,6 +12,7 @@ import { doubleVisionKind, doubleVisionKey, type DoubleVisionState } from '../ty
 import { BudgetProductRow } from '../components/BudgetProductRow'
 import { BudgetServiceRow } from '../components/BudgetServiceRow'
 import { BudgetSummary } from '../components/BudgetSummary'
+import { BudgetPaymentSection, paymentPlanIsConsistent, type BudgetPaymentState } from '../components/BudgetPaymentSection'
 import { createBudget, getAllProducts, getBudget, getClients, updateBudget, createClient, createProduct, getProductGroups, getProductUnits, convertBudgetToOrder, getCommercialPartners, getRepresentatives, getFuncionariosCadastro, type ApiOrder, type ApiCommercialPartner, type ApiRepresentative, type CadastroRecord } from '../services/api'
 import { commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, formatClientCompletenessMessage, getClientCompleteness, formatProductCompletenessMessage, getProductCompleteness, type ApiBudget, type ApiClient, type ApiProduct, type BudgetPayload, type BudgetProduct, type BudgetService, type CommercialProfile } from '../types/budget'
 import type { CurtainState } from '../types/budget'
@@ -101,6 +102,7 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
 
   const [includeBankFee,setIncludeBankFee]=useState(false)
   const [bankFeePercent,setBankFeePercent]=useState(0)
+  const [payment,setPayment]=useState<BudgetPaymentState>({mode:'',count:2,intervalDays:30,firstDueDate:today,defaultPaymentMethodId:0,installments:[]})
 
   const selectedClient = clients.find(c => c.id === clientId)
   const completeness = selectedClient ? getClientCompleteness(selectedClient) : null
@@ -188,7 +190,7 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
       })
       .catch(()=>undefined)
   },[budgetId])
- useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),discount:Number(i.desconto),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),value:Number(i.preco_unitario),discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
+ useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),discount:Number(i.desconto),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),value:Number(i.preco_unitario),discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
 useEffect(()=>{if(budgetId)getBudget(budgetId).then(b=>{
   if(b.perfil_comercial){setProfile(b.perfil_comercial);setProfileConfirmed(true)}
   else{setProfileConfirmed(false);setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}
@@ -471,6 +473,12 @@ const payload=useMemo<BudgetPayload>(()=>({
     ? bankFeePercent
     : 0,
 
+  pagamento_modalidade:payment.mode||null,
+  pagamento_numero_parcelas:payment.mode?(payment.mode==='AVISTA'?1:payment.mode==='ENTRADA_SALDO'?2:payment.count):null,
+  pagamento_intervalo_dias:payment.mode?payment.intervalDays:null,
+  pagamento_primeiro_vencimento:payment.mode?payment.firstDueDate:null,
+  pagamento_parcelas:payment.mode?payment.installments.map(({numero,tipo,valor,vencimento,forma_pagamento_id})=>({numero,tipo,valor,vencimento,forma_pagamento_id})):[],
+
   itens:[
     ...products
       .filter(p=>p.productId || p.curtain?.tecidoProdutoId)
@@ -522,6 +530,7 @@ const payload=useMemo<BudgetPayload>(()=>({
   rtPercent,
   includeBankFee,
   bankFeePercent,
+  payment,
 ])
 const internalValuePreview=Math.max(
   0,
@@ -672,7 +681,12 @@ if(saleType==='DIRETA'&&!clientId){
 if(saleType==='PARCEIRO'&&!partnerId){
   setError('Selecione a revenda.')
   return
-}setSaving(true);setError('');try{const editing=budgetId!=null;const result=editing?await updateBudget(budgetId,serverPayload):await createBudget(serverPayload);setSaved(result);onSaved(result.id,editing?'updated':'created')}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setSaving(false)}}
+}
+if(!paymentPlanIsConsistent(clientTotalPreview,payment)){
+  setError('Gere ou ajuste as parcelas para que a soma corresponda exatamente ao total comercial.')
+  return
+}
+setSaving(true);setError('');try{const editing=budgetId!=null;const result=editing?await updateBudget(budgetId,serverPayload):await createBudget(serverPayload);setSaved(result);onSaved(result.id,editing?'updated':'created')}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setSaving(false)}}
  const convertToSale=async()=>{
    const sourceBudgetId=budgetId||saved?.id
 
@@ -1410,7 +1424,7 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
       <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
       <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Persistidos como itens do tipo SERVICO." count={`${services.length} itens`}><div className="service-rows">{services.map(s=><BudgetServiceRow key={s.id} service={s} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))} onCreateService={handleOpenServiceModal} createServiceValue={CREATE_SERVICE_VALUE} serviceOptions={serviceOptions}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'Instalação',details:'',quantity:1,value:0,discount:0}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
       <BudgetSection icon={<Truck size={17}/>} title="Transporte" subtitle="Ainda sem campos próprios no contrato."><div className="form-grid relationship-grid"><Field label="Frete"><input type="number" value={freight} disabled/><small>Não persistido nesta fase</small></Field><Field label="Transportadora"><input disabled placeholder="Não persistida nesta fase"/></Field></div></BudgetSection>
-      <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Não persistido pelo contrato atual."><div className="api-message">Condição, parcelas, vencimento e forma de pagamento permanecem pendentes de modelagem futura.</div></BudgetSection>
+      <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={clientTotalPreview} value={payment} onChange={setPayment}/></BudgetSection>
       <BudgetSection icon={<FileText size={17}/>} title="Observações" subtitle="Informações para o cliente e anotações internas da equipe."><div className="budget-observations-grid"><Field label="Observações para o cliente"><textarea value={observation} onChange={e=>setObservation(e.target.value)}/></Field><Field label="Observações internas"><textarea value={internalObservation} onChange={e=>setInternalObservation(e.target.value)}/></Field></div></BudgetSection>
 <BudgetSection icon={<ReceiptText size={17}/>} title="Payload da API" subtitle="O preço de produto é apenas estimativo; o servidor recalcula o valor definitivo."><pre className="payload-preview">{JSON.stringify(serverPayload,null,2)}</pre></BudgetSection>
       </div><BudgetSummary

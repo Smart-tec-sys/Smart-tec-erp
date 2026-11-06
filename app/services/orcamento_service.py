@@ -9,7 +9,8 @@ from types import SimpleNamespace
 
 from sqlalchemy import Integer, cast, func, text
 from sqlalchemy.orm import Session, joinedload
-from app.models.orcamento import OrcamentoDB, OrcamentoItemDB
+from app.models.orcamento import OrcamentoDB, OrcamentoItemDB, OrcamentoParcelaDB
+from app.models.financeiro_cadastros import FormaPagamentoDB
 from app.models.produto import ProdutoDB
 from app.tenant.context import TenantContext
 from app.tenant.isolation import require_tenant
@@ -55,6 +56,7 @@ def _item_dict(i):
     }
 
 def _dict(o):
+    parcelas = sorted(o.parcelas_pagamento or [], key=lambda parcela: parcela.numero)
     return {
         "id": o.id,
         "numero": o.numero,
@@ -114,6 +116,24 @@ def _dict(o):
             o.total_cliente_final or 0
         ),
 
+        "pagamento_modalidade": o.pagamento_modalidade,
+        "pagamento_numero_parcelas": o.pagamento_numero_parcelas,
+        "pagamento_intervalo_dias": o.pagamento_intervalo_dias,
+        "pagamento_primeiro_vencimento": o.pagamento_primeiro_vencimento,
+        "pagamento_total": float(sum((parcela.valor for parcela in parcelas), Decimal("0"))),
+        "pagamento_parcelas": [
+            {
+                "id": parcela.id,
+                "numero": parcela.numero,
+                "tipo": parcela.tipo,
+                "valor": float(parcela.valor),
+                "vencimento": parcela.vencimento,
+                "forma_pagamento_id": parcela.forma_pagamento_id,
+                "forma_pagamento_nome": parcela.forma_pagamento_nome,
+            }
+            for parcela in parcelas
+        ],
+
         "criado_em": o.criado_em,
         "atualizado_em": o.atualizado_em,
         "itens": [
@@ -123,17 +143,86 @@ def _dict(o):
     }
 
 def listar(db:Session,tenant:TenantContext):
-    q=db.query(OrcamentoDB).options(joinedload(OrcamentoDB.cliente),joinedload(OrcamentoDB.itens)).filter(OrcamentoDB.empresa_id==require_tenant(tenant)).order_by(OrcamentoDB.id.desc())
+    q=db.query(OrcamentoDB).options(joinedload(OrcamentoDB.cliente),joinedload(OrcamentoDB.itens),joinedload(OrcamentoDB.parcelas_pagamento)).filter(OrcamentoDB.empresa_id==require_tenant(tenant)).order_by(OrcamentoDB.id.desc())
     return [_dict(o) for o in q.all()]
 
 def obter(db:Session,oid:int,tenant:TenantContext):
-    o=db.query(OrcamentoDB).options(joinedload(OrcamentoDB.cliente),joinedload(OrcamentoDB.itens)).filter(OrcamentoDB.id==oid,OrcamentoDB.empresa_id==require_tenant(tenant)).first()
+    o=db.query(OrcamentoDB).options(joinedload(OrcamentoDB.cliente),joinedload(OrcamentoDB.itens),joinedload(OrcamentoDB.parcelas_pagamento)).filter(OrcamentoDB.id==oid,OrcamentoDB.empresa_id==require_tenant(tenant)).first()
     return _dict(o) if o else None
 
 def _numero(db):
     db.execute(text("SELECT pg_advisory_xact_lock(2026082601)"))
     atual=db.query(func.max(cast(OrcamentoDB.numero,Integer))).scalar() or 0
     return str(max(int(atual)+1,1001))
+
+
+def _preencher_pagamento(db, o, data, tenant_id):
+    modalidade = data.pagamento_modalidade
+    if modalidade is None and data.pagamento_parcelas is None:
+        return
+    parcelas = list(data.pagamento_parcelas or [])
+    o.parcelas_pagamento.clear()
+    if modalidade is None:
+        if parcelas:
+            raise ValueError("Informe a modalidade da condição de pagamento.")
+        o.pagamento_modalidade = None
+        o.pagamento_numero_parcelas = None
+        o.pagamento_intervalo_dias = None
+        o.pagamento_primeiro_vencimento = None
+        return
+
+    quantidade = data.pagamento_numero_parcelas
+    if quantidade is None or data.pagamento_primeiro_vencimento is None or data.pagamento_intervalo_dias is None:
+        raise ValueError("Informe parcelas, primeiro vencimento e intervalo da condição de pagamento.")
+    esperado = 1 if modalidade == "AVISTA" else 2 if modalidade == "ENTRADA_SALDO" else quantidade
+    if quantidade != esperado or len(parcelas) != esperado:
+        raise ValueError("A quantidade de parcelas não corresponde à modalidade selecionada.")
+    if modalidade == "PARCELADO" and quantidade < 2:
+        raise ValueError("Pagamento parcelado exige pelo menos duas parcelas.")
+    if [parcela.numero for parcela in parcelas] != list(range(1, esperado + 1)):
+        raise ValueError("As parcelas devem estar numeradas em sequência.")
+    tipos_esperados = (["ENTRADA", "SALDO"] if modalidade == "ENTRADA_SALDO"
+                       else ["PARCELA"] * esperado)
+    if [parcela.tipo for parcela in parcelas] != tipos_esperados:
+        raise ValueError("Os tipos das parcelas não correspondem à modalidade selecionada.")
+    if parcelas[0].vencimento != data.pagamento_primeiro_vencimento:
+        raise ValueError("O primeiro vencimento não corresponde à primeira parcela.")
+    if any(atual.vencimento < anterior.vencimento for anterior, atual in zip(parcelas, parcelas[1:])):
+        raise ValueError("Os vencimentos das parcelas devem estar em ordem crescente.")
+
+    valores = [Decimal(parcela.valor).quantize(Decimal("0.01")) for parcela in parcelas]
+    total_pagamento = sum(valores, Decimal("0"))
+    total_comercial = Decimal(str(o.total_cliente_final or 0)).quantize(Decimal("0.01"))
+    if total_pagamento != total_comercial:
+        raise ValueError("A soma das parcelas deve ser igual ao total comercial definitivo.")
+
+    formas = {}
+    for forma_id in {parcela.forma_pagamento_id for parcela in parcelas}:
+        forma = db.query(FormaPagamentoDB).filter(
+            FormaPagamentoDB.id == forma_id,
+            FormaPagamentoDB.empresa_id == tenant_id,
+            FormaPagamentoDB.ativo.is_(True),
+            FormaPagamentoDB.disponivel_para.in_(("RECEBER", "AMBOS")),
+        ).first()
+        if forma is None:
+            raise ValueError("Forma de pagamento inválida para a empresa ativa.")
+        formas[forma_id] = forma
+
+    o.pagamento_modalidade = modalidade
+    o.pagamento_numero_parcelas = quantidade
+    o.pagamento_intervalo_dias = data.pagamento_intervalo_dias
+    o.pagamento_primeiro_vencimento = data.pagamento_primeiro_vencimento
+    for parcela, valor in zip(parcelas, valores):
+        forma = formas[parcela.forma_pagamento_id]
+        o.parcelas_pagamento.append(OrcamentoParcelaDB(
+            empresa_id=tenant_id,
+            numero=parcela.numero,
+            tipo=parcela.tipo,
+            valor=valor,
+            vencimento=parcela.vencimento,
+            forma_pagamento_id=forma.id,
+            forma_pagamento_nome=forma.nome,
+        ))
 
 def _fill(db, o, data, tenant_id):
     cliente_final = {key: getattr(data, key) for key in CLIENTE_FINAL_CAMPOS}
@@ -263,6 +352,7 @@ def _fill(db, o, data, tenant_id):
     o.representante_id = data.representante_id
 
     calcular_composicao(o, data)
+    _preencher_pagamento(db, o, data, tenant_id)
 
 def criar(db,data,tenant:TenantContext):
     try:

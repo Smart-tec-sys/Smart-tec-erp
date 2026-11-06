@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func, Table
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, ForeignKeyConstraint, Integer, Numeric, String, Text, UniqueConstraint, func, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from app.database import Base
@@ -24,6 +24,7 @@ Table(
 
 class OrcamentoDB(Base):
     __tablename__ = "orcamentos"
+    __table_args__ = (UniqueConstraint("id", "empresa_id", name="uq_orcamentos_id_empresa"),)
     id = Column(Integer, primary_key=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
     numero = Column(String, nullable=False, unique=True)
@@ -119,12 +120,46 @@ class OrcamentoDB(Base):
         default=0,
     )
 
+    pagamento_modalidade = Column(String(20), nullable=True)
+    pagamento_numero_parcelas = Column(Integer, nullable=True)
+    pagamento_intervalo_dias = Column(Integer, nullable=True)
+    pagamento_primeiro_vencimento = Column(Date, nullable=True)
+
     observacao = Column(Text)
     observacao_interna = Column(Text)
     criado_em = Column(DateTime, nullable=False, server_default=func.now())
     atualizado_em = Column(DateTime, onupdate=func.now())
     cliente = relationship("ClienteDB")
     itens = relationship("OrcamentoItemDB", cascade="all, delete-orphan", back_populates="orcamento")
+    parcelas_pagamento = relationship(
+        "OrcamentoParcelaDB", cascade="all, delete-orphan", back_populates="orcamento",
+        order_by="OrcamentoParcelaDB.numero",
+    )
+
+
+class OrcamentoParcelaDB(Base):
+    __tablename__ = "orcamento_parcelas"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["orcamento_id", "empresa_id"], ["orcamentos.id", "orcamentos.empresa_id"],
+            name="fk_orcamento_parcelas_orcamento_empresa", ondelete="CASCADE",
+        ),
+        UniqueConstraint("orcamento_id", "numero", name="uq_orcamento_parcelas_numero"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
+    orcamento_id = Column(Integer, nullable=False, index=True)
+    numero = Column(Integer, nullable=False)
+    tipo = Column(String(20), nullable=False, default="PARCELA")
+    valor = Column(Numeric(14, 2), nullable=False)
+    vencimento = Column(Date, nullable=False)
+    forma_pagamento_id = Column(Integer, ForeignKey("formas_pagamento.id", ondelete="RESTRICT"), nullable=False)
+    forma_pagamento_nome = Column(String(80), nullable=False)
+    criado_em = Column(DateTime, nullable=False, server_default=func.now())
+    atualizado_em = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    orcamento = relationship("OrcamentoDB", back_populates="parcelas_pagamento")
 
 class OrcamentoItemDB(Base):
     __tablename__ = "orcamentos_itens"

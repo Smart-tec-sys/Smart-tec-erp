@@ -1,5 +1,5 @@
 import type { ApiBudget,ApiBudgetItem,ApiClient } from '../types/budget'
-import { externalBudgetNotes, externalItemObservation, finalItemPrices } from './budgetPdfVisibility'
+import { externalBudgetNotes, externalItemObservation, finalItemPrices, structuredPaymentNotes } from './budgetPdfVisibility'
 export type BudgetPdfMode='direct'|'reseller_internal'|'reseller_client'|'reseller_commercial'
 export type BudgetPdfContext={companyName?:string;companyTradeName?:string;companyDocument?:string;companyLogo?:string;warnings?:string[];client?:ApiClient;resellerName?:string;sellerName?:string;representativeName?:string}
 type Item={description:string;material:string;observation:string;measure:string;quantity:number;unit:string;color:string}
@@ -25,7 +25,9 @@ export function prepareBudgetPdfData(budget:ApiBudget,mode:BudgetPdfMode,context
  const commercialTables={CONSUMIDOR_FINAL:'Consumidor Final',VAREJO:'Varejo',DECORADOR:'Decorador'}
  const commercialTable=budget.perfil_comercial?commercialTables[budget.perfil_comercial]:'Não informada'
  const external=mode==='reseller_client'||mode==='reseller_commercial'
- const projection=external?externalBudgetNotes(budget,mode==='reseller_commercial'):{notes:budget.observacao||'',warnings:[]}
+ const paymentNotes=structuredPaymentNotes(budget)
+ const directNotes=[budget.observacao||'',paymentNotes].filter(Boolean).join('\n\n')
+ const projection=external?externalBudgetNotes(budget,mode==='reseller_commercial'):{notes:directNotes,warnings:[]}
  if(external&&budget.itens.some(item=>item.observacao_item&&item.tipo_item!=='SERVICO'&&!externalItemObservation(item)))projection.warnings.push('Observações de itens sem ambiente reconhecido foram omitidas do PDF externo. Confira os ambientes antes de enviar.')
  const common:Common={number:String(budget.numero||budget.id),date:date(budget.criado_em),validity:date(budget.validade),commercialTable:external?'':commercialTable,company:context.companyTradeName?.trim()||context.companyName?.trim()||'Smart-tec Sistemas',companyDocument:context.companyDocument?.trim()||'',companyLogo:context.companyLogo,customer,notes:projection.notes,warnings:projection.warnings}
  const itemData=(item:ApiBudgetItem):Item=>{

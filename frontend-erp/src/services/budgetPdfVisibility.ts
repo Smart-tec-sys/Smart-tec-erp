@@ -5,6 +5,20 @@ const amount = '(\\d{1,3}(?:\\.\\d{3})*,\\d{2})'
 const value = (text: string) => Number(text.replace(/\./g, '').replace(',', '.'))
 const cents = (number: number) => Math.round(number * 100)
 
+export function structuredPaymentNotes(budget: ApiBudget) {
+ const parcels = budget.pagamento_parcelas || []
+ if (!budget.pagamento_modalidade || parcels.length === 0) return ''
+ const total = parcels.reduce((sum, parcel) => sum + cents(parcel.valor), 0)
+ if (total !== cents(budget.total_cliente_final ?? budget.total_final) || parcels.some(parcel => !parcel.vencimento || !parcel.forma_pagamento_nome)) {
+  throw new Error('Condição de pagamento estruturada divergente do total do orçamento.')
+ }
+ const labels = { PARCELA: 'Parcela', ENTRADA: 'Entrada', SALDO: 'Saldo' }
+ return ['CONDIÇÃO DE PAGAMENTO:', ...parcels.map(parcel => {
+  const due = parcel.vencimento.slice(0, 10).split('-').reverse().join('/')
+  return `${labels[parcel.tipo]} ${parcel.numero}/${parcels.length} — ${due} — ${parcel.forma_pagamento_nome}: ${brl(parcel.valor)}.`
+ })].join('\n')
+}
+
 export function externalBudgetNotes(budget: ApiBudget, reseller: boolean) {
  const source = budget.observacao || ''
  const warnings: string[] = []
@@ -13,6 +27,11 @@ export function externalBudgetNotes(budget: ApiBudget, reseller: boolean) {
  const garantia = source.match(/^GARANTIA: (\d+) anos contra defeitos de fabricacao\.$/m)
  if (prazo) lines.push(`Prazo de entrega: ${prazo[1]} dias úteis após aprovação, confirmação das medidas e pagamento inicial.`)
  if (garantia) lines.push(`Garantia: ${garantia[1]} anos contra defeitos de fabricação.`)
+ const structured = structuredPaymentNotes(budget)
+ if (structured) {
+  lines.push('', structured)
+  if (!reseller) return { notes: lines.join('\n'), warnings }
+ }
  const marker = 'CONDICOES DE PAGAMENTO (alternativas, nao cumulativas):\n'
  const payment = source.includes(marker) ? source.slice(source.indexOf(marker) + marker.length) : ''
  if (!payment) {
@@ -41,11 +60,11 @@ export function externalBudgetNotes(budget: ApiBudget, reseller: boolean) {
      installments.reduce((sum, item) => sum + cents(item), 0) !== cents(card)) {
   throw new Error('Condições de pagamento divergentes dos valores salvos. Revise antes de exportar.')
  }
- lines.push('', 'CONDIÇÕES DE PAGAMENTO — alternativas, não cumulativas:',
-  `Valor comercial: ${brl(price)}.`,
-  `À vista via Pix: ${discountText}% de desconto (${brl(value(discountValue))}); total ${brl(pix)}.`,
-  `Entrada e saldo na instalação: total ${brl(pix)}; entrada ${brl(value(entryText))} e saldo ${brl(value(balanceText))}.`,
-  `Cartão ou link em ${count}x: total ${brl(card)}; parcelas ${installments.map(brl).join(' + ')}.`)
+ if (!structured) lines.push('', 'CONDIÇÕES DE PAGAMENTO — alternativas, não cumulativas:',
+   `Valor comercial: ${brl(price)}.`,
+   `À vista via Pix: ${discountText}% de desconto (${brl(value(discountValue))}); total ${brl(pix)}.`,
+   `Entrada e saldo na instalação: total ${brl(pix)}; entrada ${brl(value(entryText))} e saldo ${brl(value(balanceText))}.`,
+   `Cartão ou link em ${count}x: total ${brl(card)}; parcelas ${installments.map(brl).join(' + ')}.`)
  if (reseller) {
   const repasse = (budget.observacao_interna || '').match(new RegExp(
    `^Pix / entrada e saldo: desconto proporcional de (\\d+(?:,\\d+)?)% = R\\$ ${amount}\\. Cliente paga R\\$ ${amount}; Smart-tec recebe R\\$ ${amount}; parceira recebe R\\$ ${amount}\\.$`, 'm'))

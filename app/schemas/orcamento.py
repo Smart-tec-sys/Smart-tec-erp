@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import List, Literal, Optional
 from pydantic import BaseModel, Field, conint
 
@@ -46,6 +47,14 @@ class OrcamentoItemInput(BaseModel):
     comprimento_bastao_m: Optional[float] = Field(default=None, allow_inf_nan=False)
     comprimento_corrente_sem_fim_m: Optional[float] = Field(default=None, allow_inf_nan=False)
 
+
+class OrcamentoParcelaInput(BaseModel):
+    numero: conint(strict=True, ge=1, le=24)
+    tipo: Literal["PARCELA", "ENTRADA", "SALDO"] = "PARCELA"
+    valor: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    vencimento: date
+    forma_pagamento_id: int = Field(gt=0)
+
 class OrcamentoInput(BaseModel):
     cliente_final_nome: Optional[str] = None
     cliente_final_documento: Optional[str] = None
@@ -92,6 +101,12 @@ class OrcamentoInput(BaseModel):
         ge=0,
         lt=100,
     )
+
+    pagamento_modalidade: Optional[Literal["AVISTA", "PARCELADO", "ENTRADA_SALDO"]] = None
+    pagamento_numero_parcelas: Optional[conint(strict=True, ge=1, le=24)] = None
+    pagamento_intervalo_dias: Optional[conint(strict=True, ge=0, le=365)] = None
+    pagamento_primeiro_vencimento: Optional[date] = None
+    pagamento_parcelas: Optional[List[OrcamentoParcelaInput]] = None
 
     itens: List[OrcamentoItemInput] = Field(default_factory=list)
 

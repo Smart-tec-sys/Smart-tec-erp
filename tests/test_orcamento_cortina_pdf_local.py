@@ -32,7 +32,7 @@ def _jsonb_sqlite(tipo, compiler, **kwargs):
 def db():
     engine = create_engine("sqlite://")
     tables = [Base.metadata.tables[n] for n in (
-        "empresas", "clientes", "funcionarios", "produtos", "orcamentos", "orcamentos_itens",
+        "empresas", "clientes", "funcionarios", "produtos", "formas_pagamento", "orcamentos", "orcamentos_itens", "orcamento_parcelas",
     )]
     Base.metadata.create_all(engine, tables=tables)
     with Session(engine) as session:
