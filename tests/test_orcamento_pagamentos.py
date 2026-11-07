@@ -132,3 +132,41 @@ def test_orcamento_antigo_sem_plano_continua_compativel(db):
     result = salvar(db, entrada())
     assert result["pagamento_modalidade"] is None
     assert result["pagamento_parcelas"] == []
+
+
+def test_editar_orcamento_com_parcelas_existentes(db):
+    tenant = TenantContext(empresa_id=1)
+
+    original = salvar(db, entrada(
+        pagamento_modalidade="ENTRADA_SALDO",
+        pagamento_numero_parcelas=2,
+        pagamento_intervalo_dias=30,
+        pagamento_primeiro_vencimento=date(2026, 11, 10),
+        pagamento_parcelas=[
+            {"numero": 1, "tipo": "ENTRADA", "valor": "50.00", "vencimento": "2026-11-10", "forma_pagamento_id": 1},
+            {"numero": 2, "tipo": "SALDO", "valor": "50.00", "vencimento": "2026-12-10", "forma_pagamento_id": 1},
+        ],
+    ))
+
+    atualizado = orcamento_service.atualizar(db, original["id"], entrada(
+        itens=[
+            {"tipo_item": "SERVICO", "descricao": "Servico inicial", "quantidade": 1, "preco_unitario": 100, "subtotal": 100},
+            {"tipo_item": "SERVICO", "descricao": "Servico adicional", "quantidade": 1, "preco_unitario": 50, "subtotal": 50},
+        ],
+        pagamento_modalidade="ENTRADA_SALDO",
+        pagamento_numero_parcelas=2,
+        pagamento_intervalo_dias=30,
+        pagamento_primeiro_vencimento=date(2026, 11, 10),
+        pagamento_parcelas=[
+            {"numero": 1, "tipo": "ENTRADA", "valor": "75.00", "vencimento": "2026-11-10", "forma_pagamento_id": 1},
+            {"numero": 2, "tipo": "SALDO", "valor": "75.00", "vencimento": "2026-12-10", "forma_pagamento_id": 1},
+        ],
+    ), tenant)
+
+    reaberto = orcamento_service.obter(db, original["id"], tenant)
+
+    assert atualizado["id"] == original["id"]
+    assert reaberto["total_cliente_final"] == 150
+    assert len(reaberto["itens"]) == 2
+    assert len(reaberto["pagamento_parcelas"]) == 2
+    assert [p["valor"] for p in reaberto["pagamento_parcelas"]] == [75, 75]

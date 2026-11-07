@@ -162,6 +162,8 @@ def _preencher_pagamento(db, o, data, tenant_id):
         return
     parcelas = list(data.pagamento_parcelas or [])
     o.parcelas_pagamento.clear()
+    if o.id is not None:
+        db.flush()
     if modalidade is None:
         if parcelas:
             raise ValueError("Informe a modalidade da condição de pagamento.")
