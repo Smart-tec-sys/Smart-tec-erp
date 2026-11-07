@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { useEffect, useRef, useState } from 'react'
 import { createProduct, getProductGroups, getProductUnits, updateProductCommercial, type ProductCommercialUpdate } from '../services/api'
 import { formatCurrency, type ApiProduct } from '../types/budget'
@@ -102,7 +103,7 @@ export function ProductCommercialForm({ product, catalog, onCancel, onSaved, onB
     return <form onSubmit={e => { e.preventDefault(); void save() }} aria-busy={saving}>
         <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                <label className="modal-field">Nome<input autoFocus required value={draft.nome} onChange={e => setDraft({ ...draft, nome: e.target.value })} /></label>
+                <label className="modal-field">Nome<input className={commercialDisplayText(draft.nome, [original.codigo_interno || '', original.codigo || '', original.codigo_barras || '']) === draft.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} autoFocus required value={draft.nome} onChange={e => setDraft({ ...draft, nome: e.target.value })} /></label>
                 {textFields.map(field => <label className="modal-field" key={field}>{labels[field]}
                     {field === 'grupo_produto' || field === 'unidade_venda' ? <select required={creating} disabled={loading || Boolean(optionError)} value={draft[field]} onChange={e => setDraft({ ...draft, [field]: e.target.value })}>
                         <option value="">Não informado</option>{optionsWithCurrent(field === 'grupo_produto' ? groups : units, draft[field]).map(value => <option key={value}>{value}</option>)}

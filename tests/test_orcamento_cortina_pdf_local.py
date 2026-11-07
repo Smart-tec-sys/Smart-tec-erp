@@ -117,7 +117,7 @@ def test_salvar_reabrir_cortina_tres_tabelas(db, perfil, unitario, total):
 def test_empresa_pdf_respeita_empresa_ativa(db):
     atual = obter_empresa_atual(TenantContext(empresa_id=1), db)
     assert atual["id"] == 1 and atual["nome"] == "Empresa Ficticia - TESTE"
-    assert set(atual) == {"id", "nome", "nome_fantasia", "documento", "logo_url"}
+    assert set(atual) == {"id", "nome", "nome_fantasia", "documento", "logo_url", "perfil_publico"}
     db.get(EmpresaDB, 2).status = "INATIVA"
     db.flush()
     with pytest.raises(HTTPException) as exc:

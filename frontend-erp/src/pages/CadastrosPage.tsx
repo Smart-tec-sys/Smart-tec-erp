@@ -1,3 +1,5 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
+import { ClienteImportPanel } from '../components/ClienteImportPanel'
 import { ColumnManager } from '../components/ColumnManager'
 import { RevendasPage } from './RevendasPage'
 import { useEffect, useMemo, useState } from 'react'
@@ -292,6 +294,8 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   const [selected, setSelected] = useState<CadastroRecord | null>(null)
   const [form, setForm] = useState<CadastroPayload>(() => emptyPayload(config))
   const [saving, setSaving] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+  const [importBusy, setImportBusy] = useState(false)
 
   const [commercialPartners,setCommercialPartners]=
     useState<ApiCommercialPartner[]>([])
@@ -318,6 +322,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   useEffect(() => {
     setMode(null)
     setSelected(null)
+    setShowImport(false)
     setForm(emptyPayload(config))
     void reload()
   }, [entity])
@@ -522,15 +527,20 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
       <div className="cad-heading">
         <div>
           <p className="cad-eyebrow">CADASTROS</p>
-          <h1>{config.title}</h1>
+          <h1 className="commercial-title">{config.title}</h1>
           <p>Gerencie os dados de {config.title.toLowerCase()} da empresa.</p>
         </div>
 
-        <button className="primary-button" onClick={openCreate}>
-          <Plus size={18} />
-          {config.singular === 'Revenda' ? 'Nova' : 'Novo'} {config.singular.toLowerCase()}
-        </button>
+        <div className="cad-heading-actions">
+          {entity === 'clientes' && <button type="button" className="cad-secondary" disabled={importBusy} onClick={() => setShowImport(current => !current)}>{showImport ? 'Ocultar importação' : 'Importar GestãoClick'}</button>}
+          <button className="primary-button" disabled={importBusy} onClick={openCreate}>
+            <Plus size={18} />
+            {config.singular === 'Revenda' ? 'Nova' : 'Novo'} {config.singular.toLowerCase()}
+          </button>
+        </div>
       </div>
+
+      {entity === 'clientes' && showImport && <ClienteImportPanel onComplete={reload} onClose={() => setShowImport(false)} onBusyChange={setImportBusy} />}
 
       <div className="cad-toolbar">
         <div className="cad-search">
@@ -577,9 +587,9 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
                     {config.listColumns.map((column) => (
                       <td key={column}>
                         {column === 'nome' ? (
-                          <strong>{displayValue(item[column])}</strong>
+                          <strong>{commercialDisplayText(displayValue(item[column]))}</strong>
                         ) : (
-                          displayValue(item[column])
+                          ['cidade','cidade_uf','logradouro','bairro','razao_social'].includes(column) ? commercialDisplayText(displayValue(item[column])) : displayValue(item[column])
                         )}
                       </td>
                     ))}
@@ -634,10 +644,10 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
                       ? 'EDITAR CADASTRO'
                       : 'VISUALIZAR CADASTRO'}
                 </span>
-                <h2>
+                <h2 className={mode === 'create' ? 'commercial-title' : undefined}>
                   {mode === 'create'
                     ? `${config.singular === 'Revenda' ? 'Nova' : 'Novo'} ${config.singular.toLowerCase()}`
-                    : displayValue(selected?.nome)}
+                    : commercialDisplayText(displayValue(selected?.nome))}
                 </h2>
               </div>
 
@@ -734,6 +744,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
                       {field.required && ' *'}
                     </span>
                     <input
+                      className={['nome','razao_social','vendedor_responsavel','responsavel','logradouro','numero','complemento','bairro','cidade','cidade_uf','estado'].includes(field.key) && commercialDisplayText(String(value ?? '')) === String(value ?? '').toLocaleUpperCase('pt-BR') ? (['nome','razao_social','vendedor_responsavel','responsavel'].includes(field.key) ? 'commercial-name' : 'commercial-address') : undefined}
                       disabled={mode === 'view'}
                       type={field.type === 'number' ? 'number' : 'text'}
                       step={field.step}

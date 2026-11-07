@@ -24,7 +24,7 @@ class ClienteFinalTests(unittest.TestCase):
     def setUp(self):
         configure_mappers()
         self.engine = create_engine('sqlite:///:memory:')
-        tables = [Base.metadata.tables[name] for name in ['empresas', 'clientes', 'funcionarios', 'produtos', 'orcamentos', 'orcamentos_itens', 'pedidos', 'pedidos_itens']]
+        tables = [Base.metadata.tables[name] for name in ['empresas', 'clientes', 'funcionarios', 'produtos', 'formas_pagamento', 'orcamentos', 'orcamentos_itens', 'orcamento_parcelas', 'pedidos', 'pedidos_itens']]
         Base.metadata.create_all(self.engine, tables=tables)
         with self.engine.begin() as connection:
             connection.execute(text('CREATE TABLE parceiros_comerciais (id INTEGER PRIMARY KEY, empresa_id INTEGER, ativo BOOLEAN)'))

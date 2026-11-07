@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getOrder, getClients, getFuncionariosCadastro, getCommercialPartners, getRepresentatives, updateOrder, type ApiOrder, type OrderUpdate } from '../services/api'
@@ -58,7 +59,7 @@ export function SaleEditDialog({ order, onClose, onSaved }: Props) {
       else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus() }
     }
   }}>
-    <header><h2 id="sale-edit-title">Editar venda {order.numero || `#${order.id}`}</h2><button type="button" className="secondary-button" disabled={saving} onClick={onClose}>Cancelar</button></header>
+    <header><h2 id="sale-edit-title">{commercialDisplayText(`Editar venda ${order.numero || `#${order.id}`}`, [order.numero || ''])}</h2><button type="button" className="secondary-button" disabled={saving} onClick={onClose}>Cancelar</button></header>
     <p>Editar dados da venda. Itens, valores e orçamento de origem permanecem preservados.</p>
     {error && <div className="api-message error" role="alert">{error}</div>}
     {!original ? <p>Carregando venda...</p> : <form onSubmit={event => { event.preventDefault(); void save() }}>
@@ -76,9 +77,9 @@ export function SaleEditDialog({ order, onClose, onSaved }: Props) {
         {links.map((key, index) => (key === 'cliente_id' && saleType === 'PARCEIRO') || (key === 'parceiro_id' && saleType === 'DIRETA') ? null : <label className="field" key={key}><span>{labels[index]}</span><select required={key === 'cliente_id' || key === 'parceiro_id'} disabled={saving || !available[index]} value={draft[key] ?? ''} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value ? Number(event.target.value) : null }))}>
           <option value="">—</option>
           {draft[key] != null && !names[index].some(item => item.id === draft[key]) && <option value={draft[key]!}>{labels[index]} #{draft[key]}</option>}
-          {names[index].map(item => <option key={item.id} value={item.id}>{typeof item.nome === 'string' ? item.nome : `${labels[index]} #${item.id}`}</option>)}
+          {names[index].map(item => <option key={item.id} value={item.id}>{commercialDisplayText(typeof item.nome === 'string' ? item.nome : `${labels[index]} #${item.id}`)}</option>)}
         </select>{!available[index] && <small>Lista indisponível; vínculo preservado.</small>}</label>)}
-        {saleType === 'PARCEIRO' && finalFields.map((key, index) => <label className="field" key={key}><span>{finalLabels[index]}</span><input disabled={saving} type={key === 'cliente_final_email' ? 'email' : 'text'} value={draft[key] ?? ''} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value || null }))} /></label>)}
+        {saleType === 'PARCEIRO' && finalFields.map((key, index) => <label className="field" key={key}><span>{finalLabels[index]}</span><input className={(key === 'cliente_final_nome' || key === 'cliente_final_endereco') && commercialDisplayText(draft[key] ?? '') === (draft[key] ?? '').toLocaleUpperCase('pt-BR') ? (key === 'cliente_final_nome' ? 'commercial-name' : 'commercial-address') : undefined} disabled={saving} type={key === 'cliente_final_email' ? 'email' : 'text'} value={draft[key] ?? ''} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value || null }))} /></label>)}
         {strings.map((key, index) => <label className="field" key={key}><span>{stringLabels[index]}</span>
           {key === 'status' || key === 'perfil_comercial' ? <select disabled={saving} value={draft[key] ?? ''} onChange={event => setDraft(current => ({ ...current, [key]: event.target.value }))}>
             {!['ABERTO', 'CONCLUIDO', 'CANCELADO', 'FATURADO', 'VAREJO', 'DECORADOR', 'CONSUMIDOR_FINAL'].includes(draft[key] || '') && <option value={draft[key] ?? ''}>{draft[key] || '—'}</option>}

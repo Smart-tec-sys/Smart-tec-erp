@@ -1,0 +1,24 @@
+.cliente-import { display: grid; gap: 16px; padding: 22px; border: 1px solid #dfe3e8; border-radius: 14px; background: #fff; min-width: 0; }
+.cliente-import h2, .cliente-import h3, .cliente-import p { margin: 0; }
+.cliente-import p { color: #475467; font-size: 13px; line-height: 1.55; }
+.cliente-import-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.cliente-import-heading h2 { margin-bottom: 8px; font-size: 20px; }
+.cliente-import-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; padding: 18px; border: 1px solid #dfe3e8; border-radius: 10px; min-width: 0; }
+.cliente-import-options legend { padding: 0 8px; font-size: 14px; font-weight: 700; }
+.cliente-import-options label { display: grid; gap: 7px; font-size: 12px; color: #344054; }
+.cliente-import-options input, .cliente-import-options select { min-height: 40px; width: 100%; padding: 7px 10px; border: 1px solid #d0d5dd; border-radius: 7px; font: inherit; background: #fff; min-width: 0; box-sizing: border-box; }
+.cliente-import-options p { grid-column: 1 / -1; }
+.cliente-import-file { grid-column: 1 / -1; }
+.cliente-import-scroll { overflow: auto; max-height: 440px; border: 1px solid #e3e7ec; border-radius: 8px; }
+.cliente-import-scroll td { max-width: 330px; min-width: 90px; white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.cliente-import-scroll caption { text-align: left; padding: 10px 14px; font-size: 13px; font-weight: 700; }
+.cliente-import-summary { display: grid; gap: 12px; padding: 16px; background: #f8f9fb; border: 1px solid #e3e7ec; border-radius: 10px; }
+.cliente-import-accept { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.5; }
+.cliente-import-accept input { margin-top: 4px; }
+.cliente-import-pagination { display: flex; align-items: center; justify-content: center; gap: 15px; font-size: 13px; }
+.cliente-import button { width: fit-content; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.cad-heading-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.cliente-import-original { grid-column: 1 / -1; max-height: 220px; }
+.cliente-import-scroll td small { display: block; margin-top: 4px; color: #667085; }
+.cliente-import-summary legend { font-size: 14px; font-weight: 700; }

@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { curtainKey } from "../types/budget"
 import { technicalItemData } from '../utils/technicalSimulation'
 import { ZeroNumberInput } from '../components/ZeroNumberInput'
@@ -18,7 +19,7 @@ import { roloKey, type RoloState } from '../types/rolo'
 import { doubleVisionKey, type DoubleVisionState } from '../types/double_vision'
 
 function Section({ title, subtitle, icon, children }: { title: string; subtitle: string; icon: ReactNode; children: ReactNode }) {
-  return <section className="form-section panel"><div className="section-title"><div className="section-icon">{icon}</div><div><h2>{title}</h2><p>{subtitle}</p></div></div>{children}</section>
+  return <section className="form-section panel"><div className="section-title"><div className="section-icon">{icon}</div><div><h2 className="commercial-title">{title}</h2><p>{subtitle}</p></div></div>{children}</section>
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="field"><span>{label}</span>{children}</label>
@@ -266,7 +267,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
   if (loading) return <div className="panel loading-state">Carregando nova venda...</div>
   if (loadError) return <div className="panel"><button className="back-button" onClick={onBack}>← Voltar para Vendas</button><p className="api-message error" role="alert">{loadError}</p></div>
   return <div className="new-budget-page" onFocusCapture={selectZeroOnFocus}>
-    <section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack} disabled={saving}><ArrowLeft size={15} /> Voltar para Vendas</button><p className="eyebrow">VENDA COMERCIAL</p><h1>Nova venda <span className="draft-badge">Em aberto</span></h1><p className="heading-subtitle">Preencha os dados comerciais, os itens e confira o resumo antes de salvar.</p></div><div className="budget-number"><span>Número da venda</span><strong>Gerado ao salvar</strong></div></section>
+    <section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack} disabled={saving}><ArrowLeft size={15} /> Voltar para Vendas</button><p className="eyebrow">VENDA COMERCIAL</p><h1 className="commercial-title">Nova venda <span className="draft-badge">Em aberto</span></h1><p className="heading-subtitle">Preencha os dados comerciais, os itens e confira o resumo antes de salvar.</p></div><div className="budget-number"><span>Número da venda</span><strong>Gerado ao salvar</strong></div></section>
     {warning && <div className="api-message" role="status">{warning}</div>}
     {error && <div className="api-message error" role="alert">{error}</div>}
     <div className={`new-budget-layout ${collapsed ? 'summary-collapsed' : ''}`}>
@@ -277,7 +278,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
             <Field label="Vendedor Smart-tec">
               <select value={sellerId ?? ''} onChange={e => setSellerId(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">Sem vendedor definido</option>
-                {sellers.map(s => <option key={s.id} value={s.id}>{String(s.nome ?? `Funcionário ${s.id}`)}</option>)}
+                {sellers.map(s => <option key={s.id} value={s.id}>{commercialDisplayText(String(s.nome ?? `Funcionário ${s.id}`))}</option>)}
               </select>
             </Field>
 
@@ -294,7 +295,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                   <div className="product-search-box">
                     <select value={clientId ?? 0} onChange={e => handleClientSelectChange(e.target.value)}>
                       <option value={0}>Selecione o cliente</option>
-                      {clients.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                      {clients.map(c => <option key={c.id} value={c.id}>{commercialDisplayText(c.nome)}</option>)}
                       <option value={CREATE_CLIENT_VALUE}>+ Cadastrar novo cliente</option>
                     </select>
                   </div>
@@ -322,7 +323,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                     <Field label="Representante">
                       <select value={representativeId ?? ''} onChange={e => handleRepresentativeSelect(e.target.value)}>
                         <option value="">Selecione o representante</option>
-                        {representatives.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                        {representatives.map(r => <option key={r.id} value={r.id}>{commercialDisplayText(r.nome)}</option>)}
                         <option value={CREATE_COMMERCIAL_VALUE}>+ Cadastrar novo representante</option>
                       </select>
                     </Field>
@@ -383,7 +384,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                     setPartnerPercent(Number(partners.find(p => p.id === id)?.percentual_padrao ?? 0))
                   }}>
                     <option value="">Selecione a revenda</option>
-                    {partners.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                    {partners.map(p => <option key={p.id} value={p.id}>{commercialDisplayText(p.nome)}</option>)}
                     <option value={CREATE_COMMERCIAL_VALUE}>+ Cadastrar nova revenda</option>
                   </select>
                 </Field>
@@ -413,7 +414,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                     <Field label="Representante">
                       <select value={representativeId ?? ''} onChange={e => handleRepresentativeSelect(e.target.value)}>
                         <option value="">Selecione o representante</option>
-                        {representatives.map(r => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                        {representatives.map(r => <option key={r.id} value={r.id}>{commercialDisplayText(r.nome)}</option>)}
                         <option value={CREATE_COMMERCIAL_VALUE}>+ Cadastrar novo representante</option>
                       </select>
                     </Field>
@@ -461,7 +462,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                 )}
 
                 <Field label="Cliente">
-                  <input type="text" placeholder="Nome ou referência" value={partnerFinalClient} onChange={e => setPartnerFinalClient(e.target.value)} />
+                  <input className={commercialDisplayText(partnerFinalClient) === partnerFinalClient.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} type="text" placeholder="Nome ou referência" value={partnerFinalClient} onChange={e => setPartnerFinalClient(e.target.value)} />
                 </Field>
 
                 <Field label="Dados completos?">
@@ -483,7 +484,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                       <input type="email" value={partnerFinalEmail} onChange={e => setPartnerFinalEmail(e.target.value)} />
                     </Field>
                     <Field label="Endereço">
-                      <input type="text" value={partnerFinalAddress} onChange={e => setPartnerFinalAddress(e.target.value)} />
+                      <input className={commercialDisplayText(partnerFinalAddress) === partnerFinalAddress.toLocaleUpperCase('pt-BR') ? 'commercial-address' : undefined} type="text" value={partnerFinalAddress} onChange={e => setPartnerFinalAddress(e.target.value)} />
                     </Field>
                   </>
                 )}
@@ -492,10 +493,10 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
                   <div style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10, opacity: .65 }}>
                     Prévia do cabeçalho da venda
                   </div>
-                  {partnerFinalClient.trim() && <div style={{ marginBottom: 6 }}><strong>Cliente:</strong>{' '}{partnerFinalClient}</div>}
-                  {showPartnerRepresentative && representativeId && <div style={{ marginBottom: 6 }}><strong>Representante:</strong>{' '}{representatives.find(r => r.id === representativeId)?.nome ?? `Representante #${representativeId}`}</div>}
-                  {sellerId && <div style={{ marginBottom: 6 }}><strong>Vendedor Smart-tec:</strong>{' '}{String(sellers.find(s => s.id === sellerId)?.nome ?? '')}</div>}
-                  {partnerId && <div><strong>Revenda:</strong>{' '}{partners.find(p => p.id === partnerId)?.nome ?? ''}</div>}
+                  {partnerFinalClient.trim() && <div style={{ marginBottom: 6 }}><strong>Cliente:</strong>{' '}{commercialDisplayText(partnerFinalClient)}</div>}
+                  {showPartnerRepresentative && representativeId && <div style={{ marginBottom: 6 }}><strong>Representante:</strong>{' '}{commercialDisplayText(representatives.find(r => r.id === representativeId)?.nome ?? `Representante #${representativeId}`)}</div>}
+                  {sellerId && <div style={{ marginBottom: 6 }}><strong>Vendedor Smart-tec:</strong>{' '}{commercialDisplayText(String(sellers.find(s => s.id === sellerId)?.nome ?? ''))}</div>}
+                  {partnerId && <div><strong>Revenda:</strong>{' '}{commercialDisplayText(partners.find(p => p.id === partnerId)?.nome ?? '')}</div>}
                   {!partnerFinalClient.trim() && !representativeId && !partnerId && <span style={{ opacity: .6 }}>Selecione a revenda para visualizar.</span>}
                 </div>
               </>
@@ -517,7 +518,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
     {showClientModal && <div className="modal-overlay" onClick={handleCloseClientModal}>
       <div className="modal-container" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h3><UserPlus size={16} /> Cadastrar novo cliente</h3>
+          <h3 className="commercial-title"><UserPlus size={16} /> Cadastrar novo cliente</h3>
           <button type="button" className="modal-close" onClick={handleCloseClientModal}><X size={16} /></button>
         </div>
         <form className="modal-form" onSubmit={e => { e.preventDefault(); void handleCreateClient() }}>
@@ -531,7 +532,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
           </div>
           <div className="modal-field">
             <label>Nome *</label>
-            <input type="text" value={clientForm.nome} onChange={e => { setClientForm(current => ({ ...current, nome: e.target.value })); setClientModalError('') }} placeholder="Nome do cliente" autoFocus disabled={clientModalSaving} />
+            <input className={commercialDisplayText(clientForm.nome) === clientForm.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} type="text" value={clientForm.nome} onChange={e => { setClientForm(current => ({ ...current, nome: e.target.value })); setClientModalError('') }} placeholder="Nome do cliente" autoFocus disabled={clientModalSaving} />
           </div>
           {clientModalError && <div className="modal-error" role="alert">{clientModalError}</div>}
           <div className="modal-actions">

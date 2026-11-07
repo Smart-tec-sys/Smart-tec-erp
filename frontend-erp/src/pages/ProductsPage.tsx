@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { ColumnManager } from '../components/ColumnManager'
 import { Search, Filter, ChevronLeft, ChevronRight, X, Package, Eye, ChevronDown, ChevronUp } from 'lucide-react'
 import { useEffect, useState, useMemo } from 'react'
@@ -99,7 +100,7 @@ export function ProductsPage() {
             <section className="budget-page-heading page-heading">
                 <div>
                     <p className="eyebrow">CADASTROS</p>
-                    <h1>Produtos</h1>
+                    <h1 className="commercial-title">Produtos</h1>
                     <p className="heading-subtitle">Dados carregados diretamente do FastAPI.</p>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -207,7 +208,7 @@ export function ProductsPage() {
                                             <tr key={product.id} onClick={() => openDetail(product)} style={{ cursor: 'pointer' }}>
                                                 <td><strong>{product.id}</strong></td>
                                                 <td>
-                                                    <strong className="products-name" title={product.nome}>{product.nome}</strong>
+                                                    <strong className="products-name" title={product.nome}>{commercialDisplayText(product.nome, [product.codigo_interno || '', product.codigo || '', product.codigo_barras || ''])}</strong>
                                                     {product.codigo_interno && <small>Cód: {product.codigo_interno}</small>}
                                                 </td>
                                                 <td>{product.grupo_produto || product.grupo_tecnico || '-'}</td>
@@ -264,7 +265,7 @@ export function ProductsPage() {
 
             {creating && <div className="modal-overlay" onClick={closeCreate} role="dialog" aria-modal="true" aria-labelledby="product-create-title">
                 <div className="modal-container" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-                    <div className="modal-header"><h3 id="product-create-title">Novo produto</h3><button className="modal-close" disabled={savingProduct} onClick={closeCreate} aria-label="Fechar"><X size={18} /></button></div>
+                    <div className="modal-header"><h3 className="commercial-title" id="product-create-title">Novo produto</h3><button className="modal-close" disabled={savingProduct} onClick={closeCreate} aria-label="Fechar"><X size={18} /></button></div>
                     <div className="modal-form" style={{ padding: '24px' }}><ProductCommercialForm catalog={products} onBusy={setSavingProduct} onCancel={closeCreate} onSaved={created => {
                         setProducts(rows => [created, ...rows.filter(row => row.id !== created.id)].sort((a, b) => b.id - a.id))
                         setCreating(false)
@@ -277,7 +278,7 @@ export function ProductsPage() {
                 <div className="modal-overlay" onClick={closeDetail} role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
                     <div className="modal-container" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
                         <div className="modal-header">
-                            <h3 id="product-detail-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <h3 className="commercial-title" id="product-detail-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Package size={18} />
                                 Detalhes do Produto
                             </h3>
@@ -368,7 +369,7 @@ export function ProductsPage() {
                                         </div>
                                         <div className="modal-field">
                                             <label>Nome</label>
-                                            <input value={selectedProduct.nome} readOnly />
+                                            <input className={commercialDisplayText(selectedProduct.nome, [selectedProduct.codigo_interno || '', selectedProduct.codigo || '']) === selectedProduct.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={selectedProduct.nome} readOnly />
                                         </div>
                                         <div className="modal-field">
                                             <label>Código Interno</label>
@@ -549,7 +550,7 @@ export function ProductsPage() {
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                                         <div className="modal-field">
                                             <label>Nome Fornecedor</label>
-                                            <input value={selectedProduct.nome_fornecedor || '-'} readOnly />
+                                            <input className={commercialDisplayText(selectedProduct.nome_fornecedor || '') === (selectedProduct.nome_fornecedor || '').toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={selectedProduct.nome_fornecedor || '-'} readOnly />
                                         </div>
                                         <div className="modal-field">
                                             <label>Código Fornecedor</label>

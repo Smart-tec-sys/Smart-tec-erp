@@ -2,7 +2,7 @@ import type { ApiBudget,ApiBudgetItem,ApiClient } from '../types/budget'
 import { externalBudgetNotes, externalItemObservation, finalItemPrices, structuredPaymentNotes, assertCustomerTextSafe } from './budgetPdfVisibility'
 export type BudgetPdfMode='direct'|'reseller_internal'|'reseller_client'|'reseller_commercial'
 export type BudgetPdfContext={companyName?:string;companyTradeName?:string;companyDocument?:string;companyLogo?:string;companyAddress?:string;companyPhones?:string[];companyEmail?:string;companySite?:string;warnings?:string[];client?:ApiClient;resellerName?:string;sellerName?:string;representativeName?:string}
-type Item={description:string;material:string;observation:string;measure:string;quantity:number;unit:string;color:string}
+type Item={description:string;internalCode:string;material:string;observation:string;measure:string;quantity:number;unit:string;color:string}
 type PricedItem=Item&{unitPrice:number|null;discount:number|null;subtotal:number|null}
 type Common={number:string;date:string;validity:string;commercialTable:string;company:string;companyDocument:string;companyLegalName:string;companyLogo?:string;companyAddress:string;companyPhones:string[];companyEmail:string;companySite:string;companySeller:string;customer:{name:string;document:string;phone:string;email:string;address:string};notes:string;warnings:string[]}
 export type BudgetPdfData=Common&(
@@ -35,7 +35,7 @@ export function prepareBudgetPdfData(budget:ApiBudget,mode:BudgetPdfMode,context
   const curtain=item.modelo_tecnico?.trim().toUpperCase()==='CORTINA'?item.dados_tecnicos?.cortina:undefined
   const models:Record<string,string>={WAVE:'Wave',FRANZIDO:'Franzido',PREGA_MACHO:'Prega macho',PREGA_FEMEA:'Prega fêmea'}
   const model=curtain?.modeloPrega?models[curtain.modeloPrega]:undefined
-  return {description:model&&!item.descricao.toLocaleLowerCase('pt-BR').includes(model.toLocaleLowerCase('pt-BR'))?`${item.descricao} — ${model}`:item.descricao,
+  return {internalCode:item.codigo_interno??'',description:model&&!item.descricao.toLocaleLowerCase('pt-BR').includes(model.toLocaleLowerCase('pt-BR'))?`${item.descricao} — ${model}`:item.descricao,
    material:('material' in item&&typeof item.material==='string'?item.material.trim():'')||curtain?.tecido||'',
    observation:external?externalItemObservation(item):item.observacao_item||'',measure:measure(item),quantity:quantity(item.quantidade),
    unit:curtain?'UN':item.unidade||'—',color:item.cor||curtain?.cor||''}

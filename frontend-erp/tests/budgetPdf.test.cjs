@@ -28,10 +28,11 @@ registerHooks({
  const authUrl=pathToFileURL(path.join(__dirname,'../src/services/auth.ts')).href
  compiled.set(apiUrl,`const m=globalThis.__budgetPdfMocks; export const apiConfig={baseUrl:'https://api.example.invalid'}; export const {getBudget,getClients,getCommercialPartners,getFuncionariosCadastro,getRepresentatives,request,getCurrentCompany}=m;`)
  compiled.set(authUrl,`const m=globalThis.__budgetPdfMocks; export const {getAuthMe,getEmpresaId,getApiAuthHeaders}=m; export let authEnabled=true; export function setAuthEnabled(value){authEnabled=value}`)
- for(const file of ['src/services/budgetPdfVisibility.ts','src/services/budgetPdfData.ts','src/services/budgetPdf.ts','src/components/budgetPdf/BudgetPdfDocument.tsx','src/components/budgetPdf/budgetPdfStyles.ts']){
+ for(const file of ['src/utils/commercialDisplay.ts','src/services/budgetPdfVisibility.ts','src/services/budgetPdfData.ts','src/services/budgetPdf.ts','src/components/budgetPdf/BudgetPdfDocument.tsx','src/components/budgetPdf/budgetPdfStyles.ts']){
   const filename=path.join(__dirname,'..',file)
   compiled.set(pathToFileURL(filename).href,(await transformWithOxc(fs.readFileSync(filename,'utf8'),filename,{jsx:{runtime:'automatic'}})).code)
  }
+ const {commercialDisplayText}=await import(pathToFileURL(path.join(__dirname,'../src/utils/commercialDisplay.ts')))
  const React=require('react'),{renderToStaticMarkup}=require('react-dom/server')
  const {prepareBudgetPdfData,budgetFinancialVisibility,budgetPdfFilename}=await import(pathToFileURL(path.join(__dirname,'../src/services/budgetPdfData.ts')))
  const {finalItemPrices}=await import(pathToFileURL(path.join(__dirname,'../src/services/budgetPdfVisibility.ts')))
@@ -43,6 +44,28 @@ registerHooks({
  const logo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII='
  const context={companyName:'Razão Social Teste',companyTradeName:'Empresa de teste',companyDocument:'Documento sintético da empresa',companyLogo:logo,companyAddress:'Rua Sintética, 123, Centro, Cidade Teste, SP, 01000-000',companyPhones:['(11) 3333-4444','(11) 99999-8888'],companyEmail:'vendas@example.invalid',companySite:'https://example.invalid',resellerName:'Revenda Teste',sellerName:'André',representativeName:'Representante Teste'}
  const text=node=>{if(node==null||typeof node==='boolean')return '';if(typeof node==='string'||typeof node==='number')return String(node);if(Array.isArray(node))return node.map(text).join(' ');if(typeof node.type==='function')return text(node.type(node.props));return text(node.props?.children)}
+ const containsText=(source,value)=>source.toLocaleUpperCase('pt-BR').includes(value.toLocaleUpperCase('pt-BR'))
+ assert.equal(commercialDisplayText('Razão social e João'),'RAZÃO SOCIAL E JOÃO')
+ assert.equal(commercialDisplayText('Persiana rtS-100 e ab.Cd/42'),'PERSIANA rtS-100 E ab.Cd/42')
+ assert.equal(commercialDisplayText('Cortina rt sob medida rt',['rt']),'CORTINA rt SOB MEDIDA rt')
+ assert.equal(commercialDisplayText('Produto ab[Cd].(xy) especial',['ab[Cd].(xy)']),'PRODUTO ab[Cd].(xy) ESPECIAL')
+ const longDescription='Descrição extensa de fabricação e uso. '.repeat(12)
+ assert.equal(commercialDisplayText(longDescription),longDescription)
+ assert.equal(commercialDisplayText('Observação longa.\nSegunda linha.'),'Observação longa.\nSegunda linha.')
+ const mixedCaseBudget={...budget,cliente_final_nome:'Cliente João',cliente_final_email:'Cliente.Joao@Example.invalid',
+  cliente_final_endereco:'Rua das Flores, 123',itens:[{...item,descricao:'Persiana rtS-100 sob medida',codigo_interno:'rtS-100'}]}
+ const mixedCaseContext={...context,companyName:'Empresa São João Ltda',companyEmail:'Comercial@Example.invalid',companySite:'https://example.invalid/Catalogo/AbC'}
+ const mixedCaseSource=JSON.stringify(mixedCaseBudget)
+ const mixedCaseData=prepareBudgetPdfData(mixedCaseBudget,'reseller_client',mixedCaseContext)
+ const mixedCaseProjection=JSON.stringify(mixedCaseData)
+ const mixedCaseText=text(BudgetPdfDocument({data:mixedCaseData})).replace(/\s+/g,' ')
+ for(const expected of ['EMPRESA SÃO JOÃO LTDA','CLIENTE JOÃO','RUA DAS FLORES, 123','PERSIANA rtS-100 SOB MEDIDA','Comercial@Example.invalid','Cliente.Joao@Example.invalid','https://example.invalid/Catalogo/AbC'])assert.ok(mixedCaseText.includes(expected),expected)
+ assert.equal(mixedCaseData.products[0].description,'Persiana rtS-100 sob medida')
+ assert.equal(mixedCaseData.products[0].internalCode,'rtS-100')
+ assert.equal(JSON.stringify(mixedCaseData),mixedCaseProjection)
+ assert.equal(JSON.stringify(mixedCaseBudget),mixedCaseSource)
+ const unchangedLong=prepareBudgetPdfData({...mixedCaseBudget,itens:[{...item,descricao:longDescription}]},'reseller_client',mixedCaseContext)
+ assert.ok(text(BudgetPdfDocument({data:unchangedLong})).includes(longDescription))
  const frozen=JSON.stringify(budget)
  const customer=prepareBudgetPdfData(budget,'reseller_client',context),serialized=JSON.stringify(customer)
  for(const field of ['valor_parceiro','valor_rt','valor_taxa_bancaria','percentual_parceiro','percentual_rt','taxa_bancaria_percentual','smartTotal','representative','seller','base_protegida','dados_tecnicos','observacao_interna','internalNotes','technicalNotes'])assert.ok(!serialized.includes(`"${field}":`),field)
@@ -57,14 +80,14 @@ registerHooks({
  assert.equal(prepareBudgetPdfData(budget,'reseller_client',{companyName:'Somente razão social'}).company,'Somente razão social')
  assert.equal(prepareBudgetPdfData(budget,'reseller_client').companyLogo,undefined)
  const customerText=text(React.createElement(BudgetPdfDocument,{data:customer}))
- for(const value of ['Valor-base Smart-tec','Acréscimo parceiro / revenda','Taxa bancária','Tabela comercial:','1.211,11','234,56','67,89','45,67','321,45','987,65','SEGREDO','NAO EXPOR'])assert.ok(!customerText.includes(value),value)
+ for(const value of ['Valor-base Smart-tec','Acréscimo parceiro / revenda','Taxa bancária','Tabela comercial:','1.211,11','234,56','67,89','45,67','321,45','987,65','SEGREDO','NAO EXPOR'])assert.ok(!containsText(customerText,value),value)
  assert.doesNotMatch(customerText,/\bRT\b/)
- for(const expected of ['Razão Social Teste',context.companyAddress,...context.companyPhones,context.companyEmail,context.companySite,'Vendedor: André'])assert.ok(customerText.replace(/\s+/g,' ').includes(expected),expected)
+ for(const expected of ['RAZÃO SOCIAL TESTE',context.companyAddress.toLocaleUpperCase('pt-BR'),...context.companyPhones,context.companyEmail,context.companySite,'VENDEDOR: ANDRÉ'])assert.ok(customerText.replace(/\s+/g,' ').includes(expected),expected)
  const headerTree=BudgetPdfDocument({data:customer}).props.children.props.children[0]
  assert.equal(headerTree.props.children.length,3)
  assert.equal(headerTree.props.children[0].props.children.type,'IMAGE')
- assert.ok(text(headerTree.props.children[1]).includes('Razão Social Teste'))
- assert.ok(text(headerTree.props.children[2]).replace(/\s+/g,' ').includes('Vendedor: André'))
+ assert.ok(text(headerTree.props.children[1]).includes('RAZÃO SOCIAL TESTE'))
+ assert.ok(text(headerTree.props.children[2]).replace(/\s+/g,' ').includes('VENDEDOR: ANDRÉ'))
  const noOptional=prepareBudgetPdfData(budget,'reseller_client',{companyName:'Empresa sem dados opcionais'})
  assert.equal(noOptional.companyDocument,'');assert.equal(noOptional.companyAddress,'');assert.deepEqual(noOptional.companyPhones,[])
  assert.equal(noOptional.companyEmail,'');assert.equal(noOptional.companySite,'');assert.equal(noOptional.companySeller,'')
@@ -73,7 +96,7 @@ registerHooks({
  assert.equal(customer.products[0].subtotal+customer.services[0].subtotal,1559.23)
  assert.ok(customer.warnings.some(warning=>warning.includes('Observações livres')))
  const internal=prepareBudgetPdfData(budget,'reseller_internal',context),internalText=text(React.createElement(BudgetPdfDocument,{data:internal}))
- for(const label of ['Revenda Teste','André','Representante Teste','Valor-base Smart-tec','Acréscimo parceiro / revenda','RT','Taxa bancária','Total cliente final','SEGREDO INTERNO'])assert.ok(internalText.includes(label),label)
+ for(const label of ['REVENDA TESTE','ANDRÉ','REPRESENTANTE TESTE','VALOR-BASE SMART-TEC','ACRÉSCIMO PARCEIRO / REVENDA','RT','TAXA BANCÁRIA','TOTAL CLIENTE FINAL','SEGREDO INTERNO'])assert.ok(internalText.includes(label),label)
  const excluded=text(React.createElement(BudgetPdfDocument,{data:prepareBudgetPdfData({...budget,incluir_rt:false,incluir_taxa_bancaria:false},'reseller_internal')}))
  assert.doesNotMatch(excluded,/\bRT\b/);assert.ok(!excluded.includes('Taxa bancária'))
  const corrected={...budget,total:2854.21,total_final:2854.21,percentual_parceiro:50,valor_parceiro:1427.11,
@@ -83,7 +106,7 @@ registerHooks({
  const correctedClient=prepareBudgetPdfData(corrected,'reseller_client',context)
  const correctedClientText=text(React.createElement(BudgetPdfDocument,{data:correctedClient}))
  for(const forbidden of ['50%','7,2%','1.427,11','2.854,21','308,26','2.711,50','1.355,75','Lidia','Smart-tec','Base Smart-tec','Tabela comercial:','internalNotes','resellerPercent']){
-  assert.ok(!correctedClientText.includes(forbidden),forbidden)
+  assert.ok(!containsText(correctedClientText,forbidden),forbidden)
   assert.ok(!JSON.stringify(correctedClient).includes(forbidden),forbidden)
  }
  for(const expected of ['4.281,32','4.067,25','4.589,58','1.529,86','2.033,63','2.033,62','5%','12 dias úteis','2 anos'])assert.ok(correctedClientText.includes(expected),expected)
@@ -91,12 +114,12 @@ registerHooks({
  for(const expected of ['50%','7,2%','1.427,11','2.854,21','308,26','2.711,50','1.355,75','nao lucro'])assert.ok(correctedInternalText.includes(expected),expected)
  const reseller=prepareBudgetPdfData(corrected,'reseller_commercial',context)
  const resellerText=text(React.createElement(BudgetPdfDocument,{data:reseller}))
- for(const expected of ['Revenda Teste','50%','2.854,21','1.427,11','4.281,32','2.711,50','1.355,75','4.589,58','308,26'])assert.ok(resellerText.includes(expected),expected)
+ for(const expected of ['REVENDA TESTE','50%','2.854,21','1.427,11','4.281,32','2.711,50','1.355,75','4.589,58','308,26'])assert.ok(resellerText.includes(expected),expected)
  for(const mode of ['reseller_client','reseller_commercial']){
   const projection=prepareBudgetPdfData(corrected,mode,context)
   const rendered=text(React.createElement(BudgetPdfDocument,{data:projection}))
   for(const forbidden of ['Costureira','rodizios','margem','lucro','SEGREDO FABRICA','fator 2,5','barra dupla','entretela','Instrucao de fabricacao','internalNotes','technicalNotes']){
-   assert.ok(!rendered.includes(forbidden),`${mode}: ${forbidden}`)
+   assert.ok(!containsText(rendered,forbidden),`${mode}: ${forbidden}`)
    assert.ok(!JSON.stringify(projection).includes(forbidden),`${mode} DTO: ${forbidden}`)
   }
  }
@@ -121,16 +144,16 @@ registerHooks({
  for(const [perfil,label] of [['CONSUMIDOR_FINAL','Consumidor Final'],['VAREJO','Varejo'],['DECORADOR','Decorador']]){
   const data=prepareBudgetPdfData({...direct,perfil_comercial:perfil},'direct',context)
   assert.equal(data.commercialTable,label)
-  assert.ok(text(React.createElement(BudgetPdfDocument,{data})).replace(/\s+/g,' ').includes(`Tabela comercial: ${label}`))
+  assert.ok(text(React.createElement(BudgetPdfDocument,{data})).replace(/\s+/g,' ').includes(`TABELA COMERCIAL: ${label.toLocaleUpperCase('pt-BR')}`))
  }
  assert.equal(prepareBudgetPdfData(direct,'direct',context).commercialTable,'Não informada')
- assert.match(directText,/Cliente direto teste/);assert.match(directText,/Subtotal/);assert.ok(!directText.includes('Taxa bancária'));assert.ok(!directText.includes('SERVIÇOS'))
- assert.match(directText,/Screen sintético/);assert.match(directText,/Nome \/ assinatura/)
- assert.match(directText,/Data: ____ \/ ____ \/ ______/)
+ assert.match(directText,/CLIENTE DIRETO TESTE/);assert.match(directText,/SUBTOTAL/);assert.ok(!containsText(directText,'Taxa bancária'));assert.ok(!containsText(directText,'SERVIÇOS'))
+ assert.match(directText,/Screen sintético/);assert.match(directText,/NOME \/ ASSINATURA/)
+ assert.match(directText,/DATA: ____ \/ ____ \/ ______/)
  assert.match(internalText,/DOCUMENTO INTERNO - NÃO ENVIAR AO CLIENTE/)
- assert.ok(!internalText.includes('DOCUMENTO INTERNO DA REVENDA'))
- assert.ok(!directText.includes('DOCUMENTO INTERNO - NÃO ENVIAR AO CLIENTE'))
- assert.ok(!customerText.includes('DOCUMENTO INTERNO - NÃO ENVIAR AO CLIENTE'))
+ assert.ok(!containsText(internalText,'DOCUMENTO INTERNO DA REVENDA'))
+ assert.ok(!containsText(directText,'DOCUMENTO INTERNO - NÃO ENVIAR AO CLIENTE'))
+ assert.ok(!containsText(customerText,'DOCUMENTO INTERNO - NÃO ENVIAR AO CLIENTE'))
  const tables=node=>{
   if(node==null||typeof node!=='object')return []
   if(Array.isArray(node))return node.flatMap(tables)
@@ -145,16 +168,16 @@ registerHooks({
   const serviceTable=tables(tree).find(node=>node.props.items===data.services)
   assert.ok(productTable&&serviceTable)
   const serviceText=text(serviceTable),productText=text(productTable)
-  for(const forbidden of ['Material / tecido','Cor:','Medidas','MATERIAL EXCLUSIVO DO SERVICO','COR EXCLUSIVA DO SERVICO','9,123','8,456'])assert.ok(!serviceText.includes(forbidden),`${mode}: ${forbidden}`)
-  assert.match(serviceText,/Serviço sintético/);assert.equal(serviceText.includes('Observação do serviço'),mode!=='reseller_client');assert.match(serviceText,/2\s+UN/)
+  for(const forbidden of ['Material / tecido','Cor:','Medidas','MATERIAL EXCLUSIVO DO SERVICO','COR EXCLUSIVA DO SERVICO','9,123','8,456'])assert.ok(!containsText(serviceText,forbidden),`${mode}: ${forbidden}`)
+  assert.match(serviceText,/SERVIÇO SINTÉTICO/);assert.equal(serviceText.includes('Observação do serviço'),mode!=='reseller_client');assert.match(serviceText,/2\s+UN/)
   assert.match(productText,/Material \/ tecido:\s+Screen sintético/);assert.match(productText,/Cor:\s+Cinza/);assert.match(productText,/2,5 x 1,7 m/)
   if(mode==='reseller_client'){
-   for(const forbidden of ['Valor unit.','Desconto','321,45','987,65'])assert.ok(!serviceText.includes(forbidden))
+   for(const forbidden of ['VALOR UNIT.','DESCONTO','321,45','987,65'])assert.ok(!containsText(serviceText,forbidden))
   }else{
    assert.match(serviceText,/321,45/);assert.match(serviceText,/12,34/);assert.match(serviceText,/987,65/)
    const noServiceDiscount=prepareBudgetPdfData({...source,itens:source.itens.map(entry=>({...entry,desconto:0}))},mode,context)
    const withoutDiscount=tables(BudgetPdfDocument({data:noServiceDiscount})).find(node=>node.props.items===noServiceDiscount.services)
-   assert.ok(!text(withoutDiscount).includes('Desconto'))
+   assert.ok(!text(withoutDiscount).includes('DESCONTO'))
    assert.match(text(withoutDiscount),/321,45/);assert.match(text(withoutDiscount),/987,65/)
   }
  }
@@ -167,11 +190,11 @@ registerHooks({
  }
  const cnpjData=prepareBudgetPdfData(direct,'direct',{...context,companyDocument:'12.345.678/0001-95'})
  assert.match(text(BudgetPdfDocument({data:cnpjData})),/CNPJ\s*:\s*12\.345\.678\/0001-95/)
- assert.match(directText,/Documento sintético da empresa/);assert.ok(!directText.includes('Ambiente / obs.'))
+ assert.match(directText,/Documento sintético da empresa/);assert.ok(!containsText(directText,'Ambiente / obs.'))
  const noDiscount={...direct,desconto:0,itens:[{...item,desconto:0}]}
  const noDiscountText=text(React.createElement(BudgetPdfDocument,{data:prepareBudgetPdfData(noDiscount,'direct',context)}))
- assert.ok(!noDiscountText.includes('Desconto'))
- assert.ok(directText.includes('Desconto'))
+ assert.ok(!containsText(noDiscountText,'DESCONTO'))
+ assert.ok(directText.includes('DESCONTO'))
  const missingData=prepareBudgetPdfData({...direct,itens:[{...item,material:null,cor:null}]},'direct')
  assert.equal(missingData.products[0].material,'');assert.equal(missingData.products[0].color,'')
  for(const mode of ['direct','reseller_internal','reseller_client']){
@@ -204,8 +227,8 @@ registerHooks({
    assert.equal(fixture.budget.itens[0].preco_unitario,price)
    const data=prepareBudgetPdfData(fixture.budget,'direct',fixture.context)
    const rendered=text(React.createElement(BudgetPdfDocument,{data})).replace(/\s+/g,' ')
-   for(const expected of ['Tabela comercial: '+label,'Cortina Wave','2 x 2 m','Branco','Sala','NAO COMERCIAL'])assert.ok(rendered.includes(expected),expected)
-   assert.ok(!rendered.includes('CUSTOS INTERNOS'))
+   for(const expected of ['TABELA COMERCIAL: '+label.toLocaleUpperCase('pt-BR'),'CORTINA WAVE','2 x 2 m','Branco','Sala','NAO COMERCIAL'])assert.ok(rendered.includes(expected),expected)
+   assert.ok(!containsText(rendered,'CUSTOS INTERNOS'))
    const blob=await generateBudgetPdf(fixture.budget,'direct',fixture.context)
    const buffer=Buffer.from(await blob.arrayBuffer())
    assert.equal(buffer.subarray(0,5).toString(),'%PDF-')

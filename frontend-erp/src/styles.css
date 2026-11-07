@@ -3263,3 +3263,23 @@ textarea { font: inherit; }
   font-size: 11px;
   color: var(--color-muted);
 }
+
+
+/* Apresentação comercial: somente campos explicitamente marcados. */
+.commercial-name,
+.commercial-address,
+.commercial-title {
+  text-transform: uppercase;
+}
+
+/* Contatos, códigos e textos livres mantêm a grafia original, inclusive por herança. */
+:is(.commercial-name, .commercial-address, .commercial-title):is(
+  input[type="email"], input[type="url"], input[type="password"],
+  textarea, pre, code, a[href^="mailto:"], a[href^="http"], .commercial-literal
+),
+:is(.commercial-name, .commercial-address, .commercial-title) :is(
+  input[type="email"], input[type="url"], input[type="password"],
+  textarea, pre, code, a[href^="mailto:"], a[href^="http"], .commercial-literal
+) {
+  text-transform: none;
+}

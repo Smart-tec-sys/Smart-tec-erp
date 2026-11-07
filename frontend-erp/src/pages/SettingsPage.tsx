@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { GradesVariacoesPage } from './GradesVariacoesPage'
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useAuthSession, useRefreshAuthSession } from '../components/AuthGate'
@@ -164,7 +165,7 @@ export function SettingsPage() {
       <div className="page-heading">
         <div>
           <p className="eyebrow">CONFIGURAÇÕES</p>
-          <h1>Configurações</h1>
+          <h1 className="commercial-title">Configurações</h1>
           <p className="heading-subtitle">
             Gerencie os dados e a identidade visual da empresa.
           </p>
@@ -172,13 +173,13 @@ export function SettingsPage() {
       </div>
 
       <div className="settings-card">
-        <div className="settings-card-header"><div><h2>Opções auxiliares</h2><p>Cadastros gerais reutilizáveis do ERP.</p></div></div>
+        <div className="settings-card-header"><div><h2 className="commercial-title">Opções auxiliares</h2><p>Cadastros gerais reutilizáveis do ERP.</p></div></div>
         <button type="button" className="profile-secondary-button" onClick={() => setShowGrades(true)}>Grades/Variações</button>
       </div>
       <div className="settings-card">
         <div className="settings-card-header">
           <div>
-            <h2>Dados da empresa</h2>
+            <h2 className="commercial-title">Dados da empresa</h2>
             <p>Informações exibidas no ambiente da empresa.</p>
           </div>
         </div>
@@ -187,14 +188,14 @@ export function SettingsPage() {
           <form onSubmit={handleSaveCompany}>
             <p>Preencha somente os dados públicos que devem aparecer no cabeçalho dos orçamentos.</p>
             <div className="settings-company-grid">
-              <label className="field"><span>Razão social</span><input required maxLength={255} value={profile.nome}
+              <label className="field"><span>Razão social</span><input className={commercialDisplayText(profile.nome) === profile.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} required maxLength={255} value={profile.nome}
                 disabled={profileSaving} onChange={event => setProfile({ ...profile, nome: event.target.value })} /></label>
-              <label className="field"><span>Nome fantasia</span><input maxLength={255} value={profile.nome_fantasia ?? ''}
+              <label className="field"><span>Nome fantasia</span><input className={commercialDisplayText(profile.nome_fantasia ?? '') === (profile.nome_fantasia ?? '').toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} maxLength={255} value={profile.nome_fantasia ?? ''}
                 disabled={profileSaving} onChange={event => setProfile({ ...profile, nome_fantasia: event.target.value })} /></label>
               <label className="field"><span>CPF / CNPJ</span><input maxLength={50} value={profile.documento ?? ''}
                 disabled={profileSaving} onChange={event => setProfile({ ...profile, documento: event.target.value })} /></label>
               {publicFields.map(field => <label className="field" key={field.key}>
-                <span>{field.label}</span><input type={field.type ?? 'text'} maxLength={field.max}
+                <span>{field.label}</span><input className={['logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado'].includes(field.key) && commercialDisplayText(profile.perfil_publico[field.key] ?? '') === (profile.perfil_publico[field.key] ?? '').toLocaleUpperCase('pt-BR') ? 'commercial-address' : undefined} type={field.type ?? 'text'} maxLength={field.max}
                   disabled={profileSaving} value={profile.perfil_publico[field.key] ?? ''}
                   onChange={event => setProfile({ ...profile, perfil_publico: { ...profile.perfil_publico, [field.key]: event.target.value } })} />
               </label>)}

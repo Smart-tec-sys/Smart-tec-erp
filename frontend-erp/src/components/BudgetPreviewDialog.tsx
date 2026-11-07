@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getBudget } from '../services/api'
@@ -45,7 +46,7 @@ export function BudgetPreviewDialog({ id, onClose }: { id: number; onClose: () =
     return () => { cancelled = true; document.removeEventListener('keydown', keys); previous?.focus() }
   }, [id, onClose])
   return createPortal(<div className="modal-overlay"><section ref={dialog} className="budget-preview" role="dialog" aria-modal="true" aria-labelledby="budget-preview-title">
-    <header><h2 id="budget-preview-title">Orçamento {budget ? `#${budget.numero}` : `#${id}`}</h2><button type="button" className="secondary-button" disabled={pdfBusy} onClick={onClose}>Fechar</button></header>
+    <header><h2 id="budget-preview-title">{commercialDisplayText(`Orçamento ${budget ? `#${budget.numero}` : `#${id}`}`, [budget?.numero || ''])}</h2><button type="button" className="secondary-button" disabled={pdfBusy} onClick={onClose}>Fechar</button></header>
     {error ? <div className="api-message error" role="alert">{error}</div> : !budget ? <p>Carregando orçamento...</p> : <>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }} aria-label="PDF do orçamento">
         {budget.parceiro_id == null ? <button type="button" className="primary-button" disabled={pdfBusy} onClick={() => void exportPdf('direct')}>Gerar PDF</button> : <>
@@ -57,10 +58,10 @@ export function BudgetPreviewDialog({ id, onClose }: { id: number; onClose: () =
       </div>
       {pdfError && <div className="api-message error" role="alert">{pdfError}</div>}
       {pdfWarning && <p role="status">{pdfWarning}</p>}
-      <dl><div><dt>Cliente</dt><dd>{budget.cliente_nome || (budget.cliente_id == null ? '—' : `Cliente #${budget.cliente_id}`)}</dd></div><div><dt>Status</dt><dd>{budget.status}</dd></div><div><dt>Perfil comercial</dt><dd>{budget.perfil_comercial || '—'}</dd></div><div><dt>Validade</dt><dd>{budget.validade || '—'}</dd></div></dl>
-      <h3>Itens do orçamento</h3><div className="table-wrap"><table><thead><tr><th>Descrição</th><th>Quantidade</th><th>Medidas</th><th>Unidade</th><th>Preço unitário</th><th>Desconto</th><th>Subtotal</th></tr></thead><tbody>{budget.itens.map((item, index) => <tr key={item.id ?? index}><td>{item.descricao}<small>{item.observacao_item}</small></td><td>{item.quantidade}</td><td>{item.largura} × {item.altura}</td><td>{item.unidade || '—'}</td><td>{formatCurrency(Number(item.preco_unitario))}</td><td>{formatCurrency(Number(item.desconto))}</td><td>{formatCurrency(Number(item.subtotal))}</td></tr>)}</tbody></table>{!budget.itens.length && <p>Nenhum item.</p>}</div>
+      <dl><div><dt>Cliente</dt><dd>{commercialDisplayText(budget.cliente_nome || (budget.cliente_id == null ? '—' : `Cliente #${budget.cliente_id}`))}</dd></div><div><dt>Status</dt><dd>{budget.status}</dd></div><div><dt>Perfil comercial</dt><dd>{budget.perfil_comercial || '—'}</dd></div><div><dt>Validade</dt><dd>{budget.validade || '—'}</dd></div></dl>
+      <h3 className="commercial-title">Itens do orçamento</h3><div className="table-wrap"><table><thead><tr><th>Descrição</th><th>Quantidade</th><th>Medidas</th><th>Unidade</th><th>Preço unitário</th><th>Desconto</th><th>Subtotal</th></tr></thead><tbody>{budget.itens.map((item, index) => <tr key={item.id ?? index}><td><span>{commercialDisplayText(item.descricao, [item.codigo_interno || ''])}</span><small>{item.observacao_item}</small></td><td>{item.quantidade}</td><td>{item.largura} × {item.altura}</td><td>{item.unidade || '—'}</td><td>{formatCurrency(Number(item.preco_unitario))}</td><td>{formatCurrency(Number(item.desconto))}</td><td>{formatCurrency(Number(item.subtotal))}</td></tr>)}</tbody></table>{!budget.itens.length && <p>Nenhum item.</p>}</div>
       <dl><div><dt>Total</dt><dd>{formatCurrency(Number(budget.total))}</dd></div><div><dt>Desconto</dt><dd>{formatCurrency(Number(budget.desconto))}</dd></div><div><dt>Total final</dt><dd><strong>{formatCurrency(Number(budget.total_final))}</strong></dd></div></dl>
-      <h3>Observações</h3><p>{budget.observacao || '—'}</p><h3>Observação interna</h3><p>{budget.observacao_interna || '—'}</p>
+      <h3 className="commercial-title">Observações</h3><p>{budget.observacao || '—'}</p><h3 className="commercial-title">Observação interna</h3><p>{budget.observacao_interna || '—'}</p>
     </>}
   </section></div>, document.body)
 }

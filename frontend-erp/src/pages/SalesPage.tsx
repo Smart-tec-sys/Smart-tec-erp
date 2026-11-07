@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import './salesPage.css'
 import { ColumnManager } from '../components/ColumnManager'
 import {
@@ -198,7 +199,7 @@ export function SalesPage({ onOpenSale, onNewSale, onViewFinance }: { onOpenSale
             OPERAÇÃO COMERCIAL
           </p>
 
-          <h1>Vendas</h1>
+          <h1 className="commercial-title">Vendas</h1>
 
           <p className="heading-subtitle">
             Pedidos comerciais gerados a partir dos
@@ -321,19 +322,19 @@ export function SalesPage({ onOpenSale, onNewSale, onViewFinance }: { onOpenSale
 
                     <td>
                       <strong>
-                        {order.parceiro_id != null
+                        {commercialDisplayText(order.parceiro_id != null
                           ? order.cliente_final_nome?.trim() || '—'
                           : order.cliente_id != null
                             ? clientMap.get(order.cliente_id)?.trim() || `Cliente #${order.cliente_id}`
-                            : '—'}
+                            : '—')}
                       </strong>
                     </td>
 
                     <td>
-                      {[
+                      {commercialDisplayText([
                         order.parceiro_id != null ? commercialName(partners, order.parceiro_id, 'Revenda') : null,
                         order.representante_id != null ? commercialName(representatives, order.representante_id, 'Representante') : null,
-                      ].filter(Boolean).join(' • ') || '—'}
+                      ].filter(Boolean).join(' • ') || '—')}
                     </td>
 
                     <td>

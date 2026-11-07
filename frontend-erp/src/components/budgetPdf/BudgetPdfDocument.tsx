@@ -3,6 +3,7 @@ import type { DocumentProps } from '@react-pdf/renderer'
 import type { BudgetPdfData } from '../../services/budgetPdfData'
 import { budgetFinancialVisibility } from '../../services/budgetPdfData'
 import { styles as s } from './budgetPdfStyles'
+import { commercialDisplayText as display } from '../../utils/commercialDisplay'
 
 const money = (value: number | null) => value == null ? '—' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
 
@@ -16,11 +17,11 @@ function ItemTable({ items, prices, services = false, finalPrices = false }: { i
   const headers = ['Descrição', ...(!services ? ['Medidas'] : []), 'Qtd. / un.', ...(prices ? finalPrices ? ['Preço final'] : ['Valor unit.', ...(discounts ? ['Desconto'] : []), 'Total'] : [])]
   return <View>
     <View style={s.tableHead} minPresenceAhead={45}>
-      {headers.map((header, column) => <Text key={header} style={[s.cell, s.headText, column >= quantityColumn ? s.numeric : {}, { width: widths[column] }]}>{header}</Text>)}
+      {headers.map((header, column) => <Text key={header} style={[s.cell, s.headText, column >= quantityColumn ? s.numeric : {}, { width: widths[column] }]}>{display(header)}</Text>)}
     </View>
     {items.map((item, index) => <View key={index} style={s.row}>
           <View style={[s.cell, { width: widths[0] }]}>
-            <Text style={s.itemName}>{item.description}</Text>
+            <Text style={s.itemName}>{display(item.description, [item.internalCode])}</Text>
             {!services && item.material && <Text style={s.secondary}>Material / tecido: {item.material}</Text>}
             {!services && item.color && <Text style={s.secondary}>Cor: {item.color}</Text>}
             {item.observation && <Text style={s.secondary}>{item.observation}</Text>}
@@ -46,7 +47,7 @@ function Summary({ data }: { data: BudgetPdfData }) {
       : [['Valor-base Smart-tec', f.smartTotal], [`Acréscimo parceiro / revenda${f.resellerPercent != null ? ` (${f.resellerPercent.toLocaleString('pt-BR')}%)` : ''}`, f.resellerValue], ...(f.kind==='internal'&&f.rt !== null ? [['RT', f.rt] as [string, number | null]] : []), ...(f.kind==='internal'&&f.bankFee !== null ? [['Taxa bancária', f.bankFee] as [string, number | null]] : []), ['Total cliente final', f.customerTotal]]
   return <View style={s.summary} wrap={false}>
     {rows.map(([label, value], index) => <View key={label} style={index === rows.length - 1 ? [s.summaryRow, s.final] : s.summaryRow}>
-      <Text style={s.summaryLabel}>{label}</Text>
+      <Text style={s.summaryLabel}>{display(label)}</Text>
       <Text style={index === rows.length - 1 ? s.finalValue : s.summaryValue}>{money(value)}</Text>
     </View>)}
   </View>
@@ -54,46 +55,46 @@ function Summary({ data }: { data: BudgetPdfData }) {
 
 export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfData }) {
   const visibility = budgetFinancialVisibility(data.mode)
-  return <Document title={`Orçamento ${data.number}`} author={data.company} subject={data.mode === 'reseller_internal' ? 'Interno Smart-tec' : data.mode==='reseller_commercial'?'Comercial da revenda':'Proposta comercial'}>
+  return <Document title={`ORÇAMENTO ${data.number}`} author={display(data.company)} subject={data.mode === 'reseller_internal' ? 'Interno Smart-tec' : data.mode==='reseller_commercial'?'Comercial da revenda':'Proposta comercial'}>
     <Page size="A4" style={s.page} wrap>
       <View style={s.header} wrap={false}>
         <View style={s.logoBlock}>
           {data.companyLogo && <Image src={data.companyLogo} style={s.logo} />}
         </View>
         <View style={s.companyBlock}>
-          {data.companyLegalName && <Text style={s.brand}>{data.companyLegalName}</Text>}
-          {data.companyDocument && <Text style={s.companyLine}>{data.companyDocument.replace(/\D/g, '').length === 14 ? 'CNPJ' : 'Documento'}: {data.companyDocument}</Text>}
-          {data.companyAddress && <Text style={s.companyLine}>{data.companyAddress}</Text>}
+          {data.companyLegalName && <Text style={s.brand}>{display(data.companyLegalName)}</Text>}
+          {data.companyDocument && <Text style={s.companyLine}>{data.companyDocument.replace(/\D/g, '').length === 14 ? 'CNPJ' : 'DOCUMENTO'}: {data.companyDocument}</Text>}
+          {data.companyAddress && <Text style={s.companyLine}>{display(data.companyAddress)}</Text>}
         </View>
         <View style={s.contacts}>
           {data.companyPhones.map((phone, index) => <Text key={index}>{phone}</Text>)}
           {data.companyEmail && <Text>{data.companyEmail}</Text>}
           {data.companySite && <Text>{data.companySite}</Text>}
-          {data.companySeller && <Text>Vendedor: {data.companySeller}</Text>}
+          {data.companySeller && <Text>VENDEDOR: {display(data.companySeller)}</Text>}
         </View>
       </View>
       <View style={s.documentMeta} wrap={false}>
         <Text style={s.title}>ORÇAMENTO Nº {data.number}</Text>
         <View style={s.meta}>
-          <Text>Data: {data.date}</Text>
-          <Text>Validade: {data.validity}</Text>
-          {(data.mode === 'direct'||data.mode === 'reseller_internal') && <Text>Tabela comercial: {data.commercialTable}</Text>}
+          <Text>DATA: {data.date}</Text>
+          <Text>VALIDADE: {data.validity}</Text>
+          {(data.mode === 'direct'||data.mode === 'reseller_internal') && <Text>TABELA COMERCIAL: {display(data.commercialTable)}</Text>}
         </View>
       </View>
       {data.mode === 'reseller_internal' && <Text style={s.internal}>DOCUMENTO INTERNO - NÃO ENVIAR AO CLIENTE</Text>}
       {data.mode === 'reseller_commercial' && <Text style={s.internal}>DEMONSTRATIVO COMERCIAL DA REVENDA - NÃO ENVIAR AO CLIENTE FINAL</Text>}
       <Text style={s.section} minPresenceAhead={45}>CLIENTE</Text>
       <View style={s.customer}>
-        <Text style={s.customerName}>{data.customer.name}</Text>
-        {data.customer.document && <Text style={s.line}>Documento: {data.customer.document}</Text>}
-        {(data.customer.phone || data.customer.email) && <Text style={s.line}>{[data.customer.phone ? `Telefone: ${data.customer.phone}` : '', data.customer.email ? `E-mail: ${data.customer.email}` : ''].filter(Boolean).join('   •   ')}</Text>}
-        {data.customer.address && <Text style={s.line}>{data.customer.address}</Text>}
+        <Text style={s.customerName}>{display(data.customer.name)}</Text>
+        {data.customer.document && <Text style={s.line}>DOCUMENTO: {data.customer.document}</Text>}
+        {(data.customer.phone || data.customer.email) && <Text style={s.line}>{[data.customer.phone ? `TELEFONE: ${data.customer.phone}` : '', data.customer.email ? `E-MAIL: ${data.customer.email}` : ''].filter(Boolean).join('   •   ')}</Text>}
+        {data.customer.address && <Text style={s.line}>{display(data.customer.address)}</Text>}
         {data.mode === 'reseller_internal' && <View style={s.commercial}>
-          <Text>Revenda: {data.reseller}</Text>
-          {data.seller && <Text>Vendedor: {data.seller}</Text>}
-          {data.representative && <Text>Representante: {data.representative}</Text>}
+          <Text>REVENDA: {display(data.reseller)}</Text>
+          {data.seller && <Text>VENDEDOR: {display(data.seller)}</Text>}
+          {data.representative && <Text>REPRESENTANTE: {display(data.representative)}</Text>}
         </View>}
-        {data.mode === 'reseller_commercial' && <Text style={s.line}>Revenda: {data.reseller}</Text>}
+        {data.mode === 'reseller_commercial' && <Text style={s.line}>REVENDA: {display(data.reseller)}</Text>}
       </View>
       <Text style={s.section} minPresenceAhead={65}>ITENS</Text>
       <ItemTable items={data.products} prices={visibility.itemPrices} finalPrices={data.mode==='reseller_client'||data.mode==='reseller_commercial'} />
@@ -120,17 +121,17 @@ export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfDat
         <View style={s.acceptanceFields}>
           <View>
             <View style={s.signature} />
-            <Text style={s.acceptanceText}>Nome / assinatura</Text>
+            <Text style={s.acceptanceText}>NOME / ASSINATURA</Text>
           </View>
           <View>
             <View style={s.acceptanceDate} />
-            <Text style={s.acceptanceText}>Data: ____ / ____ / ______</Text>
+            <Text style={s.acceptanceText}>DATA: ____ / ____ / ______</Text>
           </View>
         </View>
         {data.validity !== '—' && <Text style={s.acceptanceText}>Proposta válida até {data.validity}.</Text>}
       </View>
       <View style={s.footer} fixed>
-        <Text>{[data.company, `Orçamento ${data.number}`].filter(Boolean).join(' · ')}</Text>
+        <Text>{[display(data.company), `ORÇAMENTO ${data.number}`].filter(Boolean).join(' · ')}</Text>
         <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </View>
     </Page>

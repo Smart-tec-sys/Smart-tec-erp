@@ -8,7 +8,10 @@ from app.services import cliente_service
 from app.tenant.context import TenantContext
 from app.tenant.dependencies import get_current_tenant
 
+from app.routes.cliente_importacao import router as router_importacao
+
 router = APIRouter()
+router.include_router(router_importacao)
 
 
 @router.get("/", response_model=List[Cliente])

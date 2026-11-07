@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Eye, Pencil, Plus, Search } from 'lucide-react'
 import { ColumnManager } from '../components/ColumnManager'
@@ -44,7 +45,7 @@ export function RevendasPage() {
     { id: 'actions', label: 'Ações', defaultVisible: true },
   ]
   return <section className="cad-page">
-    <div className="cad-heading"><div><p className="cad-eyebrow">CADASTROS</p><h1>Revendas</h1><p>Cadastro rápido com preenchimento assistido por CNPJ e CEP.</p></div>
+    <div className="cad-heading"><div><p className="cad-eyebrow">CADASTROS</p><h1 className="commercial-title">Revendas</h1><p>Cadastro rápido com preenchimento assistido por CNPJ e CEP.</p></div>
       <button className="primary-button" disabled={opening} onClick={() => setModal({ mode: 'create' })}><Plus size={18} /> Nova revenda</button></div>
     <div className="cad-toolbar"><div className="cad-search"><Search size={17} /><input aria-label="Buscar revendas" value={search}
       onChange={event => setSearch(event.target.value)} placeholder="Buscar revendas..." /></div><span>{filtered.length} registro(s)</span></div>
@@ -53,7 +54,7 @@ export function RevendasPage() {
     <div className="cad-table-card">{loading ? <div className="cad-empty">Carregando...</div> : !filtered.length ? <div className="cad-empty">Nenhuma revenda encontrada.</div>
       : <div className="cad-table-wrap"><ColumnManager storageKey="smarttec:columns:resellers" lockedColumns={['nome', 'actions']} columns={columns}>
         <table className="cad-table"><thead><tr>{columns.map(column => <th key={column.id}>{column.label}</th>)}</tr></thead><tbody>
-          {filtered.map(row => <tr key={row.id}><td><strong>{row.nome}</strong></td><td>{row.documento || '—'}</td><td>{row.email || '—'}</td>
+          {filtered.map(row => <tr key={row.id}><td><strong>{commercialDisplayText(row.nome)}</strong></td><td>{row.documento || '—'}</td><td>{row.email || '—'}</td>
             <td>{row.telefone || '—'}</td><td>{row.percentual_padrao ?? 0}%</td><td>{row.ativo ? 'Ativo' : 'Inativo'}</td>
             <td><div className="cad-actions"><button disabled={opening} title="Visualizar" aria-label={`Visualizar ${row.nome}`} onClick={() => void open(row, 'view')}><Eye size={16} /></button>
               <button disabled={opening} title="Editar" aria-label={`Editar ${row.nome}`} onClick={() => void open(row, 'edit')}><Pencil size={16} /></button></div></td></tr>)}

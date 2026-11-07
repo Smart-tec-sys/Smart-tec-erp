@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import type { EnderecoPrincipal } from '../services/cadastroConsultas'
 
 export type CampoEndereco = keyof EnderecoPrincipal
@@ -20,7 +21,7 @@ export function EnderecoPrincipalFields({ valores, disabled = false, onChange }:
   return <div className="revenda-fields">
     {fields.map(({ campo, label, maxLength }) => <label className="cad-field" key={campo}>
       <span>{label}</span>
-      <input name={campo} value={valores[campo]} disabled={disabled} maxLength={maxLength}
+      <input className={campo !== 'cep' && commercialDisplayText(valores[campo]) === valores[campo].toLocaleUpperCase('pt-BR') ? 'commercial-address' : undefined} name={campo} value={valores[campo]} disabled={disabled} maxLength={maxLength}
         inputMode={campo === 'cep' ? 'numeric' : undefined}
         onChange={event => onChange(campo, campo === 'estado' ? event.target.value.toUpperCase() : event.target.value)} />
     </label>)}

@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { CurtainColorField } from './CurtainColorField'
 import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
 import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
@@ -212,7 +213,7 @@ export function BudgetProductRow({
       <div className="product-fields">
         <label className="field product-field-wide product-search-box">
           <span>Produto</span>
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex.: rolo bk denver" autoComplete="off" />
+          <input className={commercialDisplayText(query, [product.code]) === query.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex.: rolo bk denver" autoComplete="off" />
           {query !== selectedDisplay && (
             <div className="product-suggestions">
               {onCreateProduct && <button type="button" key={CREATE_PRODUCT_VALUE} onClick={handleCreateProductClick} className="create-product-option">
@@ -224,7 +225,7 @@ export function BudgetProductRow({
                 dropdownMatches.map(match => (
                   <button type="button" key={match.key}
                     onClick={() => { if (match.suggestion) chooseCurtain(match.suggestion); else if (match.product) choose(match.product) }}>
-                    <strong>{match.suggestion?.label ?? fabricDisplay(match.product!).name}</strong>
+                    <strong>{commercialDisplayText(match.suggestion?.label ?? fabricDisplay(match.product!).name, [match.product?.codigo_interno || '', match.product?.codigo || '', match.product?.codigo_barras || ''])}</strong>
                     {!match.suggestion && match.product && fabricDisplay(match.product).width && <small>Largura de fornecimento: {fabricDisplay(match.product).width}</small>}
                   </button>
                 ))

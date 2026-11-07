@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, X } from 'lucide-react'
@@ -221,7 +222,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
         ? <select name={campo} value={form[campo]} disabled={disabled} onChange={event => change(campo, event.target.value)}>
           {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        : <input name={campo} type={type} value={form[campo]} required={campo === 'nome'} disabled={disabled} maxLength={maxLength}
+        : <input className={['nome', 'razao_social', 'nome_fantasia', 'responsavel'].includes(campo) && commercialDisplayText(form[campo]) === form[campo].toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} name={campo} type={type} value={form[campo]} required={campo === 'nome'} disabled={disabled} maxLength={maxLength}
           step={campo === 'percentual_padrao' ? '0.0001' : type === 'number' ? '0.01' : undefined}
           min={type === 'number' ? 0 : undefined} max={campo === 'percentual_padrao' ? 100 : undefined}
           onChange={event => change(campo, event.target.value)} />}
@@ -245,12 +246,12 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
     <div ref={dialogRef} className="cad-modal revenda-modal" role="dialog" aria-modal="true" aria-label={somenteLeitura ? 'Visualizar revenda' : revenda ? 'Editar revenda' : 'Nova revenda'}
       onMouseDown={event => event.stopPropagation()} onKeyDown={dialogKeyDown}>
       <div className="cad-modal-header"><div><span>{somenteLeitura ? 'VISUALIZAR CADASTRO' : revenda ? 'EDITAR CADASTRO' : 'NOVA REVENDA'}</span>
-        <h2>{revenda?.nome || 'Cadastro de revenda'}</h2><p className="revenda-hint">Informe CNPJ e CEP para agilizar. Apenas o nome de exibição é obrigatório.</p></div>
+        <h2>{commercialDisplayText(revenda?.nome || 'Cadastro de revenda')}</h2><p className="revenda-hint">Informe CNPJ e CEP para agilizar. Apenas o nome de exibição é obrigatório.</p></div>
         <button type="button" aria-label="Fechar" disabled={saving} onClick={close}><X size={19} /></button>
       </div>
       <form className="revenda-modal-form" onSubmit={event => { event.preventDefault(); void save() }}>
         <div ref={scrollBodyRef} className="revenda-modal-body" role="region" aria-label="Formulário da revenda" tabIndex={0}>
-        <section className="revenda-section"><h3>1. Dados gerais</h3><div className="revenda-fields">
+        <section className="revenda-section"><h3 className="commercial-title">1. Dados gerais</h3><div className="revenda-fields">
           {field('tipo_pessoa', 'Tipo de pessoa', [{ value: '', label: 'Não informado' }, { value: 'FISICA', label: 'Pessoa física' }, { value: 'JURIDICA', label: 'Pessoa jurídica' }])}
           {field('ativo', 'Situação', [{ value: 'true', label: 'Ativo' }, { value: 'false', label: 'Inativo' }])}
           {field('documento', 'CPF / CNPJ', undefined, 30)}
@@ -259,17 +260,17 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
           {field('email', 'E-mail', undefined, 255, 'email')}{field('situacao_cadastral', 'Situação cadastral (fonte CNPJ)', undefined, 100)}
         </div>{form.tipo_pessoa === 'JURIDICA' && consultaStatus(cnpjStatus, 'cnpj')}</section>
         {hasSugestoes && !somenteLeitura && <section className="revenda-suggestions" aria-label="Sugestões da consulta">
-          <h3>Dados preservados</h3><p>Seus campos não foram substituídos. Aplique uma sugestão somente se desejar.</p>
+          <h3 className="commercial-title">Dados preservados</h3><p>Seus campos não foram substituídos. Aplique uma sugestão somente se desejar.</p>
           {(Object.keys(sugestoes) as CampoRevenda[]).map(campo => <div key={campo}>
-            <span>{labels[campo] || campo}: <strong>{sugestoes[campo]}</strong></span>
+            <span>{labels[campo] || campo}: <strong>{['nome', 'razao_social', 'nome_fantasia', 'responsavel', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'estado'].includes(campo) ? commercialDisplayText(sugestoes[campo] || '') : sugestoes[campo]}</strong></span>
             <button type="button" className="cad-secondary" disabled={saving} onClick={() => change(campo, sugestoes[campo] || '')}>Aplicar</button>
           </div>)}
         </section>}
-        <section className="revenda-section"><h3>2. Contato</h3><div className="revenda-fields">
+        <section className="revenda-section"><h3 className="commercial-title">2. Contato</h3><div className="revenda-fields">
           {field('telefone', 'Telefone comercial', undefined, 50, 'tel')}{field('telefone_celular', 'Telefone celular', undefined, 50, 'tel')}
           {field('responsavel', 'Contato responsável na revenda', undefined, 120)}{field('site', 'Site', undefined, 500)}
         </div></section>
-        <section className="revenda-section"><h3>3. Endereço principal</h3>
+        <section className="revenda-section"><h3 className="commercial-title">3. Endereço principal</h3>
           <EnderecoPrincipalFields valores={form} disabled={disabled} onChange={change} />
           {consultaStatus(cepStatus, 'cep')}
         </section>
@@ -278,7 +279,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
           {field('tipo_contribuinte', 'Tipo de contribuinte', [{ value: '', label: 'Não informado' }, { value: 'CONTRIBUINTE', label: 'Contribuinte' }, { value: 'ISENTO', label: 'Isento' }, { value: 'NAO_CONTRIBUINTE', label: 'Não contribuinte' }])}
           {checkbox('isento_ie', 'Isento de inscrição estadual')}
         </div></details>
-        <section className="revenda-section"><h3>5. Comercial Smart-tec</h3><div className="revenda-fields">
+        <section className="revenda-section"><h3 className="commercial-title">5. Comercial Smart-tec</h3><div className="revenda-fields">
           {field('percentual_padrao', '% revenda padrão', undefined, 12, 'number')}
           <label className="cad-field"><span>Vendedor responsável</span><select name="vendedor_responsavel_id" value={form.vendedor_responsavel_id}
             disabled={disabled || Boolean(vendedorErro)} onChange={event => change('vendedor_responsavel_id', event.target.value)}>
@@ -286,7 +287,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
             {form.vendedor_responsavel_id && !vendedores.some(vendedor => String(vendedor.id) === form.vendedor_responsavel_id)
               && <option value={form.vendedor_responsavel_id}>Vendedor #{form.vendedor_responsavel_id} (vínculo atual)</option>}
             {vendedores.filter(vendedor => vendedor.ativo || String(vendedor.id) === form.vendedor_responsavel_id)
-              .map(vendedor => <option key={vendedor.id} value={vendedor.id}>{vendedor.nome}{vendedor.ativo ? '' : ' (inativo)'}</option>)}
+              .map(vendedor => <option key={vendedor.id} value={vendedor.id}>{commercialDisplayText(vendedor.nome)}{vendedor.ativo ? '' : ' (inativo)'}</option>)}
           </select></label>
         </div>{vendedorErro && <p className="revenda-warning" role="status">{vendedorErro} O vínculo atual será preservado.</p>}</section>
         <details className="revenda-section"><summary>6. Financeiro / Crédito</summary><p className="revenda-hint">Informação cadastral. Não bloqueia orçamento ou venda e não calcula crédito disponível.</p>
@@ -294,7 +295,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
             {checkbox('permitir_exceder_limite', 'Permitir exceder limite')}</div>
           <p className="revenda-hint">Vazio = limite não definido. Zero = limite explicitamente definido como zero.</p>
         </details>
-        <section className="revenda-section"><h3>7. Observações</h3><label className="cad-field">
+        <section className="revenda-section"><h3 className="commercial-title">7. Observações</h3><label className="cad-field">
           <span>Observações</span><textarea name="observacao" value={form.observacao} disabled={disabled} onChange={event => change('observacao', event.target.value)} />
         </label></section>
         {erro && <div className="cad-error" role="alert">{erro}</div>}

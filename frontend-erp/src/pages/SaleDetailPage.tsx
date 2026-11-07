@@ -1,3 +1,4 @@
+import { commercialDisplayText } from '../utils/commercialDisplay'
 import { ArrowLeft, FileText, WalletCards, PackagePlus, ReceiptText, Truck, ChevronRight, ChevronLeft } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import {
@@ -58,20 +59,23 @@ function statusLabel(status?: string | null) {
 }
 
 // Mesmo JSX dos componentes locais de NewBudgetPage, sem alterar o orçamento.
-function BudgetSection({icon,title,subtitle,count,children}:{icon:ReactNode;title:string;subtitle:string;count?:string;children:ReactNode}){return <section className="form-section panel"><div className="section-title"><div className="section-icon">{icon}</div><div><h2>{title}</h2><p>{subtitle}</p></div>{count&&<span className="section-count">{count}</span>}</div>{children}</section>}
+function BudgetSection({icon,title,subtitle,count,children}:{icon:ReactNode;title:string;subtitle:string;count?:string;children:ReactNode}){return <section className="form-section panel"><div className="section-title"><div className="section-icon">{icon}</div><div><h2 className="commercial-title">{title}</h2><p>{subtitle}</p></div>{count&&<span className="section-count">{count}</span>}</div>{children}</section>}
 function Field({label,children}:{label:string;children:ReactNode}){return <label className="field"><span>{label}</span>{children}</label>}
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
-  return <Field label={label}><input value={value} readOnly /></Field>
+function ReadOnlyField({ label, value, preservedValues = [] }: { label: string; value: string; preservedValues?: string[] }) {
+  const presentation = label === 'Endereço' ? 'commercial-address'
+    : ['Cliente direto', 'Cliente final', 'Vendedor Smart-tec', 'Revenda', 'Representante', 'Transportadora', 'Produto', 'Serviço'].includes(label) ? 'commercial-name' : undefined
+  const className = presentation && commercialDisplayText(value, preservedValues) === value.toLocaleUpperCase('pt-BR') ? presentation : undefined
+  return <Field label={label}><input className={className} value={value} readOnly /></Field>
 }
 function SaleItems({ items, services = false }: { items: ApiOrder['itens']; services?: boolean }) {
   return <div className={services ? 'service-rows' : 'product-rows'}>{items.map((item, index) => (
     <div className={services ? 'budget-service-row' : 'budget-product-row'} key={item.id}>
       <div className={services ? 'service-row-title' : 'product-row-head'}>
         <span className="product-row-index">{index + 1}</span>
-        <strong>{text(item.descricao)}</strong>
+        <strong>{commercialDisplayText(text(item.descricao), [item.codigo_interno || ''])}</strong>
       </div>
       <div className={services ? 'service-fields' : 'product-fields'}>
-        <ReadOnlyField label={services ? 'Serviço' : 'Produto'} value={text(item.descricao)} />
+        <ReadOnlyField label={services ? 'Serviço' : 'Produto'} value={text(item.descricao)} preservedValues={[item.codigo_interno || '']} />
         <ReadOnlyField label="Código" value={text(item.codigo_interno)} />
         <ReadOnlyField label="Detalhe" value={text(item.observacao_item)} />
         <ReadOnlyField label="Quant." value={numberLabel(item.quantidade)} />
@@ -169,7 +173,7 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
           <div>
             <button type="button" className="back-button page-back" onClick={onBack}><ArrowLeft size={15} /> Voltar para vendas</button>
             <p className="eyebrow">OPERAÇÃO COMERCIAL CONECTADA</p>
-            <h1>Venda {order.numero || `#${order.id}`} <span className="draft-badge">{statusLabel(order.status)}</span></h1>
+            <h1>{commercialDisplayText(`Venda ${order.numero || `#${order.id}`}`, [order.numero || ''])} <span className="draft-badge">{statusLabel(order.status)}</span></h1>
             <p className="heading-subtitle">Dados comerciais e operacionais da venda.</p>
           </div>
           <div className="budget-number"><span>NÚMERO</span><strong>{order.numero || `#${order.id}`}</strong></div>
@@ -230,7 +234,7 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
           </div>
           <aside className={`budget-summary panel ${isSummaryCollapsed ? 'collapsed' : ''}`}>
             <div className="summary-heading">
-              <div><span className="eyebrow">RESUMO DA VENDA</span><h2>Conferência</h2></div>
+              <div><span className="eyebrow">RESUMO DA VENDA</span><h2 className="commercial-title">Conferência</h2></div>
               <button type="button" className="summary-toggle" onClick={() => setIsSummaryCollapsed(value => !value)} aria-label={isSummaryCollapsed ? 'Mostrar resumo' : 'Recolher resumo'}><ChevronRight size={16}/></button>
             </div>
             <div className="summary-lines">
