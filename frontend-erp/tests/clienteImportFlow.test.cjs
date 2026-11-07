@@ -12,6 +12,10 @@ registerHooks({
 const nodes=tree=>!tree||typeof tree!=='object'?[]:Array.isArray(tree)?tree.flatMap(nodes):[tree,...nodes(tree.props?.children)]
 const text=tree=>tree==null||typeof tree==='boolean'?'':Array.isArray(tree)?tree.map(text).join(' '):typeof tree==='object'?text(tree.props?.children):String(tree)
 ;(async()=>{
+  let exportedBlob
+  global.document={createElement:()=>({click(){}})}
+  URL.createObjectURL=blob=>{exportedBlob=blob;return 'blob:local-test'}
+  URL.revokeObjectURL=()=>{}
   const {transformWithOxc}=await import('vite')
   let cells=[],slot=0,company=1,apiCalls=[],completed=0,busyEvents=[],deferred=null
   let preview={colunas:['Código','Nome','Documento'],abas:[],aba:null,separador:';',total:2,amostra:[],previa_hash:'snapshot-seguro',inserir:1,complementar:1,ignorados:0,inconsistencias:0,erros:0,
@@ -46,6 +50,7 @@ const text=tree=>tree==null||typeof tree==='boolean'?'':Array.isArray(tree)?tree
   const contacts=new File(['Código;Contato;Tipo\nGC-1;Fatima@Example.test;E-mail'],'contatos.csv')
   render()
   assert.ok(text(tree).includes('sem classificação comercial obrigatória'))
+  await click('Importação manual CSV/XLSX')
   nodes(tree).find(node=>node.type==='input'&&node.props.type==='file').props.onChange({target:{files:[clients]}});render()
   await click('Ler colunas')
   select('Código do cliente no backup',0)
@@ -94,6 +99,62 @@ const text=tree=>tree==null||typeof tree==='boolean'?'':Array.isArray(tree)?tree
   await click('Gerar prévia sem gravar')
   assert.ok(!nodes(findLabel(tree,'Conferi a prévia')).find(node=>node.type==='input').props.disabled,'ignorar exige opção explícita')
   assert.ok(text(tree).includes('As linhas inconsistentes serão ignoradas por sua escolha'))
+
+  await click('Importar backup do GestãoClick')
+  assert.ok(!text(tree).includes('Separador CSV'))
+  assert.ok(!text(tree).includes('Mapeamento de colunas'))
+  const backup = new File(['zip sintético'], 'backup_gestaoclick_original.zip')
+  const callsBeforeZip = apiCalls.length
+  const zipInput=nodes(tree).find(node=>node.type==='input'&&node.props.accept==='.zip')
+  zipInput.props.onChange({target:{files:[new File(['xlsx'], 'clientes.xlsx')]}})
+  render();assert.equal(apiCalls.length,callsBeforeZip)
+  const oversized=new File(['x'], 'grande.zip')
+  Object.defineProperty(oversized,'size',{value:10*1024*1024+1})
+  zipInput.props.onChange({target:{files:[oversized]}})
+  render();assert.equal(apiCalls.length,callsBeforeZip)
+  const enabledPreview=preview
+  preview={...preview,complementar:0,ignorados:1,linhas:preview.linhas.map(row=>row.status==='complementar'
+    ? {...row,status:'ignorado',campos_disponiveis:row.campos_complementar,campos_complementar:{}}
+    : row)}
+  nodes(tree).find(node=>node.type==='input'&&node.props.accept==='.zip')
+    .props.onChange({target:{files:[backup]}})
+  await new Promise(setImmediate);render()
+  const automatic = apiCalls.at(-1)
+  assert.equal(automatic.action,'preview')
+  assert.equal(automatic.file,backup)
+  assert.equal(automatic.related,undefined)
+  assert.equal(apiCalls.length,callsBeforeZip+1)
+  assert.equal(automatic.config.complementar_vazios,false)
+  assert.equal(automatic.config.ignorar_inconsistencias,false)
+  assert.match(text(tree), /1\s+existente\(s\) com complementação possível, ainda não autorizada/)
+  assert.ok(nodes(findLabel(tree,'Conferi a prévia')).find(node=>node.type==='input').props.disabled)
+  preview=enabledPreview
+  check('Permitir complementar somente campos vazios',true)
+  assert.ok(!text(tree).includes('Confira a prévia'))
+  check('Processar somente os aptos',true)
+  await click('Analisar backup automaticamente')
+  assert.equal(apiCalls.at(-1).config.complementar_vazios,true)
+  assert.equal(apiCalls.at(-1).config.ignorar_inconsistencias,true)
+  assert.ok(text(tree).includes('Baixar prévia sem gravar'))
+  await click('Baixar prévia sem gravar')
+  const exported=JSON.parse(await exportedBlob.text())
+  assert.ok(exported.linhas.some(row=>row.status==='revisar'))
+  assert.deepEqual(exported.ocorrencias,preview.ocorrencias)
+  nodes(findLabel(tree,'Visualizar registros')).find(node=>node.type==='select')
+    .props.onChange({target:{value:'pendentes'}})
+  render()
+  assert.ok(text(tree).includes('FÁTIMA ZANETI'))
+  assert.ok(!text(tree).includes('ID ERP:'))
+  check('Conferi a prévia',true)
+  const beforeZipConfirm=apiCalls.filter(call=>call.action==='confirm').length
+  await click('Confirmar 2 cliente(s)')
+  assert.equal(apiCalls.filter(call=>call.action==='confirm').length,beforeZipConfirm+1)
+  assert.equal(apiCalls.at(-1).file,backup)
+  assert.equal(apiCalls.at(-1).related,undefined)
+  await click('Importação manual CSV/XLSX')
+  nodes(tree).find(node=>node.type==='input'&&node.props.accept==='.csv,.xlsx')
+    .props.onChange({target:{files:[clients]}})
+  render();await click('Ler colunas');select('Nome *',1)
 
   let resolvePreview
   deferred=new Promise(resolve=>resolvePreview=resolve)

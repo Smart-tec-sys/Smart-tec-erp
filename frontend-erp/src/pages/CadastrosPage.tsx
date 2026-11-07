@@ -532,7 +532,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
         </div>
 
         <div className="cad-heading-actions">
-          {entity === 'clientes' && <button type="button" className="cad-secondary" disabled={importBusy} onClick={() => setShowImport(current => !current)}>{showImport ? 'Ocultar importação' : 'Importar GestãoClick'}</button>}
+          {entity === 'clientes' && <button type="button" className="cad-secondary" disabled={importBusy} onClick={() => setShowImport(current => !current)}>{showImport ? 'Ocultar importação' : 'Importar backup do GestãoClick'}</button>}
           <button className="primary-button" disabled={importBusy} onClick={openCreate}>
             <Plus size={18} />
             {config.singular === 'Revenda' ? 'Nova' : 'Novo'} {config.singular.toLowerCase()}

@@ -11,9 +11,11 @@ import json
 import logging
 import re
 import unicodedata
+import stat
+import zlib
 from dataclasses import dataclass
-from pathlib import Path
-from zipfile import ZipFile
+from pathlib import Path, PurePosixPath
+from zipfile import BadZipFile, ZipFile
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -34,6 +36,85 @@ MAX_COLUNAS = 80
 MAX_CELULA = 4000
 UFS = set("AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO".split())
 logger = logging.getLogger(__name__)
+MAX_ZIP_BYTES = 10 * 1024 * 1024
+MAX_ZIP_DESCOMPACTADO = 40 * 1024 * 1024
+FONTES_GESTAOCLICK = {
+    "clientes": ("clientes/clientes.xlsx", 16,
+                 {"tipo": 1, "nome": 2, "cpf": 3, "cnpj": 8,
+                  "telefone_comercial": 12, "telefone_celular": 13, "email": 14},
+                 {0: "Codigo", 1: "Tipo de pessoa", 2: "Nome", 3: "CPF",
+                  8: "CNPJ", 12: "Telefone", 13: "Celular", 14: "E-mail"}),
+    "enderecos": ("clientes/clientes_enderecos.xlsx", 9,
+                  {"tipo_endereco": 1, "cep": 2, "logradouro": 3, "numero": 4,
+                   "complemento": 5, "bairro": 6, "cidade": 7, "estado": 8},
+                  {1: "Tipo", 2: "CEP", 3: "Logradouro", 5: "Complemento",
+                   6: "Bairro", 7: "Cidade", 8: "UF"}),
+    "contatos": ("clientes/clientes_contatos.xlsx", 6,
+                 {"tipo_contato": 1, "nome_contato": 2, "contato": 3,
+                  "cargo": 4, "observacao_contato": 5},
+                 {1: "Tipo de contato", 2: "Nome", 3: "Contato", 4: "Cargo"}),
+}
+
+
+def _validar_pacote_zip(package):
+    entries = package.infolist()
+    if len(entries) > 1000 or sum(entry.file_size for entry in entries) > MAX_ZIP_DESCOMPACTADO:
+        raise ValueError("Arquivo ZIP excede 1.000 entradas ou 40 MB descompactados.")
+    seen = set()
+    for entry in entries:
+        path = PurePosixPath(entry.filename)
+        mode = entry.external_attr >> 16
+        if (not entry.filename or entry.filename in seen or "\\" in entry.orig_filename or
+                "\x00" in entry.orig_filename or
+                path.is_absolute() or ".." in path.parts or
+                any(":" in part for part in path.parts) or
+                entry.flag_bits & 1 or stat.S_ISLNK(mode) or
+                (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR)) or
+                entry.file_size > MAX_ZIP_DESCOMPACTADO or
+                (entry.file_size > 1024 * 1024 and entry.file_size > max(1, entry.compress_size) * 200)):
+            raise ValueError("Arquivo ZIP contém entrada insegura, duplicada, criptografada ou compressão excessiva.")
+        seen.add(entry.filename)
+    return seen
+
+
+def preparar_backup(content, config):
+    """Lê somente as três fontes conhecidas em memória; nunca extrai caminhos."""
+    if not content or len(content) > MAX_ZIP_BYTES:
+        raise ValueError("Envie um backup ZIP não vazio de até 10 MB.")
+    try:
+        with ZipFile(io.BytesIO(content)) as package:
+            seen = _validar_pacote_zip(package)
+            arquivos, options = {}, {}
+            for name, (path, total, mapping, signature) in FONTES_GESTAOCLICK.items():
+                if path not in seen:
+                    raise ValueError(f"Backup GestãoClick incompleto: falta {path}. Use CSV/XLSX manual para outras origens.")
+                entry = package.getinfo(path)
+                if entry.is_dir() or entry.file_size > MAX_BYTES:
+                    raise ValueError("Cada planilha do backup deve ter até 5 MB.")
+                with package.open(entry) as stream:
+                    data = stream.read(MAX_BYTES + 1)
+                if len(data) > MAX_BYTES:
+                    raise ValueError("Planilha descompactada excede 5 MB.")
+                source = ImportacaoConfiguracao(codigo_cliente=0, mapeamento=mapping)
+                table = ler_tabela(data, path, source)
+                if (len(table.colunas) != total or
+                        any(_chave_nome(table.colunas[index]) != _chave_nome(label) for index, label in signature.items()) or
+                        not re.fullmatch(r"c[o\uFFFD]digo", _chave_nome(table.colunas[0]))):
+                    raise ValueError(f"Estrutura de {name} não reconhecida. Confira as colunas no modo manual CSV/XLSX.")
+                source.aba = table.aba
+                arquivos[name] = (data, path)
+                options[name] = source.model_dump(exclude={"tipo_padrao", "enderecos", "contatos",
+                                                         "complementar_vazios", "ignorar_inconsistencias"})
+            automatic = ImportacaoConfiguracao(
+                **options["clientes"], enderecos=options["enderecos"], contatos=options["contatos"],
+                complementar_vazios=config.complementar_vazios,
+                ignorar_inconsistencias=config.ignorar_inconsistencias,
+            )
+            return arquivos["clientes"], automatic, arquivos["enderecos"], arquivos["contatos"]
+    except ValueError:
+        raise
+    except (BadZipFile, OSError, RuntimeError, NotImplementedError, EOFError, zlib.error) as exc:
+        raise ValueError("Backup ZIP inválido, corrompido ou com compressão não suportada.") from exc
 
 
 @dataclass
@@ -130,9 +211,7 @@ def ler_tabela(content: bytes, filename: str, config: ImportacaoConfiguracao):
     try:
         from openpyxl import load_workbook
         with ZipFile(io.BytesIO(content)) as package:
-            entries = package.infolist()
-            if len(entries) > 1000 or sum(entry.file_size for entry in entries) > 40 * 1024 * 1024:
-                raise ValueError("Planilha excede o limite de conteúdo descompactado.")
+            _validar_pacote_zip(package)
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False, keep_links=False)
         try:
             names = workbook.sheetnames
@@ -406,12 +485,13 @@ def previa(db: Session, content, filename, config, tenant: TenantContext, endere
     for numero, values in tabela.linhas:
         codigo = values[config.codigo_cliente].strip() if config.codigo_cliente is not None else None
         dados, conflitos, avisos_aux = _agregar_auxiliares(_mapear(values, config.mapeamento), codigo, groups)
+        originais = dict(dados)
         dados, erros, avisos = _normalizar_dados(values, config, dados)
         if groups and not codigo:
             conflitos.append("Código do cliente ausente: não é possível relacionar os arquivos auxiliares.")
-        preparados.append((numero, codigo, dados, erros, conflitos, avisos + avisos_aux))
+        preparados.append((numero, codigo, dados, erros, conflitos, avisos + avisos_aux, originais))
     linhas, vistos, snapshots = [], [], []
-    for index, (numero, codigo, dados, erros, conflitos, avisos) in enumerate(preparados):
+    for index, (numero, codigo, dados, erros, conflitos, avisos, originais) in enumerate(preparados):
         conflitos = list(conflitos)
         nome = _chave_nome(dados.get("nome"))
         outros_mesmo_nome = [other[2] for other_index, other in enumerate(preparados)
@@ -458,10 +538,16 @@ def previa(db: Session, content, filename, config, tenant: TenantContext, endere
         else:
             status, motivos = "inserir", []
             vistos.append(dados)
-        linhas.append(ImportacaoLinha(linha=numero, codigo_cliente=codigo, dados=dados, status=status,
+        linhas.append(ImportacaoLinha(linha=numero, codigo_cliente=codigo, dados=dados,
+            dados_originais=originais, status=status,
             motivos=motivos, avisos=avisos, conflitos=conflitos + preserved,
             cliente_existente_id=target[0].id if target else None,
+            campos_disponiveis=patch_values if target and status == "ignorado" else {},
             campos_complementar=patch_values if target and config.complementar_vazios else {}))
+    ids_disponiveis = [row.cliente_existente_id for row in linhas if row.campos_disponiveis]
+    for row in linhas:
+        if row.campos_disponiveis and ids_disponiveis.count(row.cliente_existente_id) > 1:
+            row.campos_disponiveis = {}
     por_id = {}
     for row in linhas:
         if row.status == "complementar":

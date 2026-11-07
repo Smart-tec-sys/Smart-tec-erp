@@ -56,12 +56,14 @@ class ImportacaoTabela(BaseModel):
 class ImportacaoLinha(BaseModel):
     linha: int
     dados: dict[str, str | None]
+    dados_originais: dict[str, str | None] = Field(default_factory=dict)
     status: Literal["inserir", "ignorado", "erro", "inserido", "nao_importado", "complementar", "complementado", "revisar"]
     motivos: list[str] = Field(default_factory=list)
     avisos: list[str] = Field(default_factory=list)
     codigo_cliente: str | None = None
     cliente_existente_id: int | None = None
     campos_complementar: dict[str, str | None] = Field(default_factory=dict)
+    campos_disponiveis: dict[str, str | None] = Field(default_factory=dict)
     conflitos: list[str] = Field(default_factory=list)
 
 

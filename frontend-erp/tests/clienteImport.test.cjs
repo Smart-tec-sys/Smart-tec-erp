@@ -34,8 +34,8 @@ test('seletor CSV envia TAB real e invalida a prévia ao mudar o separador', asy
   globalThis.clientImportHooks = {
     useState(initial) {
       const index = slot++
-      state[index] = initial
-      return [initial, value => { state[index] = value }]
+      if (!(index in state)) state[index] = initial
+      return [state[index], value => { state[index] = value }]
     },
     useRef: initial => ({ current: initial }),
   }
@@ -49,7 +49,10 @@ test('seletor CSV envia TAB real e invalida a prévia ao mudar o separador', asy
       .replace("import './clienteImport.css'", '')
     compiled = (await transformWithOxc(source, file, { jsx: { runtime: 'automatic' } })).code
     const { ClienteImportPanel } = await import(pathToFileURL(file))
-    const tree = ClienteImportPanel({ onComplete: async () => {}, onClose() {} })
+    let tree = ClienteImportPanel({ onComplete: async () => {}, onClose() {} })
+    nodes(tree).find(node => node.type === 'button' && text(node) === 'Importação manual CSV/XLSX').props.onClick()
+    slot = 0
+    tree = ClienteImportPanel({ onComplete: async () => {}, onClose() {} })
     const label = nodes(tree).find(node => node.type === 'label' && text(node).startsWith('Separador CSV'))
     const select = nodes(label).find(node => node.type === 'select')
     const option = nodes(select).find(node => node.type === 'option' && text(node) === 'Tabulação')

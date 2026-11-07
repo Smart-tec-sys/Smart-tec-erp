@@ -39,6 +39,8 @@ export type ImportTable = {
 export type ImportRow = {
   linha: number
   dados: Record<string, string | null>
+  dados_originais?: Record<string, string | null>
+  campos_disponiveis?: Record<string, string | null>
   status: 'inserir' | 'complementar' | 'complementado' | 'revisar' | 'ignorado' | 'erro' | 'inserido' | 'nao_importado'
   codigo_cliente?: string | null
   cliente_existente_id?: number | null

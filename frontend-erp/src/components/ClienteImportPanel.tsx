@@ -39,6 +39,8 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
   const [page, setPage] = useState(0)
   const [related, setRelated] = useState<ImportRelatedFiles>({})
   const [relatedTables, setRelatedTables] = useState<Partial<Record<'enderecos' | 'contatos', ImportTable>>>({})
+  const [sourceMode, setSourceMode] = useState<'backup' | 'manual'>('backup')
+  const [rowFilter, setRowFilter] = useState<'todos' | 'novos' | 'complementos' | 'duplicados' | 'pendentes'>('todos')
   const busyRef = useRef(false)
   // Descarta resultado e bloqueia confirmação caso a empresa ativa tenha mudado.
   const company = useRef(getEmpresaId())
@@ -51,6 +53,7 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
     setAccepted(false)
     setError('')
     setPage(0)
+    setRowFilter('todos')
   }
 
   function changeConfig(next: ImportConfig, tableChanged = false) {
@@ -66,12 +69,12 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
     }
   }
 
-  async function run(action: 'inspect' | 'preview' | 'confirm') {
-    if (!file || busyRef.current) return
+  async function run(action: 'inspect' | 'preview' | 'confirm', selectedFile = file) {
+    if (!selectedFile || busyRef.current) return
     setError('')
     try {
       currentCompany()
-      if (action !== 'inspect') {
+      if (sourceMode === 'manual' && action !== 'inspect') {
         for (const source of ['enderecos', 'contatos'] as const) {
           if (related[source] && (config.codigo_cliente == null || config[source]?.codigo_cliente == null)) {
             throw new Error('Mapeie o código do cliente no arquivo principal e em cada arquivo relacionado.')
@@ -83,7 +86,7 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
       setBusy(true)
       onBusyChange?.(true)
       if (action === 'inspect') {
-        const result = await inspectClientImport(file, config)
+        const result = await inspectClientImport(selectedFile, config)
         currentCompany()
         if (version !== generation.current) return
         setTable(result)
@@ -91,7 +94,7 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
         setReport(null)
         setAccepted(false)
       } else if (action === 'preview') {
-        const result = await previewClientImport(file, config, related)
+        const result = await previewClientImport(selectedFile, config, sourceMode === 'manual' ? related : undefined)
         currentCompany()
         if (version !== generation.current) return
         setPreview(result)
@@ -100,7 +103,7 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
         setAccepted(false)
         setPage(0)
       } else if (preview && accepted && (config.ignorar_inconsistencias || (preview.erros === 0 && (preview.inconsistencias ?? 0) === 0))) {
-        const result = await confirmClientImport(file, config, preview.previa_hash, related)
+        const result = await confirmClientImport(selectedFile, config, preview.previa_hash, sourceMode === 'manual' ? related : undefined)
         currentCompany()
         if (version !== generation.current) return
         setReport(result)
@@ -143,16 +146,49 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
   }
 
   const rows = report?.linhas ?? preview?.linhas ?? []
-  const pageCount = Math.max(1, Math.ceil(rows.length / 50))
+  const availableComplements = rows.filter(row => Object.keys(row.campos_disponiveis ?? {}).length > 0).length
+  const duplicates = rows.filter(row => row.status === 'ignorado' && !Object.keys(row.campos_disponiveis ?? {}).length).length
+  const filteredRows = rows.filter(row => rowFilter === 'todos' ||
+    (rowFilter === 'novos' && ['inserir', 'inserido'].includes(row.status)) ||
+    (rowFilter === 'complementos' && (['complementar', 'complementado'].includes(row.status) || Object.keys(row.campos_disponiveis ?? {}).length > 0)) ||
+    (rowFilter === 'duplicados' && row.status === 'ignorado' && !Object.keys(row.campos_disponiveis ?? {}).length) ||
+    (rowFilter === 'pendentes' && ['erro', 'revisar', 'nao_importado'].includes(row.status)))
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / 50))
   const actionCount = (preview?.inserir ?? 0) + (preview?.complementar ?? 0)
   const previewBlocked = Boolean(preview && !config.ignorar_inconsistencias && (preview.erros > 0 || (preview.inconsistencias ?? 0) > 0))
   return <section className="cliente-import" aria-labelledby="cliente-import-title" aria-busy={busy}>
-    <div className="cliente-import-heading"><div><h2 className="commercial-title" id="cliente-import-title">Importar clientes do GestãoClick</h2>
-      <p>Selecione CSV ou XLSX e associe as colunas do seu arquivo. Limite: 5 MB e 2.000 clientes por lote.</p></div>
+    <div className="cliente-import-heading"><div><h2 className="commercial-title" id="cliente-import-title">Importar backup do GestãoClick</h2>
+      <p>ZIP: selecionar, analisar, revisar e confirmar. CSV/XLSX manual continua disponível para outras origens.</p></div>
       <button type="button" className="cad-secondary" aria-label="Fechar importação" onClick={onClose} disabled={busy}><X size={18} /></button></div>
     <p>Importação como clientes, sem classificação comercial obrigatória. As planilhas são relacionadas pelo código do cliente do backup, que não substitui o ID do ERP.
       Correspondências seguras usam documento ou nome exato e contato. Nomes semelhantes nunca autorizam uma alteração. Cadastros de teste são preservados.</p>
-    <fieldset disabled={busy} className="cliente-import-options">
+    <div className="cad-heading-actions">
+      {(['backup', 'manual'] as const).map(mode => <button key={mode} type="button" className="cad-secondary" disabled={busy}
+        aria-pressed={sourceMode === mode} onClick={() => {
+          invalidate(); setSourceMode(mode); setFile(null); setTable(null); setRelated({}); setRelatedTables({}); setConfig(initialConfig)
+        }}>{mode === 'backup' ? 'Importar backup do GestãoClick' : 'Importação manual CSV/XLSX'}</button>)}
+    </div>
+    {sourceMode === 'backup' && <fieldset disabled={busy} className="cliente-import-options">
+      <legend>Backup GestãoClick original</legend>
+      <label className="cliente-import-file">Arquivo ZIP (até 10 MB)<input type="file" accept=".zip" onChange={event => {
+        invalidate(); setTable(null)
+        const selected = event.target.files?.[0] ?? null
+        if (selected && (!selected.name.toLowerCase().endsWith('.zip') || selected.size > 10 * 1024 * 1024)) {
+          setFile(null); setError('Envie o backup ZIP original de até 10 MB.'); return
+        }
+        setFile(selected)
+        if (selected) void run('preview', selected)
+      }} /></label>
+      <p>As três planilhas de clientes são reconhecidas pelo caminho, cabeçalhos e código original. Nenhum cadastro é gravado durante a análise.</p>
+      <label className="cliente-import-accept"><input type="checkbox" checked={Boolean(config.complementar_vazios)}
+        onChange={event => changeConfig({ ...config, complementar_vazios: event.target.checked })} />
+        Permitir complementar somente campos vazios em correspondências seguras, mantendo IDs e orçamentos.</label>
+      <label className="cliente-import-accept"><input type="checkbox" checked={Boolean(config.ignorar_inconsistencias)}
+        onChange={event => changeConfig({ ...config, ignorar_inconsistencias: event.target.checked })} />
+        Processar somente os aptos e manter os registros inconsistentes identificados no relatório para correção posterior.</label>
+      <button type="button" className="cad-secondary" disabled={!file} onClick={() => void run('preview')}>Analisar backup automaticamente</button>
+    </fieldset>}
+    {sourceMode === 'manual' && <fieldset disabled={busy} className="cliente-import-options">
       <legend>1. Arquivo e leitura</legend>
       <label className="cliente-import-file">Arquivo CSV / XLSX<input type="file" accept=".csv,.xlsx" onChange={event => {
         invalidate(); setTable(null); setConfig(initialConfig); setRelated({}); setRelatedTables({})
@@ -171,8 +207,8 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
         invalidate(); setConfig({ ...config, aba: event.target.value, mapeamento: {} }); setTable(current => current ? { ...current, colunas: [], amostra: [] } : null)
       }}>{table?.abas.map(name => <option key={name} value={name}>{name}</option>)}</select></label>}
       <button type="button" className="cad-secondary" disabled={!file} onClick={() => void run('inspect')}>Ler colunas</button>
-    </fieldset>
-    {table && table.colunas.length > 0 && <>
+    </fieldset>}
+    {sourceMode === 'manual' && table && table.colunas.length > 0 && <>
       <p>{table.total} linha(s) encontrada(s). Confira a amostra antes de mapear. Nenhuma coluna é tratada como definitiva.</p>
       <div className="cliente-import-scroll"><table className="cad-table"><caption>Amostra original do arquivo</caption><thead><tr>{table.colunas.map((name, index) => <th key={index}>{index + 1}. {name}</th>)}</tr></thead>
         <tbody>{table.amostra.map((row, index) => <tr key={index}>{table.colunas.map((_, column) => <td key={column}>{row[column] || '—'}</td>)}</tr>)}</tbody></table></div>
@@ -212,7 +248,8 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
       </fieldset>
       <button type="button" className="cad-secondary" disabled={busy || config.mapeamento.nome == null} onClick={() => void run('preview')}>Gerar prévia sem gravar</button>
     </>}
-    {preview && <div className="cliente-import-summary"><h3 className="commercial-title">3. Confira a prévia</h3><p>{preview.inserir} para inserir · {preview.complementar ?? 0} para complementar · {preview.ignorados} duplicidade(s) ignorada(s) · {preview.inconsistencias ?? 0} inconsistência(s) · {preview.erros} com erro.</p>
+    {preview && <div className="cliente-import-summary"><h3 className="commercial-title">3. Confira a prévia</h3><p>{preview.inserir} para inserir · {preview.complementar ?? 0} para complementar · {duplicates} duplicidade(s) ignorada(s) · {preview.inconsistencias ?? 0} inconsistência(s) · {preview.erros} com erro.</p>
+      {availableComplements > 0 && <p>{availableComplements} existente(s) com complementação possível, ainda não autorizada. Habilite complementar campos vazios e analise novamente para confirmar essas alterações.</p>}
       {previewBlocked && <p role="alert">Revise as inconsistências e gere outra prévia. Nenhum cadastro será gravado enquanto o lote estiver bloqueado.</p>}
       {config.ignorar_inconsistencias && ((preview.erros + (preview.inconsistencias ?? 0)) > 0) && <p role="status">As linhas inconsistentes serão ignoradas por sua escolha e continuarão identificadas no relatório.</p>}
       <button type="button" className="cad-secondary" onClick={downloadReport}><Download size={16} /> Baixar prévia sem gravar</button>
@@ -228,12 +265,23 @@ export function ClienteImportPanel({ onComplete, onClose, onBusyChange }: { onCo
         <p key={name}>{name}: {source.total} linha(s){name !== 'clientes' && ` · ${source.vinculados ?? 0} vinculada(s) · ${source.sem_vinculo ?? 0} sem vínculo`}</p>)}
       {((report ?? preview)?.ocorrencias ?? []).map((message, index) => <p key={index} role="alert">{message}</p>)}
     </div>}
-    {rows.length > 0 && <><div className="cliente-import-scroll"><table className="cad-table"><caption>{report ? 'Resultado por linha' : 'Prévia por linha'}</caption>
+    {rows.length > 0 && <>
+      <label>Visualizar registros<select value={rowFilter} onChange={event => {
+        setRowFilter(event.target.value as typeof rowFilter); setPage(0)
+      }}>
+        <option value="todos">Todos ({rows.length})</option>
+        <option value="novos">Clientes novos aptos</option>
+        <option value="complementos">Complementação segura de existentes</option>
+        <option value="duplicados">Duplicidades</option>
+        <option value="pendentes">Pendentes por inconsistência</option>
+      </select></label>
+      <p>{filteredRows.length} registro(s) nesta categoria. Motivos e dados originais permanecem no relatório exportável.</p>
+      <div className="cliente-import-scroll"><table className="cad-table"><caption>{report ? 'Resultado por linha' : 'Prévia por linha'}</caption>
       <thead><tr><th>Linha / código</th><th>Nome</th><th>CPF / CNPJ</th><th>Contato</th><th>Endereço</th><th>Situação / ID preservado</th><th>Complementos / motivos / avisos</th></tr></thead>
-      <tbody>{rows.slice(page * 50, (page + 1) * 50).map(row => <tr key={row.linha}><td>{row.linha}{row.codigo_cliente && <small>Código: {row.codigo_cliente}</small>}</td><td>{commercialDisplayText(row.dados.nome ?? '') || '—'}</td><td>{row.dados.documento || '—'}</td>
+      <tbody>{filteredRows.slice(page * 50, (page + 1) * 50).map(row => <tr key={row.linha}><td>{row.linha}{row.codigo_cliente && <small>Código: {row.codigo_cliente}</small>}</td><td>{commercialDisplayText(row.dados.nome ?? '') || '—'}</td><td>{row.dados.documento || '—'}</td>
         <td>{[row.dados.email, row.dados.telefone_comercial, row.dados.telefone_celular].filter(Boolean).join(' · ') || '—'}</td>
         <td>{[row.dados.logradouro, row.dados.numero, row.dados.complemento, row.dados.bairro, row.dados.cidade, row.dados.estado, row.dados.cep].filter(Boolean).map(value => commercialDisplayText(value ?? '')).join(', ') || '—'}</td>
-        <td>{statusNames[row.status]}{row.cliente_existente_id != null && <small>ID ERP: {row.cliente_existente_id}</small>}</td><td>{Object.entries(row.campos_complementar ?? {}).map(([field, value]) => <div key={field}><strong>{campos.find(([key]) => key === field)?.[1] ?? field}:</strong> {['nome','logradouro','numero','complemento','bairro','cidade','estado'].includes(field) ? commercialDisplayText(value ?? '') : value}</div>)}{[...(row.conflitos ?? []), ...row.motivos, ...row.avisos].join(' ') || 'Validado'}</td></tr>)}</tbody></table></div>
+        <td>{Object.keys(row.campos_disponiveis ?? {}).length ? 'Complementação possível, não autorizada' : statusNames[row.status]}{row.cliente_existente_id != null && <small>ID ERP: {row.cliente_existente_id}</small>}</td><td>{Object.entries(Object.keys(row.campos_complementar ?? {}).length ? row.campos_complementar ?? {} : row.campos_disponiveis ?? {}).map(([field, value]) => <div key={field}><strong>{campos.find(([key]) => key === field)?.[1] ?? field}:</strong> {['nome','logradouro','numero','complemento','bairro','cidade','estado'].includes(field) ? commercialDisplayText(value ?? '') : value}</div>)}{[...(row.conflitos ?? []), ...row.motivos, ...row.avisos].join(' ') || 'Validado'}</td></tr>)}</tbody></table></div>
       <div className="cliente-import-pagination"><button type="button" className="cad-secondary" disabled={page === 0} onClick={() => setPage(current => current - 1)}>Anterior</button>
         <span>Página {page + 1} de {pageCount}</span><button type="button" className="cad-secondary" disabled={page + 1 >= pageCount} onClick={() => setPage(current => current + 1)}>Próxima</button></div></>}
     {busy && <p role="status">Processando arquivo. Aguarde a confirmação da API.</p>}
