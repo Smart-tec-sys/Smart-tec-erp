@@ -60,6 +60,27 @@ def _preco_produto(produto, perfil):
         return (custo * MULTIPLICADORES[perfil]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return _dinheiro(produto.valor_venda)
 
+def _aplicar_preco_comercial(valores, item, preco_sugerido, base):
+    """Negociação altera só o item; o simulador técnico continua sendo validado."""
+    if not hasattr(item, "preco_unitario_manual"):
+        # PedidoCreate mantém o contrato anterior de precificação automática.
+        return
+    manual = bool(item.preco_unitario_manual)
+    if manual:
+        preco = Decimal(str(item.preco_unitario)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        valores["preco_unitario"] = preco
+        valores["subtotal"] = _dinheiro(max(
+            Decimal("0"), Decimal(str(base)) * preco - Decimal(str(item.desconto or 0)),
+        ))
+    dados = dict(valores.get("dados_tecnicos") or {})
+    dados["comercial"] = {
+        **(dados.get("comercial") or {}),
+        "preco_unitario_manual": manual,
+        "preco_unitario_sugerido": float(preco_sugerido),
+    }
+    valores["dados_tecnicos"] = dados
+
+
 def calcular_itens(db, o, data, tenant_id, item_model):
     o.itens.clear()
     total = Decimal("0")
@@ -75,7 +96,8 @@ def calcular_itens(db, o, data, tenant_id, item_model):
             valores.update(preco_unitario=simulacao['preco_unitario'], subtotal=simulacao['subtotal'],
                            dados_tecnicos={**(item.dados_tecnicos or {}), 'cortina': config},
                            calculo_producao_status='SIMULACAO_RECALCULADA')
-            total += Decimal(str(simulacao['subtotal']))
+            _aplicar_preco_comercial(valores, item, simulacao['preco_unitario'], item.quantidade)
+            total += Decimal(str(valores['subtotal']))
             o.itens.append(item_model(**valores))
             continue
         if item.produto_id is not None:
@@ -100,7 +122,8 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 valores.update(modelo_tecnico='ROMANA', area=simulacao['area_real_m2'],
                                preco_unitario=simulacao['preco_unitario'], subtotal=simulacao['subtotal'],
                                acionamento='MANUAL', calculo_producao_status='SIMULACAO_RECALCULADA')
-                total += simulacao['subtotal']
+                _aplicar_preco_comercial(valores, item, simulacao['preco_unitario'], simulacao['area_faturavel_m2'])
+                total += Decimal(str(valores['subtotal']))
                 o.itens.append(item_model(**valores))
                 continue
             dv_tipo = _tipo_double_vision(produto)
@@ -122,7 +145,8 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 valores.update(modelo_tecnico='DOUBLE VISION', area=simulacao['area_real_m2'],
                                preco_unitario=simulacao['preco_unitario'], subtotal=simulacao['subtotal'],
                                acionamento='MANUAL', calculo_producao_status='SIMULACAO_RECALCULADA')
-                total += simulacao['subtotal']
+                _aplicar_preco_comercial(valores, item, simulacao['preco_unitario'], simulacao['area_faturavel_m2'])
+                total += Decimal(str(valores['subtotal']))
                 o.itens.append(item_model(**valores))
                 continue
             from app.services.rolo_simulacao import _tipo_rolo, simular_rolo, RoloSimulacaoInput
@@ -164,7 +188,9 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                     raise ValueError('Preço técnico indisponível. Revise a cor, as medidas e o cadastro do produto.')
                 valores.update(preco_unitario=simulacao['preco_unitario'], subtotal=simulacao['subtotal'],
                                area=simulacao.get('area_real_m2', item.area), calculo_producao_status='SIMULACAO_RECALCULADA')
-                total += Decimal(str(simulacao['subtotal']))
+                base = item.quantidade if simulacao.get('modelo') == 'CORTINA' else simulacao['area_faturavel_m2']
+                _aplicar_preco_comercial(valores, item, simulacao['preco_unitario'], base)
+                total += Decimal(str(valores['subtotal']))
                 o.itens.append(item_model(**valores))
                 continue
             preco = _preco_produto(produto, data.perfil_comercial)
@@ -175,7 +201,7 @@ def calcular_itens(db, o, data, tenant_id, item_model):
             area_faturavel: AreaFaturavelResultado = calcular_area_faturavel(
                 largura=item.largura,
                 altura=item.altura,
-                quantidade=int(item.quantidade),
+                quantidade=item.quantidade,
                 unidade_venda=unidade_venda,
             )
 
@@ -196,9 +222,13 @@ def calcular_itens(db, o, data, tenant_id, item_model):
 
             # Salva também a área real e faturável para auditoria
             valores["area"] = float(area_faturavel.area_real_m2)
+            _aplicar_preco_comercial(valores, item, preco, base)
         else:
             subtotal = max(Decimal("0"), Decimal(str(item.quantidade)) * Decimal(str(item.preco_unitario)) - Decimal(str(item.desconto or 0)))
             valores["subtotal"] = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            comercial = (item.dados_tecnicos or {}).get("comercial") or {}
+            sugerido = comercial.get("preco_unitario_sugerido", item.preco_unitario)
+            _aplicar_preco_comercial(valores, item, sugerido, item.quantidade)
         total += Decimal(str(valores["subtotal"]))
         o.itens.append(item_model(**valores))
     o.total = total.quantize(

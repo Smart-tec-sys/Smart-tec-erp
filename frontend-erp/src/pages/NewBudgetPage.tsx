@@ -4,7 +4,7 @@ import { ZeroNumberInput } from '../components/ZeroNumberInput'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { CommercialRegistrationDialog, CREATE_COMMERCIAL_VALUE, type CommercialRegistration } from '../components/CommercialRegistrationDialog'
 import { ArrowLeft, ChevronLeft, ChevronRight, FileText, PackagePlus, Plus, ReceiptText, Truck, WalletCards, X, Loader2, UserPlus, LayoutDashboard } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { romanaKind, romanaKey, type RomanaState } from '../types/romana'
 import { romanaTetoKind, romanaTetoKey, type RomanaTetoState } from '../types/romana_teto'
 import { roloKind, roloKey, type RoloState } from '../types/rolo'
@@ -14,7 +14,7 @@ import { BudgetServiceRow } from '../components/BudgetServiceRow'
 import { BudgetSummary } from '../components/BudgetSummary'
 import { BudgetPaymentSection, paymentPlanIsConsistent, type BudgetPaymentState } from '../components/BudgetPaymentSection'
 import { createBudget, getAllProducts, getBudget, getClients, updateBudget, createClient, createProduct, getProductGroups, getProductUnits, convertBudgetToOrder, getCommercialPartners, getRepresentatives, getFuncionariosCadastro, type ApiOrder, type ApiCommercialPartner, type ApiRepresentative, type CadastroRecord } from '../services/api'
-import { commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, formatClientCompletenessMessage, getClientCompleteness, formatProductCompletenessMessage, getProductCompleteness, type ApiBudget, type ApiClient, type ApiProduct, type BudgetPayload, type BudgetProduct, type BudgetService, type CommercialProfile } from '../types/budget'
+import { applySuggestedProductPrice, commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, formatClientCompletenessMessage, getClientCompleteness, formatProductCompletenessMessage, getProductCompleteness, type ApiBudget, type ApiClient, type ApiProduct, type BudgetPayload, type BudgetProduct, type BudgetService, type CommercialProfile } from '../types/budget'
 import type { CurtainState } from '../types/budget'
 
 type Props={onBack:()=>void; budgetId?:number|null; onSaved:(id:number,mode:'created'|'updated')=>void; onConverted?:()=>void}
@@ -37,6 +37,8 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
     return units
   }, [productUnits, catalog])
   const [clientId,setClientId]=useState(0),[profile,setProfile]=useState<CommercialProfile>('VAREJO'),[status,setStatus]=useState('EM_ABERTO'),[validity,setValidity]=useState(today),[observation,setObservation]=useState(''),[internalObservation,setInternalObservation]=useState('')
+  const currentProfile = useRef(profile)
+  currentProfile.current = profile
   const [products,setProducts]=useState<BudgetProduct[]>([emptyProduct(1)]),[services,setServices]=useState<BudgetService[]>([]),[discount,setDiscount]=useState(0),[freight]=useState(0)
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<ApiBudget|null>(null)
   const [converting,setConverting]=useState(false)
@@ -190,40 +192,40 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
       })
       .catch(()=>undefined)
   },[budgetId])
- useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),discount:Number(i.desconto),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),value:Number(i.preco_unitario),discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
-useEffect(()=>{if(budgetId)getBudget(budgetId).then(b=>{
-  if(b.perfil_comercial){setProfile(b.perfil_comercial);setProfileConfirmed(true)}
-  else{setProfileConfirmed(false);setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}
-}).catch(e=>{setProfileConfirmed(false);setError(e instanceof Error?e.message:String(e))})},[budgetId])
-  useEffect(()=>{setProducts(rows=>rows.map(row=>{const found=catalog.find(p=>p.id===row.productId);return found?{...row,romanaKind:romanaKind(found),romanaTetoKind:romanaTetoKind(found),roloKind:roloKind(found),doubleVisionKind:doubleVisionKind(found),price:(romanaKind(found)||romanaTetoKind(found)||roloKind(found)||doubleVisionKind(found))?0:commercialPrice(found,profileLabel[profile])}:row}))},[profile,catalog])
+ useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){if(b.perfil_comercial){setProfile(b.perfil_comercial);setProfileConfirmed(true)}else{setProfileConfirmed(false);setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),priceManual:i.preco_unitario_manual??true,suggestedPrice:i.preco_unitario_sugerido??undefined,discount:Number(i.desconto),acao_acionamento:i.dados_tecnicos?.romana_teto?.acionamento,lado_comando:i.dados_tecnicos?.romana_teto?.lado_comando,comprimento_bastao:i.dados_tecnicos?.romana_teto?.comprimento_bastao_m?.toString(),comprimento_corrente_sem_fim:i.dados_tecnicos?.romana_teto?.comprimento_corrente_sem_fim_m?.toString(),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),value:Number(i.preco_unitario),discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
+  useEffect(()=>{
+    setProducts(rows=>rows.map(row=>{
+      const found=catalog.find(p=>p.id===row.productId)
+      if(!found)return row
+      const next={...row,romanaKind:romanaKind(found),romanaTetoKind:romanaTetoKind(found),roloKind:roloKind(found),doubleVisionKind:doubleVisionKind(found)}
+      return next.romanaKind || next.romanaTetoKind || next.roloKind || next.doubleVisionKind || next.curtain
+        ? next : applySuggestedProductPrice(next,commercialPrice(found,profileLabel[profile]))
+    }))
+  },[profile,catalog])
   const onRomana = useCallback((id:number, state:RomanaState) => {
-    setProducts(rows => rows.map(row => row.id === id ? {...row, romana:state, price:state.result ? Number(state.result.preco_unitario) : row.price} : row))
+    setProducts(rows => rows.map(row => row.id === id && state.key === romanaKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), romana:state} : row))
   }, [])
   const onRomanaTeto = useCallback((id:number, state:RomanaTetoState) => {
-    setProducts(rows => rows.map(row => row.id === id ? {...row, romanaTeto:state, price:state.result ? Number(state.result.preco_unitario) : row.price} : row))
+    setProducts(rows => rows.map(row => row.id === id && state.key === romanaTetoKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), romanaTeto:state} : row))
   }, [])
   const onRolo = useCallback((id:number, state:RoloState) => {
-    setProducts(rows => rows.map(row => row.id === id ? {...row, rolo:state, price:state.result ? Number(state.result.preco_unitario) : row.price} : row))
+    setProducts(rows => rows.map(row => row.id === id && state.key === roloKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), rolo:state} : row))
   }, [])
   const onDoubleVision = useCallback((id:number, state:DoubleVisionState) => {
-    setProducts(rows => rows.map(row => row.id === id ? {...row, doubleVision:state, price:state.result ? Number(state.result.preco_unitario) : row.price} : row))
+    setProducts(rows => rows.map(row => row.id === id && state.key === doubleVisionKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), doubleVision:state} : row))
   }, [])
 
   const onCurtain = useCallback((id: number, state: CurtainState) => {
     setProducts(rows =>
       rows.map(row =>
-        row.id === id
+        row.id === id && row.modelTechnical === 'CORTINA' && (!state.simulationKey || state.simulationKey === curtainKey(row,profileLabel[currentProfile.current]))
           ? {
-              ...row,
+              ...applySuggestedProductPrice(row,state.result?.preco_disponivel ? state.result.preco_unitario : undefined),
               color: state.cor,
               curtain: {
                 ...state,
                 result: state.result,
               },
-              price:
-                state.result?.preco_disponivel
-                  ? Number(state.result.preco_unitario)
-                  : row.price,
             }
           : row
       )
@@ -402,6 +404,7 @@ const makeItem = (p:BudgetProduct) => ({
   altura:parseDecimal(p.height),
   area:(p.romanaKind||p.romanaTetoKind||p.roloKind||p.doubleVisionKind)?Number(p.romana?.result?.area_real_m2||p.romanaTeto?.result?.area_real_m2||p.rolo?.result?.area_real_m2||p.doubleVision?.result?.area_real_m2||0):parseDecimal(p.width)*parseDecimal(p.height)*p.quantity,
   preco_unitario:p.price,
+  preco_unitario_manual:Boolean(p.priceManual),
   desconto:p.discount,
   subtotal:productLineSubtotal(p,profileLabel[profile]),
   dados_tecnicos:technicalItemData(p),
@@ -754,11 +757,20 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
     </button>
   )}
 </div></section>
-      {error&&<div className="api-message error">{error}</div>}
+      {error&&<div className="api-message error" role="alert" style={{position:"fixed",top:16,right:16,zIndex:9999,maxWidth:440,padding:16,boxShadow:"0 8px 32px rgba(0,0,0,.22)"}}>{error}</div>}
       <div className={`new-budget-layout ${isSummaryCollapsed ? 'summary-collapsed' : ''}`}><div className="new-budget-main">
-      <BudgetSection icon={<FileText size={17}/>} title="Perfil comercial" subtitle="Escolha a tabela conforme o cliente. Os totais só são válidos após essa seleção; o backend recalcula os preços."><Field label="Tabela de preço"><select value={profileConfirmed?profile:''} onChange={e=>{
+      <BudgetSection icon={<FileText size={17}/>} title="Perfil comercial" subtitle="A tabela define os preços sugeridos. Valores negociados são exclusivos deste orçamento."><Field label="Tabela de preço"><select value={profileConfirmed?profile:''} onChange={e=>{
         const selected=e.target.value
         if(selected==='DECORADOR'||selected==='VAREJO'||selected==='CONSUMIDOR_FINAL'){
+          if(selected!==profile && products.some(p=>p.priceManual) && !window.confirm('Trocar a tabela restaura os preços sugeridos de todos os produtos. Deseja continuar?'))return
+          if(selected!==profile){
+            setProducts(rows=>rows.map(row=>{
+              const found=catalog.find(p=>p.id===row.productId)
+              const technical=Boolean(row.romanaKind || row.romanaTetoKind || row.roloKind || row.doubleVisionKind || row.curtain)
+              const suggested=!technical && found ? commercialPrice(found,profileLabel[selected]) : undefined
+              return {...row,priceManual:false,suggestedPrice:suggested,price:suggested??0,romana:undefined,romanaTeto:undefined,rolo:undefined,doubleVision:undefined,curtain:row.curtain?{...row.curtain,simulationKey:undefined,result:undefined,error:undefined}:undefined}
+            }))
+          }
           setProfile(selected);setProfileConfirmed(true)
           if(error.startsWith('Selecione explicitamente a tabela comercial'))setError('')
         }
@@ -1421,12 +1433,11 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
 
         </div>
       </BudgetSection>
-      <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
+      <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion allowManualPrice onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
       <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Persistidos como itens do tipo SERVICO." count={`${services.length} itens`}><div className="service-rows">{services.map(s=><BudgetServiceRow key={s.id} service={s} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))} onCreateService={handleOpenServiceModal} createServiceValue={CREATE_SERVICE_VALUE} serviceOptions={serviceOptions}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'Instalação',details:'',quantity:1,value:0,discount:0}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
       <BudgetSection icon={<Truck size={17}/>} title="Transporte" subtitle="Ainda sem campos próprios no contrato."><div className="form-grid relationship-grid"><Field label="Frete"><input type="number" value={freight} disabled/><small>Não persistido nesta fase</small></Field><Field label="Transportadora"><input disabled placeholder="Não persistida nesta fase"/></Field></div></BudgetSection>
       <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={clientTotalPreview} value={payment} onChange={setPayment}/></BudgetSection>
       <BudgetSection icon={<FileText size={17}/>} title="Observações" subtitle="Informações para o cliente e anotações internas da equipe."><div className="budget-observations-grid"><Field label="Observações para o cliente"><textarea value={observation} onChange={e=>setObservation(e.target.value)}/></Field><Field label="Observações internas"><textarea value={internalObservation} onChange={e=>setInternalObservation(e.target.value)}/></Field></div></BudgetSection>
-<BudgetSection icon={<ReceiptText size={17}/>} title="Payload da API" subtitle="O preço de produto é apenas estimativo; o servidor recalcula o valor definitivo."><pre className="payload-preview">{JSON.stringify(serverPayload,null,2)}</pre></BudgetSection>
       </div><BudgetSummary
         products={productTotal}
         services={serviceTotal}
@@ -1451,6 +1462,8 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
         onSave={save}
 
         saving={saving}
+        saveLabel={budgetId != null ? 'Salvar alterações' : 'Salvar orçamento'}
+        saveError={error}
         isCollapsed={isSummaryCollapsed}
         onToggle={()=>
           setIsSummaryCollapsed(

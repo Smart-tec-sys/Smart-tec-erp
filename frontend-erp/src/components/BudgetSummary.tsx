@@ -33,6 +33,7 @@ type Props = {
   onSave:()=>void
 
   saveLabel?:string
+  saveError?:string
   saving?:boolean
   isCollapsed?:boolean
   onToggle?:()=>void
@@ -63,6 +64,7 @@ export function BudgetSummary({
   onSave,
 
   saveLabel = 'Salvar orçamento',
+  saveError,
   saving,
   isCollapsed,
   onToggle,
@@ -324,10 +326,12 @@ export function BudgetSummary({
             </strong>
           </div>
 
+          {saveError && <div id="budget-save-error" className="api-message error" role="alert">{saveError}</div>}
           <button
             type="button"
             className="primary-button summary-action"
             onClick={onSave}
+            aria-describedby={saveError ? 'budget-save-error' : undefined}
             disabled={saving}
           >
             <Check size={17}/>

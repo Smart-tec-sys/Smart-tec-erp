@@ -26,13 +26,14 @@ class OrcamentoItemInput(BaseModel):
     grupo_tecnico: Optional[str] = None
     modelo_tecnico: Optional[str] = None
     unidade: Optional[str] = None
-    quantidade: float = Field(default=1, gt=0)
-    largura: float = Field(default=0, ge=0)
-    altura: float = Field(default=0, ge=0)
-    area: float = Field(default=0, ge=0)
-    preco_unitario: float = Field(default=0, ge=0)
-    desconto: float = Field(default=0, ge=0)
-    subtotal: float = Field(default=0, ge=0)
+    quantidade: float = Field(default=1, gt=0, allow_inf_nan=False)
+    largura: float = Field(default=0, ge=0, allow_inf_nan=False)
+    altura: float = Field(default=0, ge=0, allow_inf_nan=False)
+    area: float = Field(default=0, ge=0, allow_inf_nan=False)
+    preco_unitario: float = Field(default=0, ge=0, allow_inf_nan=False)
+    preco_unitario_manual: bool = False
+    desconto: float = Field(default=0, ge=0, allow_inf_nan=False)
+    subtotal: float = Field(default=0, ge=0, allow_inf_nan=False)
     observacao_item: Optional[str] = None
     material: Optional[str] = None
     cor: Optional[str] = None
@@ -68,9 +69,9 @@ class OrcamentoInput(BaseModel):
     validade: Optional[date] = None
     observacao: Optional[str] = None
     observacao_interna: Optional[str] = None
-    desconto: float = Field(default=0, ge=0)
-    total: float = Field(default=0, ge=0)
-    total_final: float = Field(default=0, ge=0)
+    desconto: float = Field(default=0, ge=0, allow_inf_nan=False)
+    total: float = Field(default=0, ge=0, allow_inf_nan=False)
+    total_final: float = Field(default=0, ge=0, allow_inf_nan=False)
 
     parceiro_id: Optional[int] = None
     percentual_parceiro: float = Field(

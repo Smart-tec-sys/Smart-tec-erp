@@ -17,6 +17,7 @@ from app.tenant.isolation import require_tenant
 from app.services.area_faturavel import calcular_area_faturavel, AreaFaturavelResultado
 
 def _item_dict(i):
+    comercial = (i.dados_tecnicos or {}).get("comercial") or {}
     # Recalcula área faturável para expor na resposta (backend é fonte de verdade)
     produto = None
     # Nota: produto não vem carregado no item, então recalculamos com os dados do item
@@ -24,7 +25,7 @@ def _item_dict(i):
     area_faturavel = calcular_area_faturavel(
         largura=float(i.largura or 0),
         altura=float(i.altura or 0),
-        quantidade=int(i.quantidade or 0),
+        quantidade=float(i.quantidade or 0),
         unidade_venda=unidade,
     )
     return {
@@ -44,6 +45,8 @@ def _item_dict(i):
         "area_faturavel_m2": float(area_faturavel.area_faturavel_m2),
         "minimo_faturavel_aplicado": area_faturavel.minimo_faturavel_aplicado,
         "preco_unitario": float(i.preco_unitario or 0),
+        "preco_unitario_manual": comercial.get("preco_unitario_manual"),
+        "preco_unitario_sugerido": comercial.get("preco_unitario_sugerido"),
         "desconto": float(i.desconto or 0),
         "subtotal": float(i.subtotal or 0),
         "observacao_item": i.observacao_item,
@@ -156,9 +159,19 @@ def _numero(db):
     return str(max(int(atual)+1,1001))
 
 
+def _validar_pagamento_existente(o):
+    if not o.parcelas_pagamento and o.pagamento_modalidade is None:
+        return
+    total_parcelas = sum((Decimal(str(p.valor)) for p in o.parcelas_pagamento), Decimal("0"))
+    total_comercial = _dinheiro(o.total_cliente_final)
+    if total_parcelas != total_comercial:
+        raise ValueError("A soma das parcelas deve ser igual ao total comercial definitivo. Revise as condições de pagamento.")
+
+
 def _preencher_pagamento(db, o, data, tenant_id):
     modalidade = data.pagamento_modalidade
     if modalidade is None and data.pagamento_parcelas is None:
+        _validar_pagamento_existente(o)
         return
     parcelas = list(data.pagamento_parcelas or [])
     o.parcelas_pagamento.clear()
@@ -396,6 +409,7 @@ def atualizar_condicoes_revenda(db, oid, data, tenant: TenantContext):
         ))
         if o.total_final != c["base_smarttec"] or o.total_cliente_final != c["preco_cliente"]:
             raise ValueError("Base comercial inconsistente; nenhuma alteracao aplicada.")
+        _validar_pagamento_existente(o)
         publico, interno = textos_condicoes_revenda(c)
         o.observacao = "\n\n".join(filter(None, [data.observacao_comercial.strip(), publico]))
         o.observacao_interna = "\n\n".join(filter(None, [data.observacao_interna.strip(), interno]))

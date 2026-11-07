@@ -5,6 +5,15 @@ const amount = '(\\d{1,3}(?:\\.\\d{3})*,\\d{2})'
 const value = (text: string) => Number(text.replace(/\./g, '').replace(',', '.'))
 const cents = (number: number) => Math.round(number * 100)
 
+// Texto comercial livre permanece intacto. Marcadores explícitos de composição
+// privada impedem a exportação, para que o operador revise a origem do texto.
+export function assertCustomerTextSafe(values: Array<string | null | undefined>) {
+ const privateDetail = /\b(?:custos? (?:industriais|industrial|internos?|unitarios?|totais?)|margem (?:interna|de lucro)|comiss(?:ao|oes)|taxa bancaria|observac(?:ao|oes) internas?|nao enviar ao cliente|custo_unitario|custo_total)\b|(?:^|\n)\s*rt\s*[:=]/i
+ if (values.some(value => privateDetail.test((value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')))) {
+  throw new Error('O texto comercial contém indicação de custos ou composição financeira interna. Revise as observações e use o campo interno antes de gerar o PDF do cliente.')
+ }
+}
+
 export function structuredPaymentNotes(budget: ApiBudget) {
  const parcels = budget.pagamento_parcelas || []
  if (!budget.pagamento_modalidade || parcels.length === 0) return ''

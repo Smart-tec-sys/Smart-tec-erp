@@ -5,14 +5,15 @@ const {pathToFileURL}=require('node:url')
 const {registerHooks}=require('node:module')
 const compiled=new Map()
 const calls=[]
-let mockBudget,mockCompany,mockClients=[],mockResellers=[],mockSellers=[],mockRepresentatives=[],queryFailure=false,activeCompanyId=1
+let mockBudget,mockCompany,mockClients=[],mockResellers=[],mockSellers=[{id:10,nome:'André'}],mockRepresentatives=[],queryFailure=false,activeCompanyId=1,switchCompanyDuringLoad=false
 global.__budgetPdfMocks={
  getBudget:async()=>{calls.push('budget');if(queryFailure)throw new Error('simulated');return mockBudget},
  getClients:async()=>{calls.push('clients');if(queryFailure)throw new Error('simulated');return mockClients},
  getCommercialPartners:async()=>{calls.push('resellers');return mockResellers},
  getFuncionariosCadastro:async()=>{calls.push('sellers');return mockSellers},
  getRepresentatives:async()=>{calls.push('representatives');return mockRepresentatives},
- getAuthMe:async()=>{calls.push('company');if(queryFailure)throw new Error('simulated');return {empresas:[mockCompany]}},
+ getAuthMe:async()=>{throw new Error('PDF deve consultar o perfil da empresa ativa, não /auth/me')},
+ getCurrentCompany:async()=>{calls.push('company');if(queryFailure)throw new Error('simulated');if(switchCompanyDuringLoad)activeCompanyId=2;return mockCompany},
  getEmpresaId:()=>activeCompanyId,
  getApiAuthHeaders:async()=>({'X-Empresa-ID':String(activeCompanyId)}),
  request:async path=>{assert.equal(path,'/empresa/atual');calls.push('local-company');if(queryFailure)throw new Error('simulated');return mockCompany},
@@ -25,7 +26,7 @@ registerHooks({
  const {transformWithOxc}=await import('vite')
  const apiUrl=pathToFileURL(path.join(__dirname,'../src/services/api.ts')).href
  const authUrl=pathToFileURL(path.join(__dirname,'../src/services/auth.ts')).href
- compiled.set(apiUrl,`const m=globalThis.__budgetPdfMocks; export const apiConfig={baseUrl:'https://api.example.invalid'}; export const {getBudget,getClients,getCommercialPartners,getFuncionariosCadastro,getRepresentatives,request}=m;`)
+ compiled.set(apiUrl,`const m=globalThis.__budgetPdfMocks; export const apiConfig={baseUrl:'https://api.example.invalid'}; export const {getBudget,getClients,getCommercialPartners,getFuncionariosCadastro,getRepresentatives,request,getCurrentCompany}=m;`)
  compiled.set(authUrl,`const m=globalThis.__budgetPdfMocks; export const {getAuthMe,getEmpresaId,getApiAuthHeaders}=m; export let authEnabled=true; export function setAuthEnabled(value){authEnabled=value}`)
  for(const file of ['src/services/budgetPdfVisibility.ts','src/services/budgetPdfData.ts','src/services/budgetPdf.ts','src/components/budgetPdf/BudgetPdfDocument.tsx','src/components/budgetPdf/budgetPdfStyles.ts']){
   const filename=path.join(__dirname,'..',file)
@@ -40,7 +41,7 @@ registerHooks({
  const item={tipo_item:'PRODUTO',descricao:'Persiana Screen 1% ECO IMPORTADA',material:'Screen sintético',observacao_item:'Sala de estar',largura:2.5,altura:1.7,quantidade:2,unidade:'M²',preco_unitario:321.45,desconto:12.34,subtotal:987.65,cor:'Cinza',dados_tecnicos:{secret:'NAO EXPOR SIMULACAO'}}
  const budget={id:1004,numero:'1004',cliente_id:null,parceiro_id:1,vendedor_id:10,representante_id:3,cliente_final_nome:'Cliente Final Teste',cliente_final_documento:'Documento de teste',cliente_final_telefone:'Telefone de teste',cliente_final_email:'cliente@example.invalid',cliente_final_endereco:'Endereço de teste',criado_em:'2026-10-07T12:00:00',validade:'2026-10-20',total:1234.56,desconto:23.45,total_final:1211.11,valor_parceiro:234.56,percentual_parceiro:19.87,incluir_rt:true,tipo_rt:'PERCENTUAL',percentual_rt:4.56,valor_rt:67.89,incluir_taxa_bancaria:true,taxa_bancaria_percentual:3.21,valor_taxa_bancaria:45.67,total_cliente_final:1559.23,observacao:'Condições comerciais de teste. Instalação mediante agendamento.',observacao_interna:'SEGREDO INTERNO NÃO ENVIAR',itens:[item,{...item,tipo_item:'SERVICO',descricao:'Instalação',observacao_item:'Agendamento prévio',largura:0,altura:0,quantidade:1,unidade:'UN'}]}
  const logo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII='
- const context={companyName:'Razão Social Teste',companyTradeName:'Empresa de teste',companyDocument:'Documento sintético da empresa',companyLogo:logo,resellerName:'Revenda Teste',sellerName:'André',representativeName:'Representante Teste'}
+ const context={companyName:'Razão Social Teste',companyTradeName:'Empresa de teste',companyDocument:'Documento sintético da empresa',companyLogo:logo,companyAddress:'Rua Sintética, 123, Centro, Cidade Teste, SP, 01000-000',companyPhones:['(11) 3333-4444','(11) 99999-8888'],companyEmail:'vendas@example.invalid',companySite:'https://example.invalid',resellerName:'Revenda Teste',sellerName:'André',representativeName:'Representante Teste'}
  const text=node=>{if(node==null||typeof node==='boolean')return '';if(typeof node==='string'||typeof node==='number')return String(node);if(Array.isArray(node))return node.map(text).join(' ');if(typeof node.type==='function')return text(node.type(node.props));return text(node.props?.children)}
  const frozen=JSON.stringify(budget)
  const customer=prepareBudgetPdfData(budget,'reseller_client',context),serialized=JSON.stringify(customer)
@@ -48,11 +49,25 @@ registerHooks({
  assert.equal(customer.finance.customerTotal,1559.23)
  assert.equal(customer.company,'Empresa de teste');assert.equal(customer.companyDocument,context.companyDocument);assert.equal(customer.companyLogo,logo)
  assert.equal(customer.products[0].material,item.material)
+ assert.equal(customer.companyLegalName,'Razão Social Teste')
+ assert.equal(customer.companyAddress,context.companyAddress)
+ assert.deepEqual(customer.companyPhones,context.companyPhones)
+ assert.equal(prepareBudgetPdfData(budget,'reseller_client').company,'')
+ assert.equal(prepareBudgetPdfData(budget,'reseller_client').companyLegalName,'')
  assert.equal(prepareBudgetPdfData(budget,'reseller_client',{companyName:'Somente razão social'}).company,'Somente razão social')
  assert.equal(prepareBudgetPdfData(budget,'reseller_client').companyLogo,undefined)
  const customerText=text(React.createElement(BudgetPdfDocument,{data:customer}))
  for(const value of ['Valor-base Smart-tec','Acréscimo parceiro / revenda','Taxa bancária','Tabela comercial:','1.211,11','234,56','67,89','45,67','321,45','987,65','SEGREDO','NAO EXPOR'])assert.ok(!customerText.includes(value),value)
  assert.doesNotMatch(customerText,/\bRT\b/)
+ for(const expected of ['Razão Social Teste',context.companyAddress,...context.companyPhones,context.companyEmail,context.companySite,'Vendedor: André'])assert.ok(customerText.replace(/\s+/g,' ').includes(expected),expected)
+ const headerTree=BudgetPdfDocument({data:customer}).props.children.props.children[0]
+ assert.equal(headerTree.props.children.length,3)
+ assert.equal(headerTree.props.children[0].props.children.type,'IMAGE')
+ assert.ok(text(headerTree.props.children[1]).includes('Razão Social Teste'))
+ assert.ok(text(headerTree.props.children[2]).replace(/\s+/g,' ').includes('Vendedor: André'))
+ const noOptional=prepareBudgetPdfData(budget,'reseller_client',{companyName:'Empresa sem dados opcionais'})
+ assert.equal(noOptional.companyDocument,'');assert.equal(noOptional.companyAddress,'');assert.deepEqual(noOptional.companyPhones,[])
+ assert.equal(noOptional.companyEmail,'');assert.equal(noOptional.companySite,'');assert.equal(noOptional.companySeller,'')
  assert.match(customerText,/1.559,23/);assert.match(customerText,/Sala de estar/);assert.match(customerText,/2,5 x 1,7 m/);assert.match(customerText,/SERVIÇOS/)
  assert.equal(budgetFinancialVisibility('reseller_client').itemPrices,true)
  assert.equal(customer.products[0].subtotal+customer.services[0].subtotal,1559.23)
@@ -143,6 +158,15 @@ registerHooks({
    assert.match(text(withoutDiscount),/321,45/);assert.match(text(withoutDiscount),/987,65/)
   }
  }
+ const legitimateObservation='Instalação mediante agendamento. Pagamento via Pix. Garantia de dois anos.'
+ const legitimate=prepareBudgetPdfData({...direct,observacao:legitimateObservation},'direct',context)
+ assert.ok(legitimate.notes.includes(legitimateObservation))
+ for(const note of ['Custos industriais: R$ 350,00','Comissão do vendedor: 5%','Margem de lucro: 30%','Taxa bancária: 3%','CUSTO_TOTAL=200','RT: R$ 40,00']){
+  assert.throws(()=>prepareBudgetPdfData({...direct,observacao:note},'direct',context),/composição financeira interna/)
+  assert.throws(()=>prepareBudgetPdfData({...direct,itens:[{...item,observacao_item:note}]},'direct',context),/composição financeira interna/)
+ }
+ const cnpjData=prepareBudgetPdfData(direct,'direct',{...context,companyDocument:'12.345.678/0001-95'})
+ assert.match(text(BudgetPdfDocument({data:cnpjData})),/CNPJ\s*:\s*12\.345\.678\/0001-95/)
  assert.match(directText,/Documento sintético da empresa/);assert.ok(!directText.includes('Ambiente / obs.'))
  const noDiscount={...direct,desconto:0,itens:[{...item,desconto:0}]}
  const noDiscountText=text(React.createElement(BudgetPdfDocument,{data:prepareBudgetPdfData(noDiscount,'direct',context)}))
@@ -159,7 +183,8 @@ registerHooks({
  assert.equal(budgetPdfFilename('1004','direct'),'Orcamento-1004.pdf');assert.equal(budgetPdfFilename('1004','reseller_internal'),'Orcamento-1004-Interno-Smart-tec.pdf');assert.equal(budgetPdfFilename('1004','reseller_commercial'),'Orcamento-1004-Revenda.pdf');assert.equal(budgetPdfFilename('1004','reseller_client'),'Orcamento-1004-Cliente-Final.pdf')
  const samples=[['direct',direct,'direct'],['reseller-internal',budget,'reseller_internal'],['reseller-client',budget,'reseller_client'],['corrected-reseller-internal',corrected,'reseller_internal'],['corrected-reseller-client',corrected,'reseller_client'],['corrected-reseller-commercial',corrected,'reseller_commercial'],['many-items',{...direct,itens:Array.from({length:90},(_,index)=>({...item,descricao:`Item ${index+1} - Persiana comercial`,observacao_item:`Ambiente ${index+1}`}))},'direct'],['long-text',{...direct,observacao:'Condição comercial longa. '.repeat(180),itens:[{...item,descricao:'Descrição comercial extensa e legível. '.repeat(160),observacao_item:'Observação do ambiente. '.repeat(40)}]},'direct']]
  for(const [name,value,mode] of samples){
-  const blob=await generateBudgetPdf(value,mode,context)
+  const sampleContext=name==='long-text'?{...context,companyName:'Empresa Sintética de Persianas e Cortinas Sob Medida Ltda',companyAddress:'Avenida Sintética de Testes de Layout, 12345, Sala 123, Bairro Industrial, Cidade de Nome Extenso, SP, 01000-000',companyEmail:'atendimento.comercial@example.invalid',companySite:'https://empresa-sintetica.example.invalid'}:name==='many-items'?{companyName:'Empresa sem opcionais'}:context
+  const blob=await generateBudgetPdf(value,mode,sampleContext)
   assert.equal(blob.type,'application/pdf');assert.ok(blob.size>1000)
   const buffer=Buffer.from(await blob.arrayBuffer());assert.equal(buffer.subarray(0,5).toString(),'%PDF-')
   const raw=buffer.toString('latin1'),pages=(raw.match(/\/Type \/Page\b/g)||[]).length
@@ -212,15 +237,31 @@ registerHooks({
   console.log('Pre-validacao do orcamento1006: valores aprovados, condicoes e sigilo dos tres PDFs OK; nenhum dado gravado no ERP.')
  }
 
- mockBudget={...direct,numero:'2001',total_final:700};mockCompany={id:1,nome:'Razão real',nome_fantasia:'Nome fantasia real',documento:'Documento real',logo_url:null}
+ mockBudget={...direct,numero:'2001',total_final:700};mockCompany={id:1,nome:'Razão real',nome_fantasia:'Nome fantasia real',documento:'Documento real',logo_url:null,perfil_publico:{logradouro:'Rua Tenant 1',numero:'123',cidade:'Cidade A',estado:'SP',telefone_comercial:'1133334444',telefone_celular:'11999998888',email:'empresa1@example.invalid',site:'https://empresa1.example.invalid'}}
  mockClients=[{id:20,nome:'Cliente cadastro',documento:'Doc cliente',email:'email@example.invalid'}]
  calls.length=0
  const saved=await prepareSavedBudgetPdf(1004,'direct')
  assert.equal(saved.budget,mockBudget);assert.equal(saved.budget.total_final,700);assert.equal(saved.filename,'Orcamento-2001.pdf')
- assert.equal(calls[0],'budget');assert.deepEqual(calls.slice(1).sort(),['clients','company'])
+ assert.equal(calls[0],'budget');assert.deepEqual(calls.slice(1).sort(),['clients','company','sellers'])
  const companyContext=await loadBudgetPdfContext(direct,'direct')
  assert.equal(companyContext.companyTradeName,mockCompany.nome_fantasia);assert.equal(companyContext.companyDocument,mockCompany.documento)
  assert.equal(companyContext.companyLogo,undefined);assert.deepEqual(companyContext.warnings,[])
+ assert.equal(companyContext.companyAddress,'Rua Tenant 1, 123, Cidade A, SP')
+ assert.deepEqual(companyContext.companyPhones,['1133334444','11999998888'])
+ assert.equal(companyContext.companyEmail,'empresa1@example.invalid')
+ assert.equal(companyContext.companySite,'https://empresa1.example.invalid')
+ assert.equal(companyContext.sellerName,'André')
+ assert.equal((await loadBudgetPdfContext({...direct,vendedor_id:999},'direct')).sellerName,undefined)
+ const firstCompany=mockCompany
+ activeCompanyId=2;mockCompany={id:2,nome:'Razão do Tenant 2',documento:'98.765.432/0001-10',perfil_publico:{cidade:'Cidade B',email:'tenant2@example.invalid'}}
+ const secondContext=await loadBudgetPdfContext(direct,'direct')
+ const secondPdf=prepareBudgetPdfData(direct,'direct',secondContext)
+ assert.equal(secondPdf.companyLegalName,'Razão do Tenant 2');assert.equal(secondPdf.companyAddress,'Cidade B')
+ assert.ok(!JSON.stringify(secondPdf).includes('empresa1'));assert.ok(!JSON.stringify(secondPdf).includes('Tenant 1'))
+ activeCompanyId=1;mockCompany=firstCompany
+ switchCompanyDuringLoad=true
+ await assert.rejects(loadBudgetPdfContext(direct,'direct'),/empresa ativa mudou/)
+ switchCompanyDuringLoad=false;activeCompanyId=1
  const companyWithoutOptional={id:1,nome:'Empresa sem opcionais'}
  const completeCompany=mockCompany
  mockCompany=companyWithoutOptional
@@ -264,19 +305,19 @@ registerHooks({
  assert.equal(internalContext.resellerName,'Revenda Teste');assert.equal(internalContext.sellerName,'André');assert.equal(internalContext.representativeName,'Representante Teste')
  calls.length=0;mockBudget=corrected
  const commercialPdf=await prepareSavedBudgetPdf(1004,'reseller_commercial')
- assert.deepEqual(calls,['budget','resellers','company'])
+ assert.deepEqual(calls,['budget','resellers','sellers','company'])
  assert.equal(commercialPdf.filename,'Orcamento-1004-Revenda.pdf')
  assert.deepEqual(commercialPdf.warnings,[])
  calls.length=0;mockBudget=budget
  await prepareSavedBudgetPdf(1004,'reseller_client')
- assert.deepEqual(calls,['budget','company'])
+ assert.deepEqual(calls,['budget','sellers','company'])
  const authModule=await import(authUrl)
  authModule.setAuthEnabled(false)
  mockBudget=direct
  calls.length=0
  const localPdf=await prepareSavedBudgetPdf(1004,'direct')
  assert.equal(localPdf.blob.type,'application/pdf')
- assert.deepEqual(calls,['budget','clients','local-company'])
+ assert.deepEqual(calls,['budget','clients','sellers','company'])
  queryFailure=true
  await assert.rejects(loadBudgetPdfContext(direct,'direct'),/carregar os dados/)
  queryFailure=false

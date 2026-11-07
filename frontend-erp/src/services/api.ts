@@ -101,6 +101,18 @@ export async function getAllProducts(): Promise<ApiProduct[]> {
   throw new Error('Paginação do catálogo excedeu o limite de segurança.')
 }
 
+export type CompanyPublicProfile = Partial<Record<
+  'logradouro' | 'numero' | 'complemento' | 'bairro' | 'cidade' | 'estado' | 'cep' |
+  'telefone_comercial' | 'telefone_celular' | 'email' | 'site', string | null>>
+export type CurrentCompany = {
+  id: number; nome: string; nome_fantasia?: string | null; documento?: string | null;
+  logo_url?: string | null; perfil_publico: CompanyPublicProfile
+}
+export type CompanyProfileUpdate = Pick<CurrentCompany, 'nome' | 'nome_fantasia' | 'documento' | 'perfil_publico'>
+export const getCurrentCompany = () => request<CurrentCompany>('/empresa/atual')
+export const updateCurrentCompany = (data: CompanyProfileUpdate, empresaId: number) =>
+  request<CurrentCompany>('/empresa/atual', { method: 'PUT', headers: { 'X-Empresa-ID': String(empresaId) }, body: JSON.stringify(data) })
+
 export const getClients = () => request<ApiClient[]>('/clientes/')
 export type ProductCommercialUpdate = { nome: string } & Partial<Pick<ApiProduct,
   'grupo_produto' | 'unidade_venda' | 'cor' | 'cor_componente' | 'variacao_cor' |

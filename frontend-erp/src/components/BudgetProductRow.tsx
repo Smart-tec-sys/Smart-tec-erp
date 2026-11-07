@@ -6,7 +6,7 @@ import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { ApiProduct, BudgetProduct, CommercialType } from '../types/budget'
-import { commercialPrice, formatCurrency, normalizeSearch, productColor, productLineSubtotal } from '../types/budget'
+import { commercialPrice, formatCurrency, normalizeSearch, productColor, productLineSubtotal, negotiateProductPrice, restoreSuggestedProductPrice, suggestedProductPrice } from '../types/budget'
 const CREATE_PRODUCT_VALUE = '__CREATE_PRODUCT__'
 import { RomanaSimulation } from './RomanaSimulation'
 import { RomanaTetoSimulation } from './RomanaTetoSimulation'
@@ -44,6 +44,7 @@ type Props = {
   onCurtain: (id: number, state: CurtainState) => void
   validationAttempted?: boolean
   allowPackageConversion?: boolean
+  allowManualPrice?: boolean
 }
 
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
@@ -57,6 +58,7 @@ export function BudgetProductRow({
   product,
   catalog,
   allowPackageConversion,
+  allowManualPrice = false,
   commercialType,
   onChange,
   onRemove,
@@ -123,14 +125,16 @@ export function BudgetProductRow({
       ? FAMILY_COLOR_OPTIONS[selected.familia_tecnica] || []
       : []
 
+  const confirmPriceReset = () => !allowManualPrice || !product.priceManual || window.confirm('Trocar o produto restaura o preço sugerido para este item. Deseja continuar?')
   const chooseCurtain = (suggestion: CurtainSuggestion) => {
+    if (!confirmPriceReset()) return
     const curtain = applyCurtainSuggestion(isCurtain ? product.curtain ?? DEFAULT_CURTAIN : DEFAULT_CURTAIN, suggestion)
     setQuery('Cortina de tecido')
     onChange({
       ...product,
       productId: null, product: 'Cortina de tecido', code: '', family: '',
       groupTechnical: 'TECIDOS_CORTINA', modelTechnical: 'CORTINA', unit: 'M²',
-      color: curtain.cor, curtain, price: isCurtain ? product.price : 0,
+      color: curtain.cor, curtain, price: 0, priceManual:false, suggestedPrice:undefined,
       romanaKind: undefined, romana: undefined, romanaTetoKind: undefined, romanaTeto: undefined,
       roloKind: undefined, rolo: undefined, doubleVisionKind: undefined, doubleVision: undefined,
       acao_acionamento: undefined, lado_comando: undefined, comprimento_bastao: undefined,
@@ -139,6 +143,7 @@ export function BudgetProductRow({
   }
 
   const choose = (p: ApiProduct) => {
+    if (!confirmPriceReset()) return
     const rKind = romanaKind(p)
     const rtKind = romanaTetoKind(p)
     const rlKind = roloKind(p)
@@ -155,6 +160,8 @@ export function BudgetProductRow({
       unit: p.unidade_venda || p.unidade || '',
       color: productColor(p),
       price: rKind ? 0 : rlKind ? 0 : dvKind ? 0 : rtKind ? 0 : commercialPrice(p, commercialType),
+      priceManual:false,
+      suggestedPrice:rKind || rlKind || dvKind || rtKind ? undefined : commercialPrice(p,commercialType),
       romanaKind: rKind,
       romanaTetoKind: rtKind,
       romanaTeto: undefined,
@@ -191,6 +198,7 @@ export function BudgetProductRow({
     (!Number.isFinite(Number(product.price)) || Number(product.price) <= 0)
 
   const subtotal = productLineSubtotal(product, commercialType)
+  const suggestedPrice = suggestedProductPrice(product,commercialType)
 
   return (
     <article className="budget-product-row" onFocusCapture={selectZeroOnFocus}>
@@ -280,8 +288,10 @@ export function BudgetProductRow({
           <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.height)} onChange={(e) => update('height', e.target.value)} />
         </label>
         <label className={`field${validationAttempted && valueInvalid ? ' field-invalid' : ''}`}>
-          <span>Valor *</span>
-          <ZeroNumberInput min="0" step="0.01" value={product.price} readOnly={Boolean(product.romanaKind || product.romanaTetoKind || product.roloKind || product.doubleVisionKind || product.curtain)} onValueChange={value => update('price', value)} />
+          <span>Valor unitário *</span>
+          <ZeroNumberInput min="0" step="0.01" aria-label={`Valor unitário de ${product.product || 'produto'}`} value={product.price} readOnly={!allowManualPrice && Boolean(product.romanaKind || product.romanaTetoKind || product.roloKind || product.doubleVisionKind || product.curtain)} onValueChange={value => allowManualPrice ? onChange(negotiateProductPrice(product,value)) : update('price',value)} />
+          {allowManualPrice && <small>{product.priceManual ? 'Preço negociado neste orçamento.' : 'Preço sugerido.'} {suggestedPrice !== undefined && `Sugestão: ${formatCurrency(suggestedPrice)}`}</small>}
+          {allowManualPrice && product.priceManual && <button type="button" className="secondary-button" disabled={suggestedPrice === undefined} onClick={() => onChange(restoreSuggestedProductPrice(product,commercialType))}>Restaurar preço sugerido</button>}
         </label>
         <div className="product-subtotal">
           <span>Subtotal estimado</span>

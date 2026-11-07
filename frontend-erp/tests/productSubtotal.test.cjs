@@ -6,7 +6,7 @@ registerHooks({ resolve(specifier, context, next) {
   return next(specifier.startsWith('.') && !path.extname(specifier) ? specifier + '.ts' : specifier, context)
 } })
 ;(async () => {
-  const { emptyProduct, productLineSubtotal } = await import(pathToFileURL(path.join(__dirname, '../src/types/budget.ts')))
+  const { emptyProduct, productLineSubtotal, curtainKey } = await import(pathToFileURL(path.join(__dirname, '../src/types/budget.ts')))
   const { romanaKey } = await import(pathToFileURL(path.join(__dirname, '../src/types/romana.ts')))
   const { roloKey } = await import(pathToFileURL(path.join(__dirname, '../src/types/rolo.ts')))
   const base = { ...emptyProduct(1), productId: 1, price: 100, quantity: 2, modelTechnical: 'COMPONENTE' }
@@ -25,7 +25,7 @@ registerHooks({ resolve(specifier, context, next) {
   rolo.rolo={key:roloKey(rolo,'Varejo'),result:{subtotal:200}}
   assert.equal(productLineSubtotal({...rolo,color:'Preto'},'Varejo'),0)
   const c={fator:2,larguraTecido:3,modeloPrega:'WAVE',possuiForro:false,cabecaCm:10,barraCm:20,barraDupla:false,usaEntretela:false,fixacaoCortina:'RODIZIO',trilhoComCordas:false,sistemaWave:'PREGA_PRONTA',espacamentoBotaoCm:10,aberturaCortina:'ESQUERDA',result:{preco_disponivel:true,subtotal:500}}
-  c.simulationKey=JSON.stringify(['VAREJO',base.discount,base.productId,0,0,2,c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,'','','','',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,null,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina])
+  c.simulationKey=curtainKey({...base,curtain:c},'Varejo')
   // Campo opcional ausente é serializado como null pela simulação existente.
   c.tipoEntretela=null
   assert.equal(productLineSubtotal({...base,curtain:c},'Varejo'),500)

@@ -88,7 +88,7 @@ export type ApiClient = {
   permitir_exceder?: boolean | null
   observacoes?: string | null
 }
-export type ApiBudgetItem = { dados_tecnicos?: { cortina?: CurtainState } | null; id?:number; tipo_item:string; produto_id?:number|null; descricao:string; codigo_interno?:string|null; grupo_tecnico?:string|null; modelo_tecnico?:string|null; unidade?:string|null; quantidade:number; largura:number; altura:number; area:number; preco_unitario:number; desconto:number; subtotal:number; observacao_item?:string|null; cor?:string|null }
+export type ApiBudgetItem = { dados_tecnicos?: { cortina?: CurtainState; romana_teto?: { acionamento?: string; lado_comando?: string; comprimento_bastao_m?: number; comprimento_corrente_sem_fim_m?: number }; comercial?: { preco_unitario_manual?: boolean; preco_unitario_sugerido?: number } } | null; id?:number; tipo_item:string; produto_id?:number|null; descricao:string; codigo_interno?:string|null; grupo_tecnico?:string|null; modelo_tecnico?:string|null; unidade?:string|null; quantidade:number; largura:number; altura:number; area:number; preco_unitario:number; preco_unitario_manual?:boolean|null; preco_unitario_sugerido?:number|null; desconto:number; subtotal:number; observacao_item?:string|null; cor?:string|null }
 export type PaymentMode = 'AVISTA' | 'PARCELADO' | 'ENTRADA_SALDO'
 export type BudgetPaymentInstallment = {
   id?: number
@@ -267,7 +267,7 @@ export type CurtainState = {
   }
 }
 
-export type BudgetProduct = { id:number; productId:number|null; product:string; code:string; family:string; groupTechnical:string; modelTechnical:string; unit:string; color:string; details:string; quantity:number; width:string; height:string; price:number; discount:number; romanaKind?: 'MANUAL' | 'MOTORIZADA' | null; romana?: RomanaState; romanaTetoKind?: 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA' | null; romanaTeto?: RomanaTetoState; roloKind?: 'MANUAL' | 'MOTORIZADA' | null; rolo?: RoloState; doubleVisionKind?: 'MANUAL' | 'MOTORIZADA' | null; doubleVision?: DoubleVisionState; curtain?: CurtainState; acionamento?: string; acao_acionamento?: string; lado_comando?: string; comprimento_bastao?: string; comprimento_corrente_sem_fim?: string }
+export type BudgetProduct = { id:number; productId:number|null; product:string; code:string; family:string; groupTechnical:string; modelTechnical:string; unit:string; color:string; details:string; quantity:number; width:string; height:string; price:number; priceManual?:boolean; suggestedPrice?:number; discount:number; romanaKind?: 'MANUAL' | 'MOTORIZADA' | null; romana?: RomanaState; romanaTetoKind?: 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA' | null; romanaTeto?: RomanaTetoState; roloKind?: 'MANUAL' | 'MOTORIZADA' | null; rolo?: RoloState; doubleVisionKind?: 'MANUAL' | 'MOTORIZADA' | null; doubleVision?: DoubleVisionState; curtain?: CurtainState; acionamento?: string; acao_acionamento?: string; lado_comando?: string; comprimento_bastao?: string; comprimento_corrente_sem_fim?: string }
 export type BudgetService = { id:number; service:string; details:string; quantity:number; value:number; discount:number }
 export type BudgetInstallment = { id:number; dueDate:string; description:string; value:number; paymentMethod:string; note:string }
 export const formatCurrency = (value:number) => value.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
@@ -277,7 +277,10 @@ export const productColor = (product:ApiProduct) => product.cor_componente || pr
 export const productCost = (product:ApiProduct) => Number(product.custo_final || product.valor_custo || product.valor_venda || 0)
 export const commercialPercent:Record<CommercialType,number> = { Decorador:50, Varejo:100, 'Consumidor final':150 }
 export const roundHalfUp = (value:number) => Math.round((value + Number.EPSILON) * 100) / 100
-export const commercialPrice = (product:ApiProduct, type:CommercialType) => roundHalfUp(productCost(product) * (1 + commercialPercent[type] / 100))
+export const commercialPrice = (product:ApiProduct, type:CommercialType) => {
+  const cost = Number(product.custo_final || product.valor_custo || 0)
+  return cost > 0 ? roundHalfUp(cost * (1 + commercialPercent[type] / 100)) : roundHalfUp(Number(product.valor_venda || 0))
+}
 export const usesArea = (model:string) => ['ROLO','ROLÔ','DOUBLE_VISION','DOUBLE VISION','ROMANA','ROMANA_TETO','ROMANA DE TETO'].some(value=>normalizeSearch(model).startsWith(normalizeSearch(value)))
 export const usesLinearMeter = (unit:string) => ['ML','M','METRO','METRO LINEAR'].includes(normalizeSearch(unit))
 export const usesSquareMeter = (unit:string) => ['M2','M²','METRO QUADRADO','MQ'].includes(normalizeSearch(unit))
@@ -285,6 +288,26 @@ export const curtainKey = (item:BudgetProduct, profile:CommercialType) => {
   const c=item.curtain
   if(!c) return ''
   return JSON.stringify([Object.entries(profileLabel).find(([,label])=>label===profile)?.[0],item.discount,c.tecidoProdutoId??null,parseDecimal(item.width),parseDecimal(item.height),Math.max(1,item.quantity||1),c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,c.tipoForro??'',c.trilhoLinha??'',c.trilhoModelo??'',c.rodizioTipo??'',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,c.tipoEntretela,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina,c.possuiForro?c.forroProdutoId??null:null,c.possuiForro?c.larguraForro??null:null,c.trilhoProdutoId??null,c.rodizioProdutoId??null,c.ganchoProdutoId??null,c.botaoProdutoId??null,c.entretelaProdutoId??null,c.componentes?.map(l=>[l.produto_id??null,l.quantidade,l.unidades_por_embalagem??1])??null,c.baseMaoObra??'ALTURA_VERTICAL_150'])
+}
+// Sugestão e negociação têm estados distintos: a simulação nunca apaga um preço manual.
+export const applySuggestedProductPrice = (item:BudgetProduct, price:number|undefined):BudgetProduct =>
+  price !== undefined && Number.isFinite(price) && price >= 0
+    ? { ...item, suggestedPrice:price, price:item.priceManual ? item.price : price }
+    : item
+export const negotiateProductPrice = (item:BudgetProduct, price:number):BudgetProduct => ({
+  ...item, price:Math.round((price + Number.EPSILON) * 10000) / 10000, priceManual:true,
+})
+export const suggestedProductPrice = (item:BudgetProduct, profile:CommercialType):number|undefined => {
+  if(item.romanaKind) return item.romana?.key === romanaKey(item,profile) && !item.romana.error && item.romana.result?.preco_disponivel ? item.romana.result.preco_unitario : undefined
+  if(item.romanaTetoKind) return item.romanaTeto?.key === romanaTetoKey(item,profile) && !item.romanaTeto.error && item.romanaTeto.result?.preco_disponivel ? item.romanaTeto.result.preco_unitario : undefined
+  if(item.roloKind) return item.rolo?.key === roloKey(item,profile) && !item.rolo.error && item.rolo.result?.preco_disponivel ? item.rolo.result.preco_unitario : undefined
+  if(item.doubleVisionKind) return item.doubleVision?.key === doubleVisionKey(item,profile) && !item.doubleVision.error && item.doubleVision.result?.preco_disponivel ? item.doubleVision.result.preco_unitario : undefined
+  if(item.curtain) return item.curtain.simulationKey === curtainKey(item,profile) && !item.curtain.error && item.curtain.result?.preco_disponivel ? item.curtain.result.preco_unitario : undefined
+  return item.suggestedPrice
+}
+export const restoreSuggestedProductPrice = (item:BudgetProduct, profile:CommercialType):BudgetProduct => {
+  const price = suggestedProductPrice(item,profile)
+  return price === undefined ? item : { ...item, price, suggestedPrice:price, priceManual:false }
 }
 export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType) => {
   // Um resultado de simulação pertence às entradas que o geraram.
@@ -297,11 +320,17 @@ export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType)
       if(item.curtain.error || item.curtain.simulationKey !== curtainKey(item,profile)) return 0
     }
   }
+  const areaPerPiece = Math.round(parseDecimal(item.width) * parseDecimal(item.height) * 10000) / 10000
   const commercialBase = usesLinearMeter(item.unit)
     ? parseDecimal(item.width) * item.quantity
     : usesSquareMeter(item.unit) || usesArea(item.modelTechnical)
-      ? parseDecimal(item.width) * parseDecimal(item.height) * item.quantity
+      ? (usesSquareMeter(item.unit) ? Math.max(1.5,areaPerPiece) : areaPerPiece) * item.quantity
       : item.quantity
+  if(item.priceManual){
+    const result = item.romana?.result ?? item.romanaTeto?.result ?? item.rolo?.result ?? item.doubleVision?.result
+    const base = item.curtain ? item.quantity : result ? Number(result.area_faturavel_m2) : commercialBase
+    return roundHalfUp(Math.max(0,base * item.price - item.discount))
+  }
   return item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : roundHalfUp(Math.max(0,commercialBase*item.price-item.discount))
 }
 export const profileLabel:Record<CommercialProfile,CommercialType>={DECORADOR:'Decorador',VAREJO:'Varejo',CONSUMIDOR_FINAL:'Consumidor final'}

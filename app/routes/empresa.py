@@ -3,9 +3,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
+from pydantic import ValidationError
 
 from app.database import get_db
 from app.models.empresa import EmpresaDB
+from app.schemas.empresa_perfil import EmpresaPerfilUpdate, PerfilPublicoEmpresa
 from app.tenant.dependencies import get_current_tenant
 from app.tenant.context import TenantContext
 from app.tenant.isolation import require_tenant
@@ -14,20 +17,64 @@ from app.tenant.isolation import require_tenant
 router = APIRouter()
 
 
-@router.get("/atual")
-def obter_empresa_atual(
-    tenant: TenantContext = Depends(get_current_tenant),
-    db: Session = Depends(get_db),
-):
+def _empresa_ativa(db: Session, tenant: TenantContext):
     empresa = db.query(EmpresaDB).filter(
         EmpresaDB.id == require_tenant(tenant), EmpresaDB.status == "ATIVA",
     ).one_or_none()
     if empresa is None:
         raise HTTPException(status_code=404, detail="empresa ativa não encontrada")
+    return empresa
+
+
+def _dados_publicos(empresa: EmpresaDB):
+    # Não expor o JSON completo: ele também pode conter configurações internas.
+    configuracoes = empresa.configuracoes if isinstance(empresa.configuracoes, dict) else {}
+    fonte = configuracoes.get("perfil_publico", {})
+    fonte = fonte if isinstance(fonte, dict) else {}
+    perfil = {}
+    for campo in PerfilPublicoEmpresa.model_fields:
+        valor = fonte.get(campo)
+        try:
+            validado = PerfilPublicoEmpresa.model_validate({campo: valor})
+        except ValidationError:
+            continue
+        if getattr(validado, campo):
+            perfil[campo] = getattr(validado, campo)
     return {
         "id": empresa.id, "nome": empresa.nome, "nome_fantasia": empresa.nome_fantasia,
         "documento": empresa.documento, "logo_url": empresa.logo_url,
+        "perfil_publico": perfil,
     }
+
+
+@router.get("/atual")
+def obter_empresa_atual(
+    tenant: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_db),
+):
+    return _dados_publicos(_empresa_ativa(db, tenant))
+
+
+@router.put("/atual")
+def atualizar_empresa_atual(
+    dados: EmpresaPerfilUpdate,
+    tenant: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_db),
+):
+    empresa = _empresa_ativa(db, tenant)
+    empresa.nome = dados.nome
+    empresa.nome_fantasia = dados.nome_fantasia
+    empresa.documento = dados.documento
+    configuracoes = dict(empresa.configuracoes) if isinstance(empresa.configuracoes, dict) else {}
+    configuracoes["perfil_publico"] = dados.perfil_publico.model_dump(exclude_none=True)
+    empresa.configuracoes = configuracoes
+    try:
+        db.commit()
+        db.refresh(empresa)
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="não foi possível salvar os dados da empresa") from exc
+    return _dados_publicos(empresa)
 
 
 @router.post("/logo")

@@ -57,15 +57,24 @@ export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfDat
   return <Document title={`Orçamento ${data.number}`} author={data.company} subject={data.mode === 'reseller_internal' ? 'Interno Smart-tec' : data.mode==='reseller_commercial'?'Comercial da revenda':'Proposta comercial'}>
     <Page size="A4" style={s.page} wrap>
       <View style={s.header} wrap={false}>
-        <View style={s.identity}>
+        <View style={s.logoBlock}>
           {data.companyLogo && <Image src={data.companyLogo} style={s.logo} />}
-          <View style={s.companyBlock}>
-            <Text style={s.brand}>{data.company}</Text>
-            {data.companyDocument && <Text style={s.secondary}>Documento: {data.companyDocument}</Text>}
-          </View>
         </View>
+        <View style={s.companyBlock}>
+          {data.companyLegalName && <Text style={s.brand}>{data.companyLegalName}</Text>}
+          {data.companyDocument && <Text style={s.companyLine}>{data.companyDocument.replace(/\D/g, '').length === 14 ? 'CNPJ' : 'Documento'}: {data.companyDocument}</Text>}
+          {data.companyAddress && <Text style={s.companyLine}>{data.companyAddress}</Text>}
+        </View>
+        <View style={s.contacts}>
+          {data.companyPhones.map((phone, index) => <Text key={index}>{phone}</Text>)}
+          {data.companyEmail && <Text>{data.companyEmail}</Text>}
+          {data.companySite && <Text>{data.companySite}</Text>}
+          {data.companySeller && <Text>Vendedor: {data.companySeller}</Text>}
+        </View>
+      </View>
+      <View style={s.documentMeta} wrap={false}>
+        <Text style={s.title}>ORÇAMENTO Nº {data.number}</Text>
         <View style={s.meta}>
-          <Text style={s.title}>ORÇAMENTO Nº {data.number}</Text>
           <Text>Data: {data.date}</Text>
           <Text>Validade: {data.validity}</Text>
           {(data.mode === 'direct'||data.mode === 'reseller_internal') && <Text>Tabela comercial: {data.commercialTable}</Text>}
@@ -121,7 +130,7 @@ export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfDat
         {data.validity !== '—' && <Text style={s.acceptanceText}>Proposta válida até {data.validity}.</Text>}
       </View>
       <View style={s.footer} fixed>
-        <Text>{data.company} · Orçamento {data.number}</Text>
+        <Text>{[data.company, `Orçamento ${data.number}`].filter(Boolean).join(' · ')}</Text>
         <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </View>
     </Page>
