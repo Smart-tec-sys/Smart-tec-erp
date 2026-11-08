@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProdutoBase(BaseModel):
@@ -76,6 +76,35 @@ class ProdutoBase(BaseModel):
 
 class ProdutoCreate(ProdutoBase):
     pass
+
+
+class ProdutoUpdate(BaseModel):
+    nome: str | None = Field(default=None, min_length=1, max_length=255)
+    descricao: str | None = Field(default=None, max_length=5000)
+    grupo_produto: str | None = Field(default=None, max_length=150)
+    grupo_tecnico: str | None = Field(default=None, max_length=150)
+    familia_tecnica: str | None = Field(default=None, max_length=100)
+    modelo_tecnico: str | None = Field(default=None, max_length=100)
+    unidade: str | None = Field(default=None, max_length=50)
+    unidade_venda: str | None = Field(default=None, max_length=50)
+    unidade_compra: str | None = Field(default=None, max_length=50)
+    unidade_controle: str | None = Field(default=None, max_length=50)
+    nome_fornecedor: str | None = Field(default=None, max_length=255)
+    fornecedores: str | None = Field(default=None, max_length=5000)
+    codigo_fornecedor: str | None = Field(default=None, max_length=100)
+    valor_custo: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    despesas_acessorias: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    outras_despesas: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    margem_lucro: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    valor_venda: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cor: str | None = Field(default=None, max_length=100)
+    cor_componente: str | None = Field(default=None, max_length=100)
+    variacao_cor: str | None = Field(default=None, max_length=100)
+    situacao: str | None = Field(default=None, max_length=20)
+    status_comercial: str | None = Field(default=None, max_length=50)
+    varia_cor: bool | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class Produto(ProdutoBase):

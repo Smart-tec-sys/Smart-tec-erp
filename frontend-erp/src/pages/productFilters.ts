@@ -2,12 +2,25 @@ import type { ApiProduct } from '../types/budget'
 
 // Isolado do orçamento: todos os termos podem ocorrer em campos diferentes.
 export const normalizeProductSearch = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').trim().replace(/\s+/g, ' ')
-export const productFilterLabels = { group: 'Grupo comercial', family: 'Família técnica', unit: 'Unidade de venda', color: 'Cor/variação', supplier: 'Fornecedor' }
+export const productFilterLabels = {
+    group: 'Grupo comercial',
+    technicalGroup: 'Grupo técnico',
+    family: 'Família técnica',
+    model: 'Modelo técnico',
+    unit: 'Unidade de venda',
+    color: 'Cor/variação',
+    supplier: 'Fornecedor',
+}
 export type ProductFilterKey = keyof typeof productFilterLabels
 export const productFilterKeys = Object.keys(productFilterLabels) as ProductFilterKey[]
-export const emptyProductFilters = { group: '', family: '', unit: '', color: '', supplier: '' }
+export const emptyProductFilters = {
+    group: '', technicalGroup: '', family: '', model: '', unit: '', color: '', supplier: '',
+}
 export const productFilterValues = (p: ApiProduct): Record<ProductFilterKey, string[]> => ({
-    group: [p.grupo_produto ?? ''], family: [p.familia_tecnica ?? ''],
+    group: [p.grupo_produto ?? ''],
+    technicalGroup: [p.grupo_tecnico ?? ''],
+    family: [p.familia_tecnica ?? ''],
+    model: [p.modelo_tecnico ?? ''],
     unit: [p.unidade_venda?.trim() || p.unidade?.trim() || ''],
     color: [p.cor ?? '', p.cor_componente ?? '', p.variacao_cor ?? ''],
     supplier: [p.nome_fornecedor ?? '', p.fornecedores ?? ''],
@@ -16,7 +29,12 @@ export function indexProduct(p: ApiProduct) {
     const values = productFilterValues(p)
     return {
         product: p,
-        text: normalizeProductSearch([p.nome, p.codigo_interno, p.codigo, p.codigo_barras, p.grupo_tecnico, p.modelo_tecnico, ...Object.values(values).flat()].filter(Boolean).join(' ')),
+        text: normalizeProductSearch([
+            p.nome, p.descricao, p.codigo, p.codigo_interno, p.codigo_barras,
+            p.codigo_fornecedor, p.grupo_tecnico, p.modelo_tecnico,
+            p.familia_tecnica, p.nome_fornecedor, p.fornecedores,
+            ...Object.values(values).flat(),
+        ].filter(Boolean).join(' ')),
         values: Object.fromEntries(productFilterKeys.map(key => [key, values[key].map(normalizeProductSearch)])) as Record<ProductFilterKey, string[]>,
     }
 }

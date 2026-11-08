@@ -1,8 +1,8 @@
 import { commercialDisplayText } from '../utils/commercialDisplay'
 import { ColumnManager } from '../components/ColumnManager'
-import { Search, Filter, ChevronLeft, ChevronRight, X, Package, Eye, ChevronDown, ChevronUp } from 'lucide-react'
-import { useEffect, useState, useMemo } from 'react'
-import { getAllProducts } from '../services/api'
+import { Search, Filter, ChevronLeft, ChevronRight, X, Package, Eye, ChevronDown, ChevronUp, History } from 'lucide-react'
+import { useEffect, useState, useMemo, useRef } from 'react'
+import { getAllProducts, getProductChangeHistory, type ProductChangeHistory } from '../services/api'
 import { ProductCommercialForm } from '../components/ProductCommercialForm'
 import { productSortLabels, sortProducts, type ProductSort } from './productSorting'
 import './productsLayout.css'
@@ -24,6 +24,10 @@ export function ProductsPage() {
     const [editing, setEditing] = useState(false)
     const [savingProduct, setSavingProduct] = useState(false)
     const [savedMessage, setSavedMessage] = useState('')
+    const [productHistory, setProductHistory] = useState<ProductChangeHistory[] | null>(null)
+    const [historyLoading, setHistoryLoading] = useState(false)
+    const [historyError, setHistoryError] = useState('')
+    const historyRequestId = useRef(0)
     const [creating, setCreating] = useState(false)
     const closeCreate = () => { if (!savingProduct) setCreating(false) }
 
@@ -72,14 +76,37 @@ export function ProductsPage() {
     }, [sortedProducts, page])
 
     const openDetail = (product: ApiProduct) => {
+        historyRequestId.current += 1
         setEditing(false)
         setSavedMessage('')
+        setProductHistory(null)
+        setHistoryLoading(false)
+        setHistoryError('')
         setSelectedProduct(product)
         setDetailOpen(true)
     }
 
+    const loadProductHistory = async () => {
+        if (!selectedProduct || historyLoading) return
+        const requestId = ++historyRequestId.current
+        const productId = selectedProduct.id
+        setHistoryLoading(true)
+        setHistoryError('')
+        try {
+            const history = await getProductChangeHistory(productId)
+            if (requestId === historyRequestId.current) setProductHistory(history)
+        } catch (e) {
+            if (requestId === historyRequestId.current) {
+                setHistoryError(e instanceof Error ? e.message : String(e))
+            }
+        } finally {
+            if (requestId === historyRequestId.current) setHistoryLoading(false)
+        }
+    }
+
     const closeDetail = () => {
         if (savingProduct) return
+        historyRequestId.current += 1
         setEditing(false)
         setDetailOpen(false)
         setSelectedProduct(null)
@@ -180,15 +207,17 @@ export function ProductsPage() {
                             <span role="status" style={{ fontSize: 13 }}>{filteredProducts.length} {filteredProducts.length === 1 ? 'produto encontrado' : 'produtos encontrados'}</span>
                         </div>
                         <div className="budget-table-wrap products-table-scroll" tabIndex={0} role="region" aria-label="Tabela de produtos com rolagem horizontal">
-                            <ColumnManager storageKey="smarttec:columns:products" lockedColumns={['name', 'actions']} columns={[{ id: 'id', label: 'ID', defaultVisible: true }, { id: 'name', label: 'Nome', defaultVisible: true }, { id: 'group', label: 'Grupo Comercial', defaultVisible: true }, { id: 'unit', label: 'Unidade', defaultVisible: true }, { id: 'color', label: 'Cor/Variação', defaultVisible: true }, { id: 'family', label: 'Família', defaultVisible: true }, { id: 'cost', label: 'Custo', defaultVisible: true }, { id: 'finalCost', label: 'Custo Final', defaultVisible: true }, { id: 'price', label: 'Venda', defaultVisible: true }, { id: 'status', label: 'Situação', defaultVisible: true }, { id: 'actions', label: 'Ações', defaultVisible: true }]}><table className="budget-table">
+                            <ColumnManager storageKey="smarttec:columns:products" lockedColumns={['name', 'actions']} columns={[{ id: 'id', label: 'ID', defaultVisible: true }, { id: 'name', label: 'Nome', defaultVisible: true }, { id: 'group', label: 'Grupo Comercial', defaultVisible: true }, { id: 'technicalGroup', label: 'Grupo Técnico', defaultVisible: true }, { id: 'family', label: 'Família', defaultVisible: true }, { id: 'model', label: 'Modelo Técnico', defaultVisible: true }, { id: 'unit', label: 'Unidade', defaultVisible: true }, { id: 'color', label: 'Cor/Variação', defaultVisible: true }, { id: 'cost', label: 'Custo', defaultVisible: true }, { id: 'finalCost', label: 'Custo Final', defaultVisible: true }, { id: 'price', label: 'Venda', defaultVisible: true }, { id: 'status', label: 'Situação', defaultVisible: true }, { id: 'actions', label: 'Ações', defaultVisible: true }]}><table className="budget-table">
                                 <thead>
                                     <tr>
                                         <th style={{ width: '60px' }}>ID</th>
 <th style={{ minWidth: '220px' }}>Nome</th>
                                          <th>Grupo Comercial</th>
+                                         <th>Grupo Técnico</th>
+                                         <th>Família</th>
+                                         <th>Modelo Técnico</th>
                                          <th>Unidade</th>
                                          <th>Cor/Variação</th>
-                                         <th>Família</th>
                                          <th style={{ textAlign: 'right' }}>Custo</th>
                                          <th style={{ textAlign: 'right' }}>Custo Final</th>
                                          <th style={{ textAlign: 'right' }}>Venda</th>
@@ -199,7 +228,7 @@ export function ProductsPage() {
                                 <tbody>
                                     {currentPageProducts.length === 0 ? (
                                         <tr>
-                                            <td colSpan={11} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted)' }}>
+                                            <td colSpan={13} style={{ textAlign: 'center', padding: '32px', color: 'var(--color-muted)' }}>
                                                 Nenhum produto encontrado
                                             </td>
                                         </tr>
@@ -212,9 +241,11 @@ export function ProductsPage() {
                                                     {product.codigo_interno && <small>Cód: {product.codigo_interno}</small>}
                                                 </td>
                                                 <td>{product.grupo_produto || product.grupo_tecnico || '-'}</td>
+                                                <td>{product.grupo_tecnico || '-'}</td>
+                                                <td>{product.familia_tecnica || '-'}</td>
+                                                <td>{product.modelo_tecnico || '-'}</td>
                                                 <td>{product.unidade_venda || product.unidade || '-'}</td>
                                                 <td>{productColor(product) || '-'}</td>
-                                                <td>{product.familia_tecnica || '-'}</td>
                                                 <td style={{ textAlign: 'right' }}>{formatCurrency(Number(product.valor_custo || 0))}</td>
                                                 <td style={{ textAlign: 'right' }}>{formatCurrency(productCost(product))}</td>
                                                 <td style={{ textAlign: 'right' }}>{formatCurrency(Number(product.valor_venda || 0))}</td>
@@ -289,9 +320,28 @@ export function ProductsPage() {
                         </div>
                         <div className="modal-form" style={{ padding: '24px' }}>
                             {savedMessage && <p role="status">{savedMessage}</p>}
+                            {!editing && <section className="product-history-panel">
+                                <h4><History size={16} /> Histórico de alterações</h4>
+                                {productHistory === null
+                                    ? <button type="button" className="secondary-button" disabled={historyLoading}
+                                        onClick={() => void loadProductHistory()}>
+                                        {historyLoading ? 'Carregando histórico...' : 'Consultar histórico'}
+                                    </button>
+                                    : productHistory.length === 0
+                                        ? <p>Nenhuma alteração auditada registrada para este produto.</p>
+                                        : <ol>{productHistory.map(entry => <li key={entry.id}>
+                                            <strong>{entry.usuario_id}</strong> · {new Date(entry.criado_em).toLocaleString('pt-BR')}
+                                            <ul>{Object.entries(entry.alteracoes).map(([field, change]) =>
+                                                <li key={field}><code>{field}</code>: {JSON.stringify(change.antes)} → {JSON.stringify(change.depois)}</li>)}</ul>
+                                        </li>)}</ol>}
+                                {historyError && <p className="api-message error" role="alert">{historyError}</p>}
+                            </section>}
                             {editing ? <ProductCommercialForm product={selectedProduct} catalog={products} onBusy={setSavingProduct} onCancel={() => setEditing(false)} onSaved={updated => {
+                                historyRequestId.current += 1
                                 setProducts(rows => rows.map(row => row.id === updated.id ? updated : row))
                                 setSelectedProduct(updated)
+                                setProductHistory(null)
+                                setHistoryError('')
                                 setEditing(false)
                                 setSavedMessage('Alterações salvas.')
                             }} /> : <>

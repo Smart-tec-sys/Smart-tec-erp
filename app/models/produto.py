@@ -1,9 +1,21 @@
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from app.database import Base
 
 
 class ProdutoDB(Base):
     __tablename__ = "produtos"
+    __table_args__ = (
+        UniqueConstraint("id", "empresa_id", name="uq_produtos_id_empresa"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
@@ -13,6 +25,7 @@ class ProdutoDB(Base):
     codigo_interno = Column(String(100), nullable=True)
     codigo_barras = Column(String(100), nullable=True)
     grupo_produto = Column(String(150), nullable=True)
+    unidade = Column(String(50), nullable=True)
 
     # Arquitetura técnica SmartTec
     modelo_tecnico = Column(String(100), nullable=True)
