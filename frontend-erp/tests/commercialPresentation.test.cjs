@@ -46,8 +46,14 @@ console.log('Apresentação comercial: classes seletivas e valores originais de 
 
 // Componentes reais: apresentação não altera props, valores controlados nem callbacks.
 const { pathToFileURL } = require('node:url')
-const { registerHooks } = require('node:module')
+const { registerHooks, stripTypeScriptTypes } = require('node:module')
 const compiled = new Map()
+const testViteEnv = {
+  VITE_AUTH_MODE: 'dev',
+  VITE_SUPABASE_URL: 'https://auth.test.invalid',
+  VITE_SUPABASE_PUBLISHABLE_KEY: 'test-only',
+  VITE_API_URL: 'https://api.test.invalid',
+}
 registerHooks({
   resolve(specifier, context, next) {
     try { return next(specifier,context) } catch (error) {
@@ -59,6 +65,16 @@ registerHooks({
   },
   load(url, context, next) {
     if (compiled.has(url)) return {format:'module',source:compiled.get(url),shortCircuit:true}
+    if (url.endsWith('/src/services/auth.ts') || url.endsWith('/src/services/api.ts')) {
+      const result = next(url, context)
+      return {
+        ...result,
+        format: 'module',
+        source: stripTypeScriptTypes(
+          String(result.source).replaceAll('import.meta.env', JSON.stringify(testViteEnv)),
+        ),
+      }
+    }
     return next(url,context)
   },
 })

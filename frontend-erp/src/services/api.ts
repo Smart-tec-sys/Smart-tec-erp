@@ -115,11 +115,35 @@ export const updateCurrentCompany = (data: CompanyProfileUpdate, empresaId: numb
 
 export const getClients = () => request<ApiClient[]>('/clientes/')
 export type ProductCommercialUpdate = { nome: string } & Partial<Pick<ApiProduct,
-  'grupo_produto' | 'unidade_venda' | 'cor' | 'cor_componente' | 'variacao_cor' |
-  'varia_cor' | 'situacao' | 'status_comercial' | 'margem_lucro'>> & { valor_custo?: number; valor_venda?: number }
+  'descricao' | 'grupo_produto' | 'grupo_tecnico' | 'familia_tecnica' |
+  'modelo_tecnico' | 'unidade' | 'unidade_venda' | 'unidade_compra' |
+  'unidade_controle' | 'nome_fornecedor' | 'fornecedores' | 'codigo_fornecedor' |
+  'cor' | 'cor_componente' | 'variacao_cor' | 'varia_cor' | 'situacao' |
+  'status_comercial' | 'margem_lucro'>> & {
+    valor_custo?: number
+    despesas_acessorias?: number
+    outras_despesas?: number
+    valor_venda?: number
+  }
 
 export const updateProductCommercial = (id: number, data: ProductCommercialUpdate) =>
   request<ApiProduct>(`/produtos/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+export type ProductTechnicalClassifications = {
+  grupo_tecnico: string[]
+  familia_tecnica: string[]
+  modelo_tecnico: string[]
+}
+export const getProductTechnicalClassifications = () =>
+  request<ProductTechnicalClassifications>('/produtos/classificacoes-tecnicas')
+export type ProductChangeHistory = {
+  id: number
+  produto_id: number
+  usuario_id: number
+  criado_em: string
+  alteracoes: Record<string, { antes: unknown; depois: unknown }>
+}
+export const getProductChangeHistory = (id: number) =>
+  request<ProductChangeHistory[]>(`/produtos/${id}/historico`)
 export const deleteBudget = (id: number) => request<void>(`/orcamentos/${id}`, { method: 'DELETE' })
 export const getBudgets = () => request<ApiBudget[]>('/orcamentos/')
 export const getBudget = (id: number) => request<ApiBudget>(`/orcamentos/${id}`)
@@ -130,6 +154,7 @@ export type ApiOrderItem = {
   id: number
   tipo_item: string
   produto_id?: number | null
+  servico_id?: number | null
   descricao?: string | null
   codigo_interno?: string | null
   grupo_tecnico?: string | null
@@ -140,9 +165,11 @@ export type ApiOrderItem = {
   altura: number | string
   area: number | string
   preco_unitario: number | string
+  preco_unitario_manual?: boolean
   desconto: number | string
   subtotal: number | string
   observacao_item?: string | null
+  ambiente?: string | null
   material?: string | null
   cor?: string | null
   acionamento?: string | null
@@ -168,6 +195,11 @@ export type ApiOrder = {
   representante_id?: number | null
   orcamento_numero?: string | null
   status?: string | null
+  producao_aprovado_por?: string | null
+  producao_aprovado_em?: string | null
+  producao_liberado_por?: string | null
+  producao_liberado_em?: string | null
+  producao_historico?: { acao: string; usuario: string | null; em: string }[]
   perfil_comercial: string
   data_venda?: string | null
   prazo_entrega?: string | null
