@@ -6,10 +6,12 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
-from fastapi import HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from app.auth.service import ExternalIdentity
 from app.auth.navigation import navigate_in_current_session
+from app.database import get_db
 from app.auth.session import (
     AUTH_ACCESS_TOKEN_KEY,
     AUTH_ACTIVE_COMPANY_ID_KEY,
@@ -23,6 +25,8 @@ from app.auth.session import (
 )
 from app.auth.supabase_client import SupabaseLoginError, login_with_password
 from app.auth.supabase_jwt import SupabaseTokenError
+from app.models.empresa_usuario import EmpresaUsuarioDB
+from app.models.usuario import UsuarioDB
 from app.routes.auth import auth_me
 from app.tenant.context import TenantContext, TenantOrigin
 from app.tenant.dependencies import get_current_tenant
@@ -58,13 +62,13 @@ class AuthMeSession:
 class LoginStreamlitFase7BTest(unittest.TestCase):
     def test_dev_permanece_sem_login(self):
         with patch.dict(os.environ, {"SMARTTEC_AUTH_MODE": "dev", "SMARTTEC_ENV": "development"}):
-            tenant = get_current_tenant(None, None, None, None)
+            tenant = get_current_tenant(None, None, None)
         self.assertEqual(tenant.empresa_id, 1)
 
     def test_authenticated_sem_bearer_retorna_401(self):
         with patch.dict(os.environ, {"SMARTTEC_AUTH_MODE": "authenticated"}):
             with self.assertRaises(HTTPException) as raised:
-                get_current_tenant(1, None, None, object())
+                get_current_tenant(1, None, object())
         self.assertEqual(raised.exception.status_code, 401)
 
     def test_authenticated_token_invalido_retorna_401(self):
@@ -73,7 +77,7 @@ class LoginStreamlitFase7BTest(unittest.TestCase):
             side_effect=SupabaseTokenError("inválido"),
         ):
             with self.assertRaises(HTTPException) as raised:
-                get_current_tenant(1, None, "Bearer inválido", object())
+                get_current_tenant(1, "Bearer inválido", object())
         self.assertEqual(raised.exception.status_code, 401)
 
     def test_vinculo_valido_resolve_empresa_1(self):
@@ -82,7 +86,7 @@ class LoginStreamlitFase7BTest(unittest.TestCase):
         with patch.dict(os.environ, {"SMARTTEC_AUTH_MODE": "authenticated"}), patch(
             "app.tenant.dependencies.verify_supabase_access_token", return_value=verified
         ), patch("app.tenant.dependencies.resolve_identity_tenant", return_value=resolved):
-            tenant = get_current_tenant(1, None, "Bearer válido", object())
+            tenant = get_current_tenant(1, "Bearer válido", object())
         self.assertEqual(tenant.empresa_id, 1)
 
     def test_empresa_sem_vinculo_retorna_403(self):
@@ -94,14 +98,65 @@ class LoginStreamlitFase7BTest(unittest.TestCase):
             side_effect=PermissionError("sem vínculo"),
         ):
             with self.assertRaises(HTTPException) as raised:
-                get_current_tenant(999999, None, "Bearer válido", object())
+                get_current_tenant(999999, "Bearer válido", object())
         self.assertEqual(raised.exception.status_code, 403)
 
     def test_header_de_teste_nao_contorna_authenticated(self):
         env = {"SMARTTEC_AUTH_MODE": "authenticated", "SMARTTEC_ALLOW_TEST_TENANT_HEADER": "1"}
         with patch.dict(os.environ, env), self.assertRaises(HTTPException) as raised:
-            get_current_tenant(999999, None, None, object())
+            get_current_tenant(999999, None, object())
         self.assertEqual(raised.exception.status_code, 401)
+
+    def test_usuario_dev_vem_do_servidor_e_header_nao_pode_escolhe_lo(self):
+        usuario = SimpleNamespace(id=42, status="ATIVO")
+        vinculo = SimpleNamespace(empresa_id=1, usuario_id=42, ativo=True)
+        db = Mock()
+        db.get.return_value = usuario
+        db.query.return_value.filter.return_value.first.return_value = vinculo
+        api = FastAPI()
+        api.dependency_overrides[get_db] = lambda: db
+
+        @api.get("/tenant")
+        def resolver_tenant(tenant: TenantContext = Depends(get_current_tenant)):
+            return {"empresa_id": tenant.empresa_id, "user_id": tenant.user_id}
+
+        with patch.dict(os.environ, {
+            "SMARTTEC_AUTH_MODE": "dev",
+            "SMARTTEC_ENV": "local",
+            "SMARTTEC_DEV_USER_ID": "42",
+            "SMARTTEC_ALLOW_TEST_TENANT_HEADER": "1",
+        }, clear=True):
+            with TestClient(api) as client:
+                response = client.get(
+                    "/tenant",
+                    headers={"X-Empresa-ID": "999999", "X-User-ID": "999"},
+                )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"empresa_id": 1, "user_id": 42})
+        db.get.assert_called_once_with(UsuarioDB, 42)
+        self.assertEqual(db.query.call_args.args, (EmpresaUsuarioDB,))
+
+    def test_usuario_dev_sem_vinculo_ativo_falha_fechado(self):
+        db = Mock()
+        db.get.return_value = SimpleNamespace(id=42, status="ATIVO")
+        db.query.return_value.filter.return_value.first.return_value = None
+        with patch.dict(os.environ, {
+            "SMARTTEC_AUTH_MODE": "dev",
+            "SMARTTEC_ENV": "development",
+            "SMARTTEC_DEV_USER_ID": "42",
+        }, clear=True):
+            with self.assertRaises(HTTPException) as raised:
+                get_current_tenant(None, None, db)
+        self.assertEqual(raised.exception.status_code, 503)
+
+    def test_modo_dev_fora_de_ambiente_local_falha_fechado(self):
+        with patch.dict(os.environ, {
+            "SMARTTEC_AUTH_MODE": "dev",
+            "SMARTTEC_ENV": "production",
+        }, clear=True):
+            with self.assertRaises(HTTPException) as raised:
+                get_current_tenant(None, None, Mock())
+        self.assertEqual(raised.exception.status_code, 503)
 
     def test_auth_me_retorna_somente_vinculo_ativo(self):
         user = SimpleNamespace(id=1, email="owner@example.com", nome="Owner", foto_url=None)

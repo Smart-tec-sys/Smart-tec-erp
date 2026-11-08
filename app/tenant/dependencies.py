@@ -13,8 +13,10 @@ from app.auth.supabase_jwt import (
     verify_supabase_access_token,
 )
 from app.database import get_db
+from app.models.empresa_usuario import EmpresaUsuarioDB
+from app.models.usuario import UsuarioDB
 
-from .context import LEGACY_UNSCOPED, TenantContext, TenantOrigin
+from .context import TenantContext, TenantOrigin
 
 
 DEV_TENANT_ID = 1
@@ -35,22 +37,59 @@ def get_auth_mode() -> str:
     return mode
 
 
-def get_development_tenant() -> TenantContext:
-    """Resolve o tenant de desenvolvimento somente em ambiente local explicitamente reconhecido."""
-    environment = os.getenv("SMARTTEC_ENV", "development").strip().lower()
-
+def get_development_tenant(db: Session) -> TenantContext:
+    """Resolve identidade DEV somente por configuração local controlada pelo servidor."""
+    environment = os.getenv("SMARTTEC_ENV", "").strip().lower()
     if environment not in {"dev", "development", "local"}:
-        return LEGACY_UNSCOPED
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="modo de desenvolvimento permitido somente em ambiente local",
+        )
+
+    usuario_configurado = os.getenv("SMARTTEC_DEV_USER_ID", "").strip()
+    if not usuario_configurado:
+        return TenantContext(
+            empresa_id=DEV_TENANT_ID,
+            origem=TenantOrigin.SESSION,
+        )
+
+    try:
+        usuario_id = int(usuario_configurado)
+        if usuario_id <= 0:
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="identidade de desenvolvimento inválida",
+        ) from exc
+
+    usuario = db.get(UsuarioDB, usuario_id)
+    if usuario is None or str(usuario.status).upper() != "ATIVO":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="identidade de desenvolvimento não está ativa",
+        )
+
+    vinculo = db.query(EmpresaUsuarioDB).filter(
+        EmpresaUsuarioDB.empresa_id == DEV_TENANT_ID,
+        EmpresaUsuarioDB.usuario_id == usuario_id,
+        EmpresaUsuarioDB.ativo.is_(True),
+    ).first()
+    if vinculo is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="identidade de desenvolvimento sem vínculo ativo com a empresa local",
+        )
 
     return TenantContext(
         empresa_id=DEV_TENANT_ID,
+        user_id=usuario.id,
         origem=TenantOrigin.SESSION,
     )
 
 
 def get_current_tenant(
     x_empresa_id: Annotated[int | None, Header(alias="X-Empresa-ID")] = None,
-    x_user_id: Annotated[str | None, Header(alias="X-User-ID")] = None,
     authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     db: Session = Depends(get_db),
 ) -> TenantContext:
@@ -58,8 +97,8 @@ def get_current_tenant(
     Resolve o tenant atual.
 
     Modo DEV:
-    - preserva o comportamento local existente;
-    - aceita header explícito somente quando habilitado para testes.
+    - permite somente empresa local fixa;
+    - ignora X-User-ID e deriva usuário apenas de configuração server-side e vínculo ativo.
 
     Modo AUTHENTICATED:
     - não aceita fallback DEV;
@@ -69,19 +108,8 @@ def get_current_tenant(
 
     auth_mode = get_auth_mode()
 
-    allow_test_header = (
-        os.getenv("SMARTTEC_ALLOW_TEST_TENANT_HEADER") == "1"
-    )
-
-    if auth_mode == AUTH_MODE_DEV and allow_test_header and x_empresa_id is not None:
-        return TenantContext(
-            empresa_id=x_empresa_id,
-            user_id=x_user_id,
-            origem=TenantOrigin.EXPLICIT_TEST,
-        )
-
     if auth_mode == AUTH_MODE_DEV:
-        return get_development_tenant()
+        return get_development_tenant(db)
 
     if x_empresa_id is None:
         raise HTTPException(

@@ -7,8 +7,11 @@ orçamento continuam herdando o escopo do cabeçalho.
 
 No ambiente `development`, `dev` ou `local`, o resolvedor central usa
 temporariamente a Smart-tec Persianas (`empresa_id=1`, slug
-`smart-tec-persianas`). Fora desses ambientes não existe fallback silencioso.
-O header de tenant só é aceito quando `SMARTTEC_ALLOW_TEST_TENANT_HEADER=1`.
+`smart-tec-persianas`). O modo DEV só funciona quando `SMARTTEC_ENV` declara
+explicitamente um desses ambientes locais. Fora deles, o backend falha fechado.
+`X-Empresa-ID` e `X-User-ID` não definem identidade no modo DEV; quando
+`SMARTTEC_DEV_USER_ID` está configurado no servidor, o usuário e seu vínculo
+ativo com a empresa 1 são verificados no banco.
 
 O Streamlit inicializa `tenant_empresa_id` e `tenant_slug` uma vez na sessão. O
 cliente HTTP usa a mesma identidade DEV fora dos payloads comerciais. Carrinhos
@@ -19,6 +22,6 @@ tenant nas chaves de cache alteradas nesta fase.
 é rejeitado pelos quatro serviços tenant-aware. O núcleo `app/technical` e seus
 caches técnicos continuam globais.
 
-Riscos pendentes: autenticação real, autorização de usuário por empresa, demais
-módulos comerciais, caches legados não alcançados nesta fase, portfólio por
-tenant e onboarding zerado.
+O modo autenticado continua obrigatório fora do desenvolvimento local. O
+resolvedor DEV sem `SMARTTEC_DEV_USER_ID` não atribui usuário e, portanto, não
+permite operações que exigem auditoria de responsável.

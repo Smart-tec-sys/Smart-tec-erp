@@ -3,7 +3,11 @@
 ## Fluxos
 
 Em `SMARTTEC_AUTH_MODE=dev`, o ERP continua sem exigir login e usa o resolvedor
-DEV explícito da Empresa 1.
+DEV explícito da Empresa 1 somente quando `SMARTTEC_ENV` é `dev`,
+`development` ou `local`. Sem esse marcador local, o backend falha fechado.
+Para testar operações auditadas, `SMARTTEC_DEV_USER_ID` pode identificar no
+servidor um usuário ativo que tenha vínculo ativo com a Empresa 1. O cliente
+nunca escolhe o usuário; `X-User-ID` é ignorado.
 
 Em `SMARTTEC_AUTH_MODE=authenticated`:
 
@@ -30,7 +34,10 @@ Configurar no ambiente, sem gravar segredos no repositório:
 - `SUPABASE_AUTH_ISSUER`
 - `SUPABASE_JWKS_URL`
 
-O padrão permanece `dev`; esta fase não altera `.env` nem ativa login global.
+`SMARTTEC_AUTH_MODE=authenticated` deve ser configurado explicitamente fora do
+desenvolvimento local. O padrão de modo continua `dev`, mas o resolvedor DEV é
+recusado sem `SMARTTEC_ENV` local; esta fase não altera `.env` nem ativa login
+global.
 
 ## Sessão, logout e troca de empresa
 
