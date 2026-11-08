@@ -230,7 +230,7 @@ const [activePage, setActivePage] = useState(() => {
                     'smarttec:last-cadastro',
                 )
 
-            if (saved === 'revendas' || saved === 'representantes') return saved
+            if (saved === 'revendas' || saved === 'representantes' || saved === 'servicos') return saved
 
             if (saved === 'fornecedores') {
                 return 'fornecedores'
@@ -332,6 +332,7 @@ const [activePage, setActivePage] = useState(() => {
         const cadastroMap: Record<string, CadastroEntity> = {
             'Clientes': 'clientes',
             'Revendas': 'revendas',
+            'Serviços': 'servicos',
             'Representantes': 'representantes',
             'Fornecedores': 'fornecedores',
             'Transportadoras': 'transportadoras',
@@ -441,6 +442,7 @@ const [activePage, setActivePage] = useState(() => {
                                                 {[
                                                     'Clientes',
                                                     'Revendas',
+                                                    'Serviços',
                                                     'Representantes',
                                                     'Fornecedores',
                                                     'Transportadoras',

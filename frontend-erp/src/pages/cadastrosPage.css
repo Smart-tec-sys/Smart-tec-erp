@@ -141,6 +141,14 @@
   border-radius: 10px;
 }
 
+.cad-success {
+  padding: 12px 14px;
+  border: 1px solid #a6f4c5;
+  background: #ecfdf3;
+  color: #027a48;
+  border-radius: 10px;
+}
+
 .cad-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -241,6 +249,12 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.cad-more-actions {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
 }
 
 .cad-secondary {

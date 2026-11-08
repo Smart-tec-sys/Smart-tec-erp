@@ -1,7 +1,9 @@
 import { commercialDisplayText } from '../utils/commercialDisplay'
 import { ClienteImportPanel } from '../components/ClienteImportPanel'
 import { ColumnManager } from '../components/ColumnManager'
+import { RevendaForm } from '../components/RevendaForm'
 import { RevendasPage } from './RevendasPage'
+import { ServicosPage } from './ServicosPage'
 import { useEffect, useMemo, useState } from 'react'
 import { Eye, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import {
@@ -30,11 +32,17 @@ import {
   type ApiRepresentative,
   type CadastroRecord,
 } from '../services/api'
+import {
+  dadosRevendaDoCliente,
+  reclassificarClienteComoRevenda,
+  type Revenda,
+} from '../services/revendas'
 import './cadastrosPage.css'
 
 export type CadastroEntity =
   | 'clientes'
   | 'revendas'
+  | 'servicos'
   | 'representantes'
   | 'fornecedores'
   | 'transportadoras'
@@ -69,7 +77,7 @@ const situacaoField: FieldConfig = {
   options: ['Ativo', 'Inativo', 'Bloqueado'],
 }
 
-type CadastroGenericoEntity = Exclude<CadastroEntity, 'revendas'>
+type CadastroGenericoEntity = Exclude<CadastroEntity, 'revendas' | 'servicos'>
 
 const configs: Record<CadastroGenericoEntity, EntityConfig> = {
   representantes: {
@@ -280,7 +288,9 @@ function labelFor(config: EntityConfig, key: string) {
 }
 
 export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
-  return entity === 'revendas' ? <RevendasPage /> : <CadastrosGenericosPage entity={entity} />
+  if (entity === 'revendas') return <RevendasPage />
+  if (entity === 'servicos') return <ServicosPage />
+  return <CadastrosGenericosPage entity={entity} />
 }
 
 function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) {
@@ -294,6 +304,9 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   const [selected, setSelected] = useState<CadastroRecord | null>(null)
   const [form, setForm] = useState<CadastroPayload>(() => emptyPayload(config))
   const [saving, setSaving] = useState(false)
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false)
+  const [reclassifying, setReclassifying] = useState(false)
+  const [notice, setNotice] = useState('')
   const [showImport, setShowImport] = useState(false)
   const [importBusy, setImportBusy] = useState(false)
 
@@ -382,6 +395,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   }
 
   const openRecord = (item: CadastroRecord, nextMode: 'edit' | 'view') => {
+    setMoreActionsOpen(false)
     setSelected(item)
 
     const payload = emptyPayload(config)
@@ -411,6 +425,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   }
 
   const closeForm = () => {
+    setMoreActionsOpen(false)
     setMode(null)
     setSelected(null)
   }
@@ -563,6 +578,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
       {!config.update && <p className="cad-empty">Listagem e inclusão disponíveis. Edição e exclusão aguardam suporte no backend.</p>}
 
       {error && <div className="cad-error">{error}</div>}
+      {notice && <div className="cad-success" role="status">{notice}</div>}
 
       <div className="cad-table-card">
         {loading ? (
@@ -765,6 +781,31 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
             </div>
 
             <div className="cad-modal-footer">
+              {entity === 'clientes' && mode === 'edit' && selected && !reclassifying && (
+                <div className="cad-more-actions">
+                  <button
+                    type="button"
+                    className="cad-secondary"
+                    aria-expanded={moreActionsOpen}
+                    onClick={() => setMoreActionsOpen(open => !open)}
+                  >
+                    Mais ações
+                  </button>
+                  {moreActionsOpen && (
+                    <button
+                      type="button"
+                      className="cad-secondary"
+                      onClick={() => {
+                        setMoreActionsOpen(false)
+                        setMode(null)
+                        setReclassifying(true)
+                      }}
+                    >
+                      Alterar categoria comercial
+                    </button>
+                  )}
+                </div>
+              )}
               <button className="cad-secondary" onClick={closeForm}>
                 {mode === 'view' ? 'Voltar' : 'Cancelar'}
               </button>
@@ -781,6 +822,29 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
             </div>
           </div>
         </div>
+      )}
+      {reclassifying && selected && (
+        <RevendaForm
+          key={`reclassificar-${selected.id}`}
+          initialValues={dadosRevendaDoCliente(selected)}
+          consultasExternas={false}
+          camposOriginaisSomenteLeitura
+          titulo="Reclassificar Cliente → Revenda"
+          descricao="Categoria atual: Cliente. Nova categoria: Revenda. Nome, documento, contatos e endereço foram preservados do cadastro original. Complete os dados específicos e confirme; orçamentos e pedidos existentes continuarão vinculados ao cliente original."
+          textoSalvar="Confirmar alteração para Revenda"
+          onSubmit={payload => reclassificarClienteComoRevenda(selected.id, payload)}
+          onClose={() => {
+            setReclassifying(false)
+            setMode('edit')
+          }}
+          onSaved={async (_revenda: Revenda) => {
+            setReclassifying(false)
+            setSelected(null)
+            setMode(null)
+            await reload()
+            setNotice('Categoria alterada. O cadastro está disponível em Cadastros → Revendas.')
+          }}
+        />
       )}
     </section>
   )
