@@ -22,6 +22,7 @@ CAMPOS_ETIQUETA = [
     ("motor", "Motor", "MOTOR"),
     ("modelo", "Modelo", "MODELO"),
     ("ambiente", "Ambiente", "AMBIENTE"),
+    ("observacoes", "Observações", "OBS"),
     ("cor", "Cor", "COR"),
     ("redutor_peso", "Redutor", "REDUTOR"),
     ("invertida", "Invertida", "INV"),
@@ -293,6 +294,7 @@ def montar_qr(dados):
         "representante": dados.get("representante", ""),
         "modelo": dados.get("modelo", ""),
         "ambiente": dados.get("ambiente", ""),
+        "observacoes": dados.get("observacoes", ""),
         "largura": dados.get("largura", ""),
         "altura": dados.get("altura", ""),
         "tecido": dados.get("tecido", ""),
@@ -479,6 +481,7 @@ def etiqueta_html(dados, mostrar_qr=True, mostrar_barcode=True, modelo_layout="C
       {renderiza("tecido")}
       {renderiza("modelo")}
       {renderiza("ambiente")}
+      {renderiza("observacoes")}
       {renderiza("cor")}
       <div class="etiqueta-grid-2">{renderiza("redutor_peso")}{renderiza("invertida")}</div>
       <div class="etiqueta-grid-2">{renderiza("cliente")}{renderiza("pedido")}</div>
@@ -493,7 +496,27 @@ def gerar_html_impressao(dados, quantidade, colunas, largura_mm, altura_mm, most
         etiqueta_html(dados, mostrar_qr, mostrar_barcode, modelo_layout=modelo_layout, campos_personalizados=campos_personalizados)
         for _ in range(int(quantidade or 1))
     )
+    return _gerar_documento_etiquetas(
+        etiquetas, colunas, largura_mm, altura_mm, abrir_impressao, modelo_layout,
+    )
 
+
+def gerar_html_impressao_lote(dados_lote, colunas, largura_mm, altura_mm, mostrar_qr,
+                              mostrar_barcode, abrir_impressao=True, modelo_layout="Completo",
+                              campos_personalizados=None):
+    if not dados_lote:
+        raise ValueError("Selecione ao menos uma peça para imprimir etiquetas.")
+    etiquetas = "\n".join(
+        etiqueta_html(dados, mostrar_qr, mostrar_barcode, modelo_layout=modelo_layout,
+                      campos_personalizados=campos_personalizados)
+        for dados in dados_lote
+    )
+    return _gerar_documento_etiquetas(
+        etiquetas, colunas, largura_mm, altura_mm, abrir_impressao, modelo_layout,
+    )
+
+
+def _gerar_documento_etiquetas(etiquetas, colunas, largura_mm, altura_mm, abrir_impressao, modelo_layout):
     compacto = modelo_layout == "Compacto"
     fonte = "6.5pt" if compacto else "7.9pt"
     linha = "0.98" if compacto else "1.08"

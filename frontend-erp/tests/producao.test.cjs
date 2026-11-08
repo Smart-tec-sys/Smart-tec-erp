@@ -39,10 +39,18 @@ registerHooks({
   }
   if (flag?.trim().toLowerCase() !== 'true') {
     for (const action of [
+      () => service.obterAutorizacaoProducao(1), () => service.aprovarProducao(1),
+      () => service.liberarPedidoProducao(1),
       () => service.listarProducao(1), () => service.criarProducao(1),
-      () => service.liberarProducao(1), () => service.salvarPeca(1,1,'Sala',''),
+      () => service.liberarProducao(1), () => service.listarCatalogoComponentes('tubo'),
+      () => service.salvarPeca(1,1,{ justificativa: 'Teste' }),
+      () => service.adicionarComponentePeca(1,1,{ produto_id: 1 }),
+      () => service.atualizarComponentePeca(1,1,1,{ produto_id: 1 }),
+      () => service.removerComponentePeca(1,1,1,'Teste'),
+      () => service.conferirPeca(1,1,'Teste'),
       () => service.avancarPeca(1,{id:1,status:'AGUARDANDO'}),
       () => service.carregarDocumentoProducao(1), () => service.carregarDocumentoProducao(1,1),
+      () => service.carregarEtiquetasLoteProducao(1),
     ]) await assert.rejects(async()=>action(), /desabilitada/)
     const React=require('react')
     const {renderToStaticMarkup}=require('react-dom/server')
@@ -55,6 +63,13 @@ registerHooks({
     console.log('Produção desligada: painel vazio, controles ocultos, todos os serviços bloqueados e zero HTTP.')
     return
   }
+  await service.obterAutorizacaoProducao(12)
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/vendas/12/autorizacao')
+  await service.aprovarProducao(12)
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/vendas/12/aprovar')
+  assert.equal(calls.at(-1).options.method, 'POST')
+  await service.liberarPedidoProducao(12)
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/vendas/12/liberar-fabricacao')
   await service.listarProducao(12)
   assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/?pedido_id=12')
   await service.criarProducao(12)
@@ -64,10 +79,39 @@ registerHooks({
   assert.equal(calls.at(-1).options.headers['X-Empresa-ID'], '7')
   await service.liberarProducao(1)
   assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/1/liberar')
-  await service.salvarPeca(1, 4, 'Ambiente manual', 'Observação manual')
-  assert.deepEqual(JSON.parse(calls.at(-1).options.body),
-    { ambiente: 'Ambiente manual', observacoes: 'Observação manual' })
+  const ficha = {
+    modo_fabricacao: 'MANUAL_SUPERVISIONADA',
+    ambiente: 'Ambiente manual',
+    largura: 2.2,
+    altura: 2.4,
+    quantidade: 1,
+    observacoes: 'Observação manual',
+    especificacoes_fabricacao: { acabamento: 'Conferir' },
+    justificativa: 'Ajuste técnico aprovado',
+  }
+  await service.salvarPeca(1, 4, ficha)
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), ficha)
   assert.equal(calls.at(-1).options.method, 'PATCH')
+  await service.listarCatalogoComponentes('tubo 38')
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/catalogo-componentes?q=tubo%2038')
+  const component = {
+    produto_id: 17, quantidade: 2, unidade: 'UN', comprimento_corte: 2.2,
+    custo_unitario: 12, observacoes: 'Corte', justificativa: 'Componente revisado',
+  }
+  await service.adicionarComponentePeca(1, 4, component)
+  assert.equal(calls.at(-1).options.method, 'POST')
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), component)
+  await service.atualizarComponentePeca(1, 4, 9, component)
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/1/pecas/4/componentes/9')
+  assert.equal(calls.at(-1).options.method, 'PATCH')
+  await service.removerComponentePeca(1, 4, 9, 'Remoção autorizada')
+  assert.equal(calls.at(-1).options.method, 'DELETE')
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), { justificativa: 'Remoção autorizada' })
+  await service.conferirPeca(1, 4, 'Conferência técnica')
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/1/pecas/4/conferir')
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), {
+    confirmar_conferencia: true, justificativa: 'Conferência técnica',
+  })
   for (const [index, status] of service.statusProducao.slice(0, -1).entries()) {
     await service.avancarPeca(1, { id: 4, status })
     assert.deepEqual(JSON.parse(calls.at(-1).options.body),
@@ -83,6 +127,8 @@ registerHooks({
   assert.equal(calls.at(-1).options.headers.Authorization, 'Bearer TEST_ONLY')
   await service.carregarDocumentoProducao(1, 4)
   assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/1/pecas/4/etiqueta')
+  await service.carregarEtiquetasLoteProducao(1)
+  assert.equal(calls.at(-1).target, 'https://backend.test.invalid/producao/1/etiquetas')
   global.fetch = async () => Response.json({ detail: 'Migration pendente' }, { status: 503 })
   await assert.rejects(() => service.listarProducao(1), /503.*Migration pendente/)
   await assert.rejects(() => service.carregarDocumentoProducao(1), /503.*Migration pendente/)

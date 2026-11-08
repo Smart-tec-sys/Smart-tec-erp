@@ -91,6 +91,7 @@ function SaleItems({ items, services = false }: { items: ApiOrder['itens']; serv
         <div className="form-grid general-grid">
           <ReadOnlyField label="Grupo técnico" value={text(item.grupo_tecnico)} />
           <ReadOnlyField label="Modelo" value={text(item.modelo_tecnico)} />
+          <ReadOnlyField label="Ambiente" value={text(item.ambiente)} />
           <ReadOnlyField label="Material" value={text(item.material)} />
           <ReadOnlyField label="Cor" value={text(item.cor)} />
           <ReadOnlyField label="Acionamento" value={text(item.acionamento)} />
