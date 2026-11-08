@@ -18,7 +18,7 @@ class ComposicaoTests(unittest.TestCase):
 
     def convert(self, **values):
         budget = self.budget(parceiro_id=1, status="APROVADO")
-        budget.itens.append(OrcamentoItemDB(tipo_item="SERVICO", descricao="Instalação",
+        budget.itens.append(OrcamentoItemDB(empresa_id=1, tipo_item="SERVICO", descricao="Instalação",
             quantidade=1, preco_unitario=1000, subtotal=1000, desconto=0))
         budget.total = Decimal("1000.00")
         budget.desconto = Decimal("20.00")

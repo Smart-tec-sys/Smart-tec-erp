@@ -15,17 +15,18 @@ import { BudgetServiceRow } from '../components/BudgetServiceRow'
 import { BudgetSummary } from '../components/BudgetSummary'
 import { BudgetPaymentSection, paymentPlanIsConsistent, type BudgetPaymentState } from '../components/BudgetPaymentSection'
 import { createBudget, getAllProducts, getBudget, getClients, updateBudget, createClient, createProduct, getProductGroups, getProductUnits, convertBudgetToOrder, getCommercialPartners, getRepresentatives, getFuncionariosCadastro, type ApiOrder, type ApiCommercialPartner, type ApiRepresentative, type CadastroRecord } from '../services/api'
+import { listarServicos, type Servico } from '../services/servicos'
 import { applySuggestedProductPrice, commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, formatClientCompletenessMessage, getClientCompleteness, formatProductCompletenessMessage, getProductCompleteness, type ApiBudget, type ApiClient, type ApiProduct, type BudgetPayload, type BudgetProduct, type BudgetService, type CommercialProfile } from '../types/budget'
 import type { CurtainState } from '../types/budget'
 
 type Props={onBack:()=>void; budgetId?:number|null; onSaved:(id:number,mode:'created'|'updated')=>void; onConverted?:()=>void}
 const today=new Date().toISOString().slice(0,10)
 const CREATE_CLIENT_VALUE = '__CREATE_CLIENT__'
-const CREATE_SERVICE_VALUE = '__CREATE_SERVICE__'
 const CREATE_PRODUCT_VALUE = '__CREATE_PRODUCT__'
 
 export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
   const [catalog,setCatalog]=useState<ApiProduct[]>([]),[clients,setClients]=useState<ApiClient[]>([])
+  const [serviceCatalog,setServiceCatalog]=useState<Servico[]>([]),[serviceCatalogError,setServiceCatalogError]=useState('')
   const [productGroups,setProductGroups]=useState<string[]>([]),[productUnits,setProductUnits]=useState<string[]>([])
 
   const effectiveProductUnits = useMemo(() => {
@@ -48,11 +49,6 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
   const [clientForm,setClientForm]=useState({tipo:'',nome:''})
   const [clientModalError,setClientModalError]=useState('')
   const [clientModalSaving,setClientModalSaving]=useState(false)
-  const [showServiceModal,setShowServiceModal]=useState(false)
-  const [serviceForm,setServiceForm]=useState({nome:''})
-  const [serviceModalError,setServiceModalError]=useState('')
-  const [serviceModalSaving,setServiceModalSaving]=useState(false)
-  const [editingServiceId,setEditingServiceId]=useState<number|null>(null)
   const [showProductModal,setShowProductModal]=useState(false)
   const [editingProductId,setEditingProductId]=useState<number|null>(null)
   const [productForm,setProductForm]=useState({nome:'',grupo_produto:'',unidade_venda:'',valor_custo:''})
@@ -193,7 +189,9 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
       })
       .catch(()=>undefined)
   },[budgetId])
- useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){if(b.perfil_comercial){setProfile(b.perfil_comercial);setProfileConfirmed(true)}else{setProfileConfirmed(false);setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),priceManual:i.preco_unitario_manual??true,suggestedPrice:i.preco_unitario_sugerido??undefined,discount:Number(i.desconto),acao_acionamento:i.dados_tecnicos?.romana_teto?.acionamento,lado_comando:i.dados_tecnicos?.romana_teto?.lado_comando,comprimento_bastao:i.dados_tecnicos?.romana_teto?.comprimento_bastao_m?.toString(),comprimento_corrente_sem_fim:i.dados_tecnicos?.romana_teto?.comprimento_corrente_sem_fim_m?.toString(),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),value:Number(i.preco_unitario),discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
+ useEffect(()=>{let cancelado=false;void listarServicos('',false).then(items=>{if(!cancelado)setServiceCatalog(items)}).catch(e=>{if(!cancelado)setServiceCatalogError(e instanceof Error?e.message:String(e))});return()=>{cancelado=true}},[])
+ useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){if(b.perfil_comercial){setProfile(b.perfil_comercial);setProfileConfirmed(true)}else{setProfileConfirmed(false);setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),priceManual:i.preco_unitario_manual??true,suggestedPrice:i.preco_unitario_sugerido??undefined,discount:Number(i.desconto),acao_acionamento:i.dados_tecnicos?.romana_teto?.acionamento,lado_comando:i.dados_tecnicos?.romana_teto?.lado_comando,comprimento_bastao:i.dados_tecnicos?.romana_teto?.comprimento_bastao_m?.toString(),comprimento_corrente_sem_fim:i.dados_tecnicos?.romana_teto?.comprimento_corrente_sem_fim_m?.toString(),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,serviceId:i.servico_id??null,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),unit:i.unidade||'UN',heightCm:Number(i.altura||0)*100,value:Number(i.preco_unitario),priceManual:i.dados_tecnicos?.comercial?.preco_unitario_manual??!i.servico_id,discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
+ useEffect(()=>{if(!saved)return;const ambientes=saved.itens.filter(i=>i.tipo_item==='PRODUTO').map(i=>i.ambiente||'');setProducts(rows=>rows.map((row,index)=>({...row,environment:ambientes[index]??''})))},[saved])
   useEffect(()=>{
     setProducts(rows=>rows.map(row=>{
       const found=catalog.find(p=>p.id===row.productId)
@@ -294,49 +292,6 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
     }
   }
 
-  const handleOpenServiceModal=(serviceId:number)=>{
-    setEditingServiceId(serviceId)
-    setServiceForm({nome:''})
-    setServiceModalError('')
-    setShowServiceModal(true)
-  }
-
-  const handleCloseServiceModal=()=>{
-    setShowServiceModal(false)
-    setServiceForm({nome:''})
-    setServiceModalError('')
-    setEditingServiceId(null)
-  }
-
-  const handleServiceFormChange=(field:string,value:string)=>{
-    setServiceForm(prev=>({...prev,[field]:value}))
-    if(serviceModalError)setServiceModalError('')
-  }
-
-  const handleCreateService=async()=>{
-    if(!serviceForm.nome.trim()){
-      setServiceModalError('Nome do serviço é obrigatório')
-      return
-    }
-    if(editingServiceId===null){
-      setServiceModalError('Erro interno: serviço não identificado')
-      return
-    }
-    setServiceModalSaving(true)
-    setServiceModalError('')
-    try{
-      // No backend service catalog endpoint exists - service is just a description in orcamento item
-      // Update the specific service row with the new service name
-      setServices(rows=>rows.map(r=>r.id===editingServiceId?{...r,service:serviceForm.nome.trim()}:r))
-      handleCloseServiceModal()
-    }catch(e){
-      const msg=e instanceof Error?e.message:String(e)
-      setServiceModalError(msg)
-    }finally{
-      setServiceModalSaving(false)
-    }
-  }
-
   const handleOpenProductModal=(productId:number)=>{
     setEditingProductId(productId)
     setProductForm({nome:'',grupo_produto:'',unidade_venda:'',valor_custo:''})
@@ -410,6 +365,7 @@ const makeItem = (p:BudgetProduct) => ({
   subtotal:productLineSubtotal(p,profileLabel[profile]),
   dados_tecnicos:technicalItemData(p),
   observacao_item:p.details||null,
+  ambiente:p.environment.trim()||null,
   cor:p.curtain?.cor||p.color||null,
   acionamento:p.acao_acionamento||undefined,
   lado_comando:p.lado_comando||null,
@@ -491,12 +447,15 @@ const payload=useMemo<BudgetPayload>(()=>({
     ...services.map(s=>({
       tipo_item:'SERVICO' as const,
       produto_id:null,
+      servico_id:s.serviceId??null,
       descricao:s.service,
+      unidade:s.unit||'UN',
       quantidade:s.quantity,
       largura:0,
-      altura:0,
+      altura:(s.heightCm||0)/100,
       area:0,
       preco_unitario:s.value,
+      preco_unitario_manual:s.priceManual??true,
       desconto:s.discount,
       subtotal:Math.max(
         0,
@@ -661,8 +620,13 @@ const save=async()=>{
     )
   )
 
-  if (!profile || invalidRequiredProduct) {
-    setError('Preencha os campos obrigat?rios destacados.')
+  const invalidService = services.some(s =>
+    !s.service.trim() || !Number.isFinite(s.quantity) || s.quantity <= 0 ||
+    !Number.isFinite(s.value) || s.value < 0 || !Number.isFinite(s.discount) || s.discount < 0
+  )
+  const lavagemSemAltura = services.some(s => serviceCatalog.find(item => item.id === s.serviceId)?.tipo_calculo === 'FAIXA_ALTURA' && (!Number.isFinite(s.heightCm) || Number(s.heightCm) <= 0))
+  if (!profile || invalidRequiredProduct || invalidService || lavagemSemAltura) {
+    setError(lavagemSemAltura ? 'Informe uma altura válida em centímetros para cada serviço de lavagem.' : invalidService ? 'Informe a descrição, quantidade, preço e desconto válidos para cada serviço.' : 'Preencha os campos obrigatórios destacados.')
     return
   }
 
@@ -735,7 +699,6 @@ setSaving(true);setError('');try{const editing=budgetId!=null;const result=editi
  }
 
  const nextId=(items:{id:number}[])=>Math.max(0,...items.map(i=>i.id))+1
-  const serviceOptions = useMemo(() => [...new Set(services.map(s => s.service).filter(Boolean))], [services])
 if(loading)return <div className="panel loading-state">Carregando catálogo completo, clientes e orçamento...</div>
   return (
     <>
@@ -1435,7 +1398,7 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
         </div>
       </BudgetSection>
       <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion allowManualPrice onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
-      <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Persistidos como itens do tipo SERVICO." count={`${services.length} itens`}><div className="service-rows">{services.map(s=><BudgetServiceRow key={s.id} service={s} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))} onCreateService={handleOpenServiceModal} createServiceValue={CREATE_SERVICE_VALUE} serviceOptions={serviceOptions}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'Instalação',details:'',quantity:1,value:0,discount:0}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
+      <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Selecione um serviço do catálogo ou informe um serviço livre; preços e descontos podem ser negociados." count={`${services.length} itens`}>{serviceCatalogError&&<p className="api-message error" role="alert">Catálogo de serviços indisponível: {serviceCatalogError}. Ainda é possível salvar serviços livres.</p>}<div className="service-rows">{services.map(s=><BudgetServiceRow key={s.id} service={s} catalogServices={serviceCatalog} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'',details:'',quantity:1,value:0,discount:0,unit:'UN',priceManual:true}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
       <BudgetSection icon={<Truck size={17}/>} title="Transporte" subtitle="Ainda sem campos próprios no contrato."><div className="form-grid relationship-grid"><Field label="Frete"><input type="number" value={freight} disabled/><small>Não persistido nesta fase</small></Field><Field label="Transportadora"><input disabled placeholder="Não persistida nesta fase"/></Field></div></BudgetSection>
       <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={clientTotalPreview} value={payment} onChange={setPayment}/></BudgetSection>
       <BudgetSection icon={<FileText size={17}/>} title="Observações" subtitle="Informações para o cliente e anotações internas da equipe."><div className="budget-observations-grid"><Field label="Observações para o cliente"><textarea value={observation} onChange={e=>setObservation(e.target.value)}/></Field><Field label="Observações internas"><textarea value={internalObservation} onChange={e=>setInternalObservation(e.target.value)}/></Field></div></BudgetSection>
@@ -1490,8 +1453,6 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
         else {setRepresentatives(rows=>[record,...rows]);changeRepresentative(record.id)}
       }} />}
       {showClientModal&&<div className="modal-overlay" onClick={handleCloseClientModal}><div className="modal-container" onClick={e=>e.stopPropagation()}><div className="modal-header"><h3 className="commercial-title"><UserPlus size={16}/> Cadastrar novo cliente</h3><button type="button" className="modal-close" onClick={handleCloseClientModal}><X size={16}/></button></div><form className="modal-form" onSubmit={e=>{e.preventDefault();handleCreateClient()}}><div className="modal-field"><label>Tipo *</label><select value={clientForm.tipo} onChange={e=>handleClientFormChange('tipo',e.target.value)}><option value="">Selecione</option><option value="Pessoa Física">Pessoa Física</option><option value="Pessoa Jurídica">Pessoa Jurídica</option></select></div><div className="modal-field"><label>Nome *</label><input type="text" className={commercialDisplayText(clientForm.nome) === clientForm.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={clientForm.nome} onChange={e=>handleClientFormChange('nome',e.target.value)} placeholder="Nome do cliente" autoFocus/></div>{clientModalError&&<div className="modal-error">{clientModalError}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={handleCloseClientModal} disabled={clientModalSaving}>Cancelar</button><button type="submit" className="primary-button" disabled={clientModalSaving||!clientForm.tipo.trim()||!clientForm.nome.trim()}>{clientModalSaving?<><Loader2 size={14} className="spinning"/> Salvando...</>:<><UserPlus size={14}/> Salvar e selecionar</>}</button></div></form></div></div>}
-
-      {showServiceModal&&<div className="modal-overlay" onClick={handleCloseServiceModal}><div className="modal-container" onClick={e=>e.stopPropagation()}><div className="modal-header"><h3 className="commercial-title"><PackagePlus size={16}/> Cadastrar novo serviço</h3><button type="button" className="modal-close" onClick={handleCloseServiceModal}><X size={16}/></button></div><form className="modal-form" onSubmit={e=>{e.preventDefault();handleCreateService()}}><div className="modal-field"><label>Nome do serviço *</label><input type="text" className={commercialDisplayText(serviceForm.nome) === serviceForm.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={serviceForm.nome} onChange={e=>handleServiceFormChange('nome',e.target.value)} placeholder="Ex: Instalação, Medição, Manutenção" autoFocus/></div>{serviceModalError&&<div className="modal-error">{serviceModalError}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={handleCloseServiceModal} disabled={serviceModalSaving}>Cancelar</button><button type="submit" className="primary-button" disabled={serviceModalSaving||!serviceForm.nome.trim()}>{serviceModalSaving?<><Loader2 size={14} className="spinning"/> Salvando...</>:<><PackagePlus size={14}/> Salvar e usar</>}</button></div></form></div></div>}
 
       {showProductModal&&<div className="modal-overlay" onClick={handleCloseProductModal}><div className="modal-container" onClick={e=>e.stopPropagation()}><div className="modal-header"><h3 className="commercial-title"><PackagePlus size={16}/> Cadastrar novo produto</h3><button type="button" className="modal-close" onClick={handleCloseProductModal}><X size={16}/></button></div><form className="modal-form" onSubmit={e=>{e.preventDefault();handleCreateProduct()}}><div className="modal-field"><label>Nome *</label><input type="text" className={commercialDisplayText(productForm.nome) === productForm.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={productForm.nome} onChange={e=>handleProductFormChange('nome',e.target.value)} placeholder="Nome do produto" autoFocus/></div><div className="modal-field"><label>Grupo do produto *</label><select value={productForm.grupo_produto} onChange={e=>handleProductFormChange('grupo_produto',e.target.value)}><option value="">Selecione</option>{productGroups.map(g=><option key={g} value={g}>{g}</option>)}</select></div><div className="modal-field"><label>Unidade de venda *</label><select value={productForm.unidade_venda} onChange={e=>handleProductFormChange('unidade_venda',e.target.value)}><option value="">Selecione</option>{effectiveProductUnits.map(u=><option key={u} value={u}>{u}</option>)}</select></div><div className="modal-field"><label>Valor de custo *</label><input type="text" inputMode="decimal" value={productForm.valor_custo} onChange={e=>handleProductFormChange('valor_custo',e.target.value)} placeholder="Ex: 150,00"/></div>{productModalError&&<div className="modal-error">{productModalError}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={handleCloseProductModal} disabled={productModalSaving}>Cancelar</button><button type="submit" className="primary-button" disabled={productModalSaving||!productForm.nome.trim()||!productForm.grupo_produto.trim()||!productForm.unidade_venda.trim()||!productForm.valor_custo.trim()}>{productModalSaving?<><Loader2 size={14} className="spinning"/> Salvando...</>:<><PackagePlus size={14}/> Salvar e selecionar</>}</button></div></form></div></div>}
     </>

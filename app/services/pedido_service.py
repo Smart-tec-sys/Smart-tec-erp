@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from app.services.origem_comercial import CLIENTE_FINAL_CAMPOS, validar_origem_comercial
 from decimal import Decimal
 
@@ -37,6 +37,7 @@ def _item_dict(item: PedidoItemDB) -> dict:
         "id": item.id,
         "tipo_item": item.tipo_item or "PRODUTO",
         "produto_id": item.produto_id,
+        "servico_id": item.servico_id,
         "descricao": item.descricao,
         "codigo_interno": item.codigo_interno,
         "grupo_tecnico": item.grupo_tecnico,
@@ -54,6 +55,7 @@ def _item_dict(item: PedidoItemDB) -> dict:
         "cor": item.cor,
         "acionamento": item.acionamento,
         "lado_comando": item.lado_comando,
+        "ambiente": item.ambiente,
         "calculo_producao_status": item.calculo_producao_status,
         "dados_tecnicos": item.dados_tecnicos,
     }
@@ -81,6 +83,11 @@ def _pedido_dict(pedido: PedidoDB) -> dict:
             else None
         ),
         "status": pedido.status,
+        "producao_aprovado_por": pedido.producao_aprovado_por,
+        "producao_aprovado_em": pedido.producao_aprovado_em,
+        "producao_liberado_por": pedido.producao_liberado_por,
+        "producao_liberado_em": pedido.producao_liberado_em,
+        "producao_historico": pedido.producao_historico or [],
         "perfil_comercial": pedido.perfil_comercial or "VAREJO",
         "data_venda": pedido.data_venda,
         "prazo_entrega": pedido.prazo_entrega,
@@ -270,8 +277,10 @@ def converter_orcamento(
     for origem in orcamento.itens:
         item = PedidoItemDB(
             pedido_id=pedido.id,
+            empresa_id=empresa_id,
             tipo_item=origem.tipo_item or "PRODUTO",
             produto_id=origem.produto_id,
+            servico_id=origem.servico_id,
             descricao=origem.descricao,
             codigo_interno=origem.codigo_interno,
             grupo_tecnico=origem.grupo_tecnico,
@@ -289,6 +298,7 @@ def converter_orcamento(
             cor=origem.cor,
             acionamento=origem.acionamento,
             lado_comando=origem.lado_comando,
+            ambiente=origem.ambiente,
             calculo_producao_status=(
                 origem.calculo_producao_status
             ),
@@ -434,6 +444,27 @@ def atualizar(db, pedido_id, tenant, data):
         if value not in {"VAREJO", "DECORADOR", "CONSUMIDOR_FINAL"}:
             raise ValueError("Perfil comercial inválido.")
         changes["perfil_comercial"] = value
+    invalidar_autorizacao = (
+        any(campo != "status" for campo in changes)
+        or changes.get("status") == "CANCELADO"
+    )
+    if invalidar_autorizacao and (
+        getattr(pedido, "producao_aprovado_em", None) is not None
+        or getattr(pedido, "producao_liberado_em", None) is not None
+    ):
+        usuario = getattr(tenant, "user_id", None)
+        pedido.producao_historico = [
+            *(pedido.producao_historico or []),
+            {
+                "acao": "AUTORIZACAO_INVALIDADA_POR_ALTERACAO",
+                "usuario": str(usuario) if usuario is not None else None,
+                "em": datetime.now(timezone.utc).isoformat(),
+            },
+        ]
+        pedido.producao_aprovado_por = None
+        pedido.producao_aprovado_em = None
+        pedido.producao_liberado_por = None
+        pedido.producao_liberado_em = None
     for field, value in changes.items():
         setattr(pedido, field, value)
     db.flush()

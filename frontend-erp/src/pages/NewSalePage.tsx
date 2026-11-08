@@ -11,6 +11,7 @@ import { BudgetServiceRow } from '../components/BudgetServiceRow'
 import { BudgetSummary } from '../components/BudgetSummary'
 import { createClient, createOrder, getAllProducts, getClients, getCommercialPartners, getFuncionariosCadastro, getRepresentatives,
   type ApiCommercialPartner, type ApiRepresentative, type ApiOrder, type OrderCreate } from '../services/api'
+import { listarServicos, type Servico } from '../services/servicos'
 import { commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, roundHalfUp,
   type ApiClient, type ApiProduct, type BudgetProduct, type BudgetService, type CommercialProfile, type CurtainState } from '../types/budget'
 import { romanaKey, type RomanaState } from '../types/romana'
@@ -30,6 +31,8 @@ const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(
 export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: (sale: ApiOrder) => void }) {
   const [clients, setClients] = useState<ApiClient[]>([])
   const [catalog, setCatalog] = useState<ApiProduct[]>([])
+  const [serviceCatalog, setServiceCatalog] = useState<Servico[]>([])
+  const [serviceCatalogError, setServiceCatalogError] = useState('')
   const [commercialRegistration, setCommercialRegistration] = useState<CommercialRegistration | null>(null)
   const [partners, setPartners] = useState<ApiCommercialPartner[]>([])
   const [representatives, setRepresentatives] = useState<ApiRepresentative[]>([])
@@ -79,14 +82,16 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
 
   useEffect(() => {
     let cancelled = false
-    void Promise.all([getClients(), getAllProducts(), Promise.allSettled([getFuncionariosCadastro(), getCommercialPartners(), getRepresentatives()])])
-      .then(([loadedClients, loadedCatalog, names]) => {
+    void Promise.all([getClients(), getAllProducts(), Promise.allSettled([getFuncionariosCadastro(), getCommercialPartners(), getRepresentatives()]), Promise.allSettled([listarServicos('', false)])])
+      .then(([loadedClients, loadedCatalog, names, services]) => {
         if (cancelled) return
         setClients(loadedClients); setCatalog(loadedCatalog)
         if (names[0].status === 'fulfilled') setSellers(names[0].value)
         if (names[1].status === 'fulfilled') setPartners(names[1].value)
         if (names[2].status === 'fulfilled') setRepresentatives(names[2].value)
         if (names.some(n => n.status === 'rejected')) setWarning('Algumas listas comerciais não foram carregadas. Reabra a página para tentar novamente.')
+        if (services[0].status === 'fulfilled') setServiceCatalog(services[0].value)
+        else setServiceCatalogError(services[0].reason instanceof Error ? services[0].reason.message : String(services[0].reason))
       }).catch(e => { if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e)) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -202,7 +207,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
     setProducts(rows => rows.map(row => row.id === next.id ? next : row))
   }
   function addProduct() { const row = emptyProduct(nextId.current++); setProducts(rows => [...rows, row]) }
-  function addService() { const row: BudgetService = { id: nextId.current++, service: 'Instalação', details: '', quantity: 1, value: 0, discount: 0 }; setServices(rows => [...rows, row]) }
+  function addService() { const row: BudgetService = { id: nextId.current++, service: '', details: '', quantity: 1, value: 0, discount: 0, unit: 'UN', priceManual: true }; setServices(rows => [...rows, row]) }
   const productsTotal = roundHalfUp(products.reduce((sum, p) => sum + productLineSubtotal(p,profileLabel[profile]), 0))
   const servicesTotal = roundHalfUp(services.reduce((sum, s) => sum + roundHalfUp(Math.max(0, s.quantity * s.value - s.discount)), 0))
   const internalValue = roundHalfUp(Math.max(0, productsTotal + servicesTotal - discount))
@@ -224,6 +229,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
     if (saleType === 'DIRETA' && !clientId) { setError('Venda direta exige cliente.'); return }
     if (saleType === 'PARCEIRO' && !partnerId) { setError('Selecione a revenda.'); return }
     if ((!products.length && !services.length) || products.some(p => !p.productId && !p.curtain?.tecidoProdutoId) || services.some(s => !s.service.trim() || s.quantity <= 0)) { setError('Inclua pelo menos um item válido e complete os itens adicionados.'); return }
+    if (services.some(s => serviceCatalog.find(item => item.id === s.serviceId)?.tipo_calculo === 'FAIXA_ALTURA' && (!Number.isFinite(s.heightCm) || Number(s.heightCm) <= 0))) { setError('Informe uma altura válida em centímetros para cada serviço de lavagem.'); return }
     if (discount < 0 || partnerPercent < 0 || partnerPercent > 1000 ||
         services.some(s => s.value < 0 || s.discount < 0) ||
         products.some(p => p.quantity <= 0 || p.price < 0 || p.discount < 0 || parseDecimal(p.width) < 0 || parseDecimal(p.height) < 0)) {
@@ -250,11 +256,11 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
         ...products.map(p => ({ tipo_item: 'PRODUTO', produto_id: p.productId, descricao: p.product, codigo_interno: p.code || null,
           grupo_tecnico: p.groupTechnical || null, modelo_tecnico: p.modelTechnical || null, unidade: p.unit || null,
           quantidade: p.quantity, largura: parseDecimal(p.width), altura: parseDecimal(p.height), area: parseDecimal(p.width) * parseDecimal(p.height) * p.quantity,
-          preco_unitario: p.price, desconto: p.discount, subtotal: productLineSubtotal(p,profileLabel[profile]), observacao_item: p.details || null, cor: p.color || null,
+          preco_unitario: p.price, desconto: p.discount, subtotal: productLineSubtotal(p,profileLabel[profile]), observacao_item: p.details || null, ambiente: p.environment.trim() || null, cor: p.color || null,
           acionamento: p.acao_acionamento || p.acionamento || null, lado_comando: p.lado_comando || null,
           dados_tecnicos: technicalItemData(p) })),
-        ...services.map(s => ({ tipo_item: 'SERVICO', produto_id: null, descricao: s.service.trim(), quantidade: s.quantity,
-          largura: 0, altura: 0, area: 0, preco_unitario: s.value, desconto: s.discount,
+        ...services.map(s => ({ tipo_item: 'SERVICO', produto_id: null, servico_id: s.serviceId ?? null, descricao: s.service.trim(), unidade: s.unit || 'UN', quantidade: s.quantity,
+          largura: 0, altura: (s.heightCm || 0) / 100, area: 0, preco_unitario: s.value, preco_unitario_manual: s.priceManual ?? true, desconto: s.discount,
           subtotal: Math.max(0, s.quantity * s.value - s.discount), observacao_item: s.details || null })),
       ],
     }
@@ -506,7 +512,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
         <Section title="Dados da venda" subtitle="Venda manual, sem vínculo com orçamento de origem." icon={<FileText size={17} />}><div className="form-grid general-grid"><Field label="Situação"><input value="Em aberto" readOnly /></Field><Field label="Data da venda"><input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} /></Field><Field label="Prazo de entrega"><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} /></Field><Field label="Canal de venda"><input maxLength={100} value={channel} onChange={e => setChannel(e.target.value)} /></Field></div></Section>
 
         <Section title="Produtos" subtitle="Selecione produtos e configure suas medidas e detalhes." icon={<PackagePlus size={17} />}><div className="product-rows">{products.map(p => <BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={attempted} onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={updateProduct} onRemove={() => setProducts(rows => rows.filter(row => row.id !== p.id))} />)}</div><button type="button" className="secondary-button add-product" onClick={addProduct}><Plus size={16} /> Adicionar produto</button></Section>
-        <Section title="Serviços" subtitle="Descrição, quantidade, valor e desconto de cada serviço." icon={<ReceiptText size={17} />}><div className="service-rows">{services.map(s => <BudgetServiceRow key={s.id} service={s} onChange={next => setServices(rows => rows.map(row => row.id === next.id ? next : row))} onRemove={() => setServices(rows => rows.filter(row => row.id !== s.id))} />)}</div><button type="button" className="secondary-button add-product" onClick={addService}><Plus size={16} /> Adicionar serviço</button></Section>
+        <Section title="Serviços" subtitle="Selecione um serviço do catálogo ou informe um serviço livre; preços e descontos podem ser negociados." icon={<ReceiptText size={17} />}>{serviceCatalogError&&<p className="api-message error" role="alert">Catálogo de serviços indisponível: {serviceCatalogError}. Ainda é possível salvar serviços livres.</p>}<div className="service-rows">{services.map(s => <BudgetServiceRow key={s.id} service={s} catalogServices={serviceCatalog} onChange={next => setServices(rows => rows.map(row => row.id === next.id ? next : row))} onRemove={() => setServices(rows => rows.filter(row => row.id !== s.id))} />)}</div><button type="button" className="secondary-button add-product" onClick={addService}><Plus size={16} /> Adicionar serviço</button></Section>
         <Section title="Observações" subtitle="Informações da venda e notas de uso interno." icon={<FileText size={17} />}><div className="budget-observations-grid"><Field label="Observações"><textarea value={observation} onChange={e => setObservation(e.target.value)} /></Field><Field label="Observação interna"><textarea value={internalObservation} onChange={e => setInternalObservation(e.target.value)} /></Field></div></Section>
       </fieldset>
       <BudgetSummary products={productsTotal} services={servicesTotal} freight={0} showFreight={false} discount={discount} onDiscount={value => { if (!savingRef.current) setDiscount(value) }} includeBankFee={includeBankFee} onIncludeBankFee={value => { if (!savingRef.current) setIncludeBankFee(value) }} bankFeePercent={bankFeePercent} onBankFeePercent={value => { if (!savingRef.current) setBankFeePercent(value) }} internalValue={internalValue} partnerValue={partnerValue} rtValue={rtAmount} bankFeeValue={roundHalfUp(clientTotal-base)} clientTotal={clientTotal} onCancel={() => { if (!savingRef.current) onBack() }} onSave={() => void save()} saving={saving} saveLabel="Salvar venda" isCollapsed={collapsed} onToggle={() => setCollapsed(value => !value)} />

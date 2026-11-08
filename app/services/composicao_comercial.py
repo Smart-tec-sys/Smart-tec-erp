@@ -6,6 +6,7 @@ from app.services.area_faturavel import calcular_area_faturavel, AreaFaturavelRe
 ITEM_PERSISTED_FIELDS = {
     "tipo_item",
     "produto_id",
+    "servico_id",
     "descricao",
     "codigo_interno",
     "grupo_tecnico",
@@ -23,6 +24,7 @@ ITEM_PERSISTED_FIELDS = {
     "cor",
     "acionamento",
     "lado_comando",
+    "ambiente",
     "calculo_producao_status",
     "dados_tecnicos",
 }
@@ -82,10 +84,70 @@ def _aplicar_preco_comercial(valores, item, preco_sugerido, base):
 
 
 def calcular_itens(db, o, data, tenant_id, item_model):
+    from app.models.servico import ServicoDB
+    from app.services.servico_service import calcular_preco_altura
+
+    servicos_existentes = {
+        item.servico_id for item in (getattr(o, "itens", None) or [])
+        if getattr(item, "servico_id", None) is not None
+    }
     o.itens.clear()
     total = Decimal("0")
     for item in data.itens:
         valores = item.dict(include=ITEM_PERSISTED_FIELDS)
+        valores["empresa_id"] = tenant_id
+        if item.tipo_item == "SERVICO":
+            if item.produto_id is not None:
+                raise ValueError("Serviço não deve informar produto.")
+            if item.servico_id is not None:
+                servico = db.query(ServicoDB).filter(
+                    ServicoDB.id == item.servico_id,
+                    ServicoDB.empresa_id == tenant_id,
+                ).first()
+                if servico is None:
+                    raise ValueError("Serviço não encontrado para a empresa ativa.")
+                if servico.situacao != "ATIVO" and item.servico_id not in servicos_existentes:
+                    raise ValueError("Serviço inativo não pode ser incluído em um novo documento.")
+                valores["unidade"] = servico.unidade
+                manual = bool(getattr(item, "preco_unitario_manual", False))
+                preco_padrao = (
+                    calcular_preco_altura(servico, Decimal(str(item.altura or 0)) * 100)
+                    if servico.tipo_calculo == "FAIXA_ALTURA"
+                    else Decimal(str(servico.preco_venda or 0))
+                )
+                if not manual:
+                    valores["preco_unitario"] = preco_padrao
+                valores["subtotal"] = max(
+                    Decimal("0"),
+                    Decimal(str(item.quantidade)) * Decimal(str(valores["preco_unitario"]))
+                    - Decimal(str(item.desconto or 0)),
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                dados = dict(valores.get("dados_tecnicos") or {})
+                comercial = dict(dados.get("comercial") or {})
+                comercial.update(
+                    preco_unitario_manual=manual,
+                    preco_unitario_sugerido=float(preco_padrao),
+                )
+                dados["comercial"] = comercial
+                valores["dados_tecnicos"] = dados
+            else:
+                valores["subtotal"] = max(
+                    Decimal("0"),
+                    Decimal(str(item.quantidade)) * Decimal(str(item.preco_unitario))
+                    - Decimal(str(item.desconto or 0)),
+                ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                dados = dict(valores.get("dados_tecnicos") or {})
+                comercial = dict(dados.get("comercial") or {})
+                comercial["preco_unitario_manual"] = bool(
+                    getattr(item, "preco_unitario_manual", False)
+                )
+                dados["comercial"] = comercial
+                valores["dados_tecnicos"] = dados
+            total += Decimal(str(valores["subtotal"]))
+            o.itens.append(item_model(**valores))
+            continue
+        if item.servico_id is not None:
+            raise ValueError("Produto não deve informar serviço.")
         if str(item.modelo_tecnico or '').strip().upper() == 'CORTINA':
             from app.services.cortina_simulacao import entrada_cortina_item, simular_cortina_catalogo
             simulacao = simular_cortina_catalogo(db, entrada_cortina_item(item, data.perfil_comercial), tenant_id)

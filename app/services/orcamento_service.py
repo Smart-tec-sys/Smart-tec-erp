@@ -32,6 +32,7 @@ def _item_dict(i):
         "id": i.id,
         "tipo_item": i.tipo_item,
         "produto_id": i.produto_id,
+        "servico_id": i.servico_id,
         "descricao": i.descricao,
         "codigo_interno": i.codigo_interno,
         "grupo_tecnico": i.grupo_tecnico,
@@ -54,6 +55,7 @@ def _item_dict(i):
         "cor": i.cor,
         "acionamento": i.acionamento,
         "lado_comando": i.lado_comando,
+        "ambiente": i.ambiente,
         "calculo_producao_status": i.calculo_producao_status,
         "dados_tecnicos": i.dados_tecnicos,
     }

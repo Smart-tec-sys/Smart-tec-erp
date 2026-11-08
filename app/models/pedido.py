@@ -1,4 +1,17 @@
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -8,6 +21,9 @@ from app.models.orcamento import OrcamentoDB  # noqa: F401
 
 class PedidoDB(Base):
     __tablename__ = "pedidos"
+    __table_args__ = (
+        UniqueConstraint("id", "empresa_id", name="uq_pedidos_id_empresa"),
+    )
 
     id = Column(Integer, primary_key=True)
     empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=True)
@@ -37,6 +53,11 @@ class PedidoDB(Base):
     )
 
     status = Column(String, nullable=True, default="ABERTO")
+    producao_aprovado_por = Column(String(100), nullable=True)
+    producao_aprovado_em = Column(DateTime(timezone=True), nullable=True)
+    producao_liberado_por = Column(String(100), nullable=True)
+    producao_liberado_em = Column(DateTime(timezone=True), nullable=True)
+    producao_historico = Column(JSONB, nullable=False, default=list)
     cliente_final_nome = Column(Text, nullable=True)
     cliente_final_documento = Column(Text, nullable=True)
     cliente_final_telefone = Column(Text, nullable=True)
@@ -82,17 +103,28 @@ class PedidoDB(Base):
 
 class PedidoItemDB(Base):
     __tablename__ = "pedidos_itens"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["pedido_id", "empresa_id"],
+            ["pedidos.id", "pedidos.empresa_id"],
+            name="fk_pedidos_itens_documento_empresa_servicos_v1",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["servico_id", "empresa_id"],
+            ["servicos.id", "servicos.empresa_id"],
+            name="fk_pedidos_itens_servico_empresa_v1",
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
 
-    pedido_id = Column(
-        Integer,
-        ForeignKey("pedidos.id", ondelete="CASCADE"),
-        nullable=False,
-    )
+    pedido_id = Column(Integer, nullable=False)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="RESTRICT"), nullable=False)
 
     tipo_item = Column(String(30), nullable=False, default="PRODUTO")
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
+    servico_id = Column(Integer, ForeignKey("servicos.id", ondelete="SET NULL"), nullable=True)
 
     descricao = Column(Text, nullable=True)
     codigo_interno = Column(String, nullable=True)
@@ -115,6 +147,7 @@ class PedidoItemDB(Base):
     cor = Column(String, nullable=True)
     acionamento = Column(String, nullable=True)
     lado_comando = Column(String, nullable=True)
+    ambiente = Column(String(200), nullable=True)
     calculo_producao_status = Column(String, nullable=True)
     dados_tecnicos = Column(JSONB, nullable=True)
 

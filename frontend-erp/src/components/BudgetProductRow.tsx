@@ -264,6 +264,10 @@ export function BudgetProductRow({
           <span>Detalhe</span>
           <input value={product.details} onChange={(e) => update('details', e.target.value)} placeholder="Ex.: Sala Ã‚Â· comando ÃƒÂ  direita" />
         </label>
+        <label className="field">
+          <span>Ambiente</span>
+          <input maxLength={200} value={product.environment} onChange={(e) => update('environment', e.target.value)} placeholder="Ex.: Sala" />
+        </label>
         <label className={`field${validationAttempted && quantityInvalid ? ' field-invalid' : ''}`}>
           <span>Quant. *</span>
           <div className="stepper">

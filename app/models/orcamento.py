@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB
 from app.database import Base
 from app.models.funcionario import FuncionarioDB  # noqa: F401
+from app.models.servico import ServicoDB  # noqa: F401
 
 # Referências de metadata para tabelas comerciais existentes.
 # Estas tabelas são administradas atualmente por SQL bruto no
@@ -163,10 +164,26 @@ class OrcamentoParcelaDB(Base):
 
 class OrcamentoItemDB(Base):
     __tablename__ = "orcamentos_itens"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["orcamento_id", "empresa_id"],
+            ["orcamentos.id", "orcamentos.empresa_id"],
+            name="fk_orcamentos_itens_documento_empresa_servicos_v1",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["servico_id", "empresa_id"],
+            ["servicos.id", "servicos.empresa_id"],
+            name="fk_orcamentos_itens_servico_empresa_v1",
+        ),
+    )
+
     id = Column(Integer, primary_key=True)
-    orcamento_id = Column(Integer, ForeignKey("orcamentos.id", ondelete="CASCADE"), nullable=False)
+    orcamento_id = Column(Integer, nullable=False)
     tipo_item = Column(String, nullable=False, default="PRODUTO")
     produto_id = Column(Integer, ForeignKey("produtos.id"))
+    servico_id = Column(Integer, ForeignKey("servicos.id", ondelete="SET NULL"), nullable=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id", ondelete="RESTRICT"), nullable=False)
     descricao = Column(Text)
     codigo_interno = Column(String)
     grupo_tecnico = Column(String)
@@ -184,6 +201,7 @@ class OrcamentoItemDB(Base):
     cor = Column(String)
     acionamento = Column(String)
     lado_comando = Column(String)
+    ambiente = Column(String(200))
     calculo_producao_status = Column(String)
     dados_tecnicos = Column(JSONB, nullable=True)
     orcamento = relationship("OrcamentoDB", back_populates="itens")

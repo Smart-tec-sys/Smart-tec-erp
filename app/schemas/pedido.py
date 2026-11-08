@@ -14,6 +14,7 @@ class PedidoItemOut(BaseModel):
     id: int
     tipo_item: str
     produto_id: Optional[int] = None
+    servico_id: Optional[int] = None
     descricao: Optional[str] = None
     codigo_interno: Optional[str] = None
     grupo_tecnico: Optional[str] = None
@@ -34,6 +35,7 @@ class PedidoItemOut(BaseModel):
     cor: Optional[str] = None
     acionamento: Optional[str] = None
     lado_comando: Optional[str] = None
+    ambiente: Optional[str] = None
     calculo_producao_status: Optional[str] = None
     dados_tecnicos: Optional[Any] = None
 
@@ -44,6 +46,11 @@ class ClienteFinalRevenda(BaseModel):
     cliente_final_telefone: Optional[str] = None
     cliente_final_email: Optional[str] = None
     cliente_final_endereco: Optional[str] = None
+    producao_aprovado_por: Optional[str] = None
+    producao_aprovado_em: Optional[datetime] = None
+    producao_liberado_por: Optional[str] = None
+    producao_liberado_em: Optional[datetime] = None
+    producao_historico: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PedidoOut(ClienteFinalRevenda):
@@ -135,6 +142,7 @@ class PedidoItemCreate(BaseModel):
         extra = "forbid"
     tipo_item: Literal["PRODUTO", "SERVICO"] = "PRODUTO"
     produto_id: Optional[int] = Field(default=None, gt=0)
+    servico_id: Optional[int] = Field(default=None, gt=0)
     descricao: str = Field(min_length=1)
     codigo_interno: Optional[str] = None
     grupo_tecnico: Optional[str] = None
@@ -145,6 +153,7 @@ class PedidoItemCreate(BaseModel):
     altura: Decimal = Field(default=0, ge=0)
     area: Decimal = Field(default=0, ge=0)
     preco_unitario: Decimal = Field(default=0, ge=0)
+    preco_unitario_manual: bool = False
     desconto: Decimal = Field(default=0, ge=0)
     subtotal: Decimal = Field(default=0, ge=0)
     observacao_item: Optional[str] = None
@@ -152,6 +161,7 @@ class PedidoItemCreate(BaseModel):
     cor: Optional[str] = None
     acionamento: Optional[str] = None
     lado_comando: Optional[str] = None
+    ambiente: Optional[str] = Field(default=None, max_length=200)
     calculo_producao_status: Optional[str] = None
     dados_tecnicos: Optional[dict] = None
 
@@ -166,6 +176,8 @@ class PedidoItemCreate(BaseModel):
                 raise ValueError("Selecione o produto.")
         if values.get("tipo_item") == "SERVICO" and values.get("produto_id") is not None:
             raise ValueError("Serviço não deve informar produto.")
+        if values.get("tipo_item") == "PRODUTO" and values.get("servico_id") is not None:
+            raise ValueError("Produto não deve informar serviço.")
         return values
 
 

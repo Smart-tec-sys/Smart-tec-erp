@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 from typing import List, Literal, Optional
-from pydantic import BaseModel, Field, conint
+from pydantic import BaseModel, Field, conint, root_validator
 
 
 class RomanaTetoSimulacaoInput(BaseModel):
@@ -19,8 +19,9 @@ class RomanaTetoSimulacaoInput(BaseModel):
 
 
 class OrcamentoItemInput(BaseModel):
-    tipo_item: str = "PRODUTO"
+    tipo_item: Literal["PRODUTO", "SERVICO"] = "PRODUTO"
     produto_id: Optional[int] = None
+    servico_id: Optional[int] = Field(default=None, gt=0)
     descricao: str
     codigo_interno: Optional[str] = None
     grupo_tecnico: Optional[str] = None
@@ -39,6 +40,7 @@ class OrcamentoItemInput(BaseModel):
     cor: Optional[str] = None
     acionamento: Optional[str] = None
     lado_comando: Optional[str] = None
+    ambiente: Optional[str] = Field(default=None, max_length=200)
     calculo_producao_status: Optional[str] = None
     dados_tecnicos: Optional[dict] = None
     largura_modulo_m: Optional[float] = Field(default=None, allow_inf_nan=False)
@@ -47,6 +49,15 @@ class OrcamentoItemInput(BaseModel):
     acionamento_romana_teto: Optional[str] = None
     comprimento_bastao_m: Optional[float] = Field(default=None, allow_inf_nan=False)
     comprimento_corrente_sem_fim_m: Optional[float] = Field(default=None, allow_inf_nan=False)
+
+    @root_validator(skip_on_failure=True)
+    def validar_referencias_item(cls, values):
+        tipo = values.get("tipo_item")
+        if tipo == "SERVICO" and values.get("produto_id") is not None:
+            raise ValueError("Serviço não deve informar produto.")
+        if tipo == "PRODUTO" and values.get("servico_id") is not None:
+            raise ValueError("Produto não deve informar serviço.")
+        return values
 
 
 class OrcamentoParcelaInput(BaseModel):
