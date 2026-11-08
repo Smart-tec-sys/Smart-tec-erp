@@ -11,6 +11,9 @@ ALTER TABLE IF EXISTS public.parceiros_comerciais
 
 DROP INDEX IF EXISTS public.ix_parceiros_comerciais_empresa_vendedor_v1;
 
+ALTER TABLE IF EXISTS public.funcionarios
+    DROP CONSTRAINT IF EXISTS uq_funcionarios_empresa_id_revendas_v1;
+
 ALTER TABLE IF EXISTS public.parceiros_comerciais
     DROP COLUMN IF EXISTS permitir_exceder_limite,
     DROP COLUMN IF EXISTS limite_credito,

@@ -46,8 +46,10 @@ export const criarRevenda = (payload: RevendaPayload) =>
   request<Revenda>('/representantes/parceiros', { method: 'POST', body: JSON.stringify(payload) })
 export const atualizarRevenda = (id: number, payload: Partial<RevendaPayload>) =>
   request<Revenda>(`/representantes/parceiros/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+export const reclassificarClienteComoRevenda = (clienteId: number, payload: RevendaPayload) =>
+  request<Revenda>(`/clientes/${clienteId}/reclassificar-revenda`, { method: 'POST', body: JSON.stringify(payload) })
 
-export function formularioDaRevenda(revenda?: Revenda): FormularioRevenda {
+export function formularioDaRevenda(revenda?: Partial<Revenda>): FormularioRevenda {
   const form = { ...revendaInicial }
   if (revenda) {
     for (const campo of Object.keys(form) as CampoRevenda[]) {
@@ -56,6 +58,36 @@ export function formularioDaRevenda(revenda?: Revenda): FormularioRevenda {
     }
   }
   return form
+}
+
+export function dadosRevendaDoCliente(cliente: Record<string, unknown>): Partial<Revenda> {
+  const tipoCliente = typeof cliente.tipo === 'string'
+    ? cliente.tipo.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    : ''
+  const tipoPessoa = tipoCliente === 'JURIDICA' || tipoCliente === 'FISICA' ? tipoCliente : null
+  const limiteCredito = cliente.limite_credito
+  return {
+    nome: typeof cliente.nome === 'string' ? cliente.nome : '',
+    tipo_pessoa: tipoPessoa,
+    documento: typeof cliente.documento === 'string' ? cliente.documento : null,
+    email: typeof cliente.email === 'string' ? cliente.email : null,
+    telefone: typeof cliente.telefone_comercial === 'string' ? cliente.telefone_comercial : null,
+    telefone_celular: typeof cliente.telefone_celular === 'string' ? cliente.telefone_celular : null,
+    site: typeof cliente.site === 'string' ? cliente.site : null,
+    cep: typeof cliente.cep === 'string' ? cliente.cep : null,
+    logradouro: typeof cliente.logradouro === 'string' ? cliente.logradouro : null,
+    numero: typeof cliente.numero === 'string' ? cliente.numero : null,
+    complemento: typeof cliente.complemento === 'string' ? cliente.complemento : null,
+    bairro: typeof cliente.bairro === 'string' ? cliente.bairro : null,
+    cidade: typeof cliente.cidade === 'string' ? cliente.cidade : null,
+    estado: typeof cliente.estado === 'string' ? cliente.estado : null,
+    observacao: typeof cliente.observacoes === 'string' ? cliente.observacoes : null,
+    limite_credito: typeof limiteCredito === 'number' || typeof limiteCredito === 'string' ? limiteCredito : null,
+    permitir_exceder_limite: cliente.permitir_exceder === true,
+    ativo: true,
+    percentual_padrao: 0,
+    isento_ie: false,
+  }
 }
 
 export function validarFormularioRevenda(form: FormularioRevenda): string | null {

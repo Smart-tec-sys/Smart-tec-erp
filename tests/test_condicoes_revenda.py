@@ -76,7 +76,7 @@ def inserir_orcamento(db):
                     cliente_final_nome="Cliente ficticio", total=2854.21, total_final=2854.21,
                     base_protegida=2854.21, total_cliente_final=2854.21,
                     observacao="Texto antigo", observacao_interna="Interno anterior")
-    o.itens = [OrcamentoItemDB(tipo_item="SERVICO", descricao="Instalacao teste",
+    o.itens = [OrcamentoItemDB(empresa_id=1, tipo_item="SERVICO", descricao="Instalacao teste",
                                quantidade=Decimal("8.43"), preco_unitario=45, subtotal=379.35)]
     db.add(o)
     db.commit()

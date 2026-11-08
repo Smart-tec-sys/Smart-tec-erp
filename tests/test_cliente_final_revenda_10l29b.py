@@ -78,7 +78,7 @@ class ClienteFinalTests(unittest.TestCase):
 
     def test_conversion_copies_all_five(self):
         budget = self.budget(parceiro_id=1, status='APROVADO', **self.values)
-        budget.itens.append(OrcamentoItemDB(tipo_item='SERVICO', descricao='Instalação', quantidade=1,
+        budget.itens.append(OrcamentoItemDB(empresa_id=1, tipo_item='SERVICO', descricao='Instalação', quantidade=1,
                            preco_unitario=520.33, subtotal=520.33, desconto=0))
         budget.total = budget.total_final = 520.33
         self.db.commit()

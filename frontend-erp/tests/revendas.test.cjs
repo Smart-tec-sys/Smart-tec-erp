@@ -79,6 +79,21 @@ registerHooks({
   initial.tipo_contribuinte = 'ISENTO'
   assert.equal(revendas.validarFormularioRevenda(initial), null)
 
+  const copiedClient = revendas.dadosRevendaDoCliente({
+    tipo: 'Jurídica', nome: 'NDECOR', documento: '11.222.333/0001-81',
+    email: 'financeiro@example.test', telefone_comercial: '(11) 3333-4444',
+    cep: '01001-000', logradouro: 'Praça da Sé', limite_credito: 2500,
+    permitir_exceder: true,
+  })
+  assert.equal(copiedClient.tipo_pessoa, 'JURIDICA')
+  assert.equal(copiedClient.nome, 'NDECOR')
+  assert.equal(copiedClient.documento, '11.222.333/0001-81')
+  assert.equal(copiedClient.telefone, '(11) 3333-4444')
+  assert.equal(copiedClient.cep, '01001-000')
+  assert.equal(copiedClient.limite_credito, 2500)
+  assert.equal(copiedClient.permitir_exceder_limite, true)
+  assert.equal(copiedClient.percentual_padrao, 0)
+
   const remote = {
     razao_social: 'Empresa consultada', nome_fantasia: 'Fantasia', email: 'contato@example.test',
     telefone_comercial: '1133334444 / 11999999999',
@@ -162,6 +177,18 @@ registerHooks({
   const view = renderToStaticMarkup(React.createElement(RevendaForm, { revenda: { id: 1, nome: 'Teste', ativo: true, percentual_padrao: '0' }, somenteLeitura: true, onClose() {}, onSaved() {} }))
   assert.ok(!view.includes('Salvar revenda'))
   assert.ok(!view.includes('Consultar CEP'))
+  const reclassification = renderToStaticMarkup(React.createElement(RevendaForm, {
+    initialValues: copiedClient, consultasExternas: false,
+    titulo: 'Reclassificar Cliente → Revenda',
+    descricao: 'Categoria atual: Cliente. Nova categoria: Revenda.',
+    textoSalvar: 'Confirmar alteração para Revenda',
+    onSubmit: async payload => ({ id: 101, ...payload }),
+    onClose() {}, onSaved() {},
+  }))
+  assert.ok(reclassification.includes('Categoria atual: Cliente. Nova categoria: Revenda.'))
+  assert.ok(reclassification.includes('Confirmar alteração para Revenda'))
+  assert.ok(!reclassification.includes('Consultar CNPJ'))
+  assert.ok(!reclassification.includes('Consultar CEP'))
   const missingFields = revendas.camposConsultaCnpj({ razao_social: 'Razão disponível', nome_fantasia: null, email: null })
   assert.deepEqual(missingFields, { razao_social: 'Razão disponível' })
   const safeMissing = assisted.aplicarConsulta(
@@ -213,6 +240,12 @@ registerHooks({
   await consultas.consultarCep('01001000')
   await api.createCommercialPartner({ nome: 'Cadastro rápido' })
   assert.deepEqual(calls[2].body, { nome: 'Cadastro rápido' })
+  const reclassificationPayload = revendas.payloadDaRevenda(revendas.formularioDaRevenda(copiedClient))
+  await revendas.reclassificarClienteComoRevenda(101, reclassificationPayload)
+  assert.equal(calls.at(-1).pathname, '/clientes/101/reclassificar-revenda')
+  assert.equal(calls.at(-1).method, 'POST')
+  assert.equal(calls.at(-1).body.documento, '11.222.333/0001-81')
+  assert.equal(calls.at(-1).body.percentual_padrao, '0')
   await revendas.obterRevenda(1)
   const result = await revendas.atualizarRevenda(1, { limite_credito: null, observacao: 'Manual' })
   assert.equal(result.limite_credito, null)

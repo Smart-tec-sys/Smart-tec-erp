@@ -25,6 +25,28 @@ normalizados, mas não precisam passar por checksum para salvar o cadastro.
 `limite_credito = null` representa limite
 não definido e zero é um limite definido igual a zero.
 
+## Reclassificação Cliente → Revenda V1
+
+Clientes continuam em `clientes`; revendas continuam em
+`parceiros_comerciais`. `clientes.parceiro_id` e `representante_id` descrevem a
+origem/vinculação comercial do cliente e não substituem a identidade do próprio
+cadastro. A reclassificação usa `parceiros_comerciais.cliente_origem_id` como
+vínculo explícito tenant-safe, sem alterar ou remover o cliente original.
+
+A migration `20261107_reclassificacao_cliente_revenda_v1_up.sql` adiciona o
+vínculo e a tabela `cliente_reclassificacoes`, que registra categorias, empresa,
+usuário autenticado e horário. A operação transacional é idempotente. Um CNPJ
+correspondente na mesma empresa é reutilizado se não estiver vinculado; matches
+ambíguos ou já vinculados a outro cliente são recusados. O cadastro de Cliente
+é ocultado da listagem comercial quando possui vínculo, mas continua consultável
+por ID para preservar documentos históricos. Orçamentos e pedidos existentes
+mantêm o `cliente_id` original. O endpoint requer usuário autenticado para que a
+autoria não seja omitida.
+
+O rollback interrompe se houver vínculos ou registros de auditoria, evitando
+remover silenciosamente dados da operação. As migrations desta funcionalidade
+são propostas para revisão; não foram executadas em banco algum.
+
 ## Consultas de cadastro
 
 As rotas autenticadas `POST /consultas/cnpj` e `POST /consultas/cep` consultam
@@ -66,7 +88,7 @@ ao frontend.
 Backend, a partir da raiz:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_revendas_v1 -v
+.\.venv\Scripts\python.exe -m unittest tests.test_cliente_reclassificacao_revenda tests.test_revendas_v1 -v
 ```
 
 A suíte usa banco simulado e mocks de HTTP. A importação da API também foi

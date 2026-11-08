@@ -7,11 +7,23 @@ import { consultarCep, consultarCnpj, cnpjValido, cepValido, normalizarCep, norm
 import { aplicarConsulta, editarCampo, iniciarPreenchimento } from '../services/preenchimentoAssistido'
 import {
   atualizarRevenda, criarRevenda, formularioDaRevenda, payloadDaRevenda, validarFormularioRevenda,
-  camposConsultaCep, camposConsultaCnpj, type CampoRevenda, type FormularioRevenda, type Revenda,
+  camposConsultaCep, camposConsultaCnpj, type CampoRevenda, type FormularioRevenda, type Revenda, type RevendaPayload,
 } from '../services/revendas'
 import { EnderecoPrincipalFields } from './EnderecoPrincipalFields'
 
-type Props = { revenda?: Revenda; somenteLeitura?: boolean; onClose: () => void; onSaved: (revenda: Revenda) => void }
+type Props = {
+  revenda?: Revenda
+  initialValues?: Partial<Revenda>
+  somenteLeitura?: boolean
+  consultasExternas?: boolean
+  camposOriginaisSomenteLeitura?: boolean
+  titulo?: string
+  descricao?: string
+  textoSalvar?: string
+  onSubmit?: (payload: RevendaPayload) => Promise<Revenda>
+  onClose: () => void
+  onSaved: (revenda: Revenda) => void
+}
 type Vendedor = { id: number; nome: string; ativo: boolean }
 type ConsultaStatus = { carregando: boolean; mensagem: string; erro: string }
 const statusInicial: ConsultaStatus = { carregando: false, mensagem: '', erro: '' }
@@ -22,8 +34,12 @@ const labels: Partial<Record<CampoRevenda, string>> = {
   complemento: 'Complemento', bairro: 'Bairro', cidade: 'Cidade', estado: 'UF',
 }
 
-export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved }: Props) {
-  const [assistido, setAssistido] = useState(() => iniciarPreenchimento(formularioDaRevenda(revenda), Boolean(revenda)))
+export function RevendaForm({
+  revenda, initialValues, somenteLeitura = false, consultasExternas = true,
+  camposOriginaisSomenteLeitura = false,
+  titulo, descricao, textoSalvar, onSubmit, onClose, onSaved,
+}: Props) {
+  const [assistido, setAssistido] = useState(() => iniciarPreenchimento(formularioDaRevenda(revenda ?? initialValues), Boolean(revenda)))
   const current = useRef(assistido)
   const mounted = useRef(true)
   const [sugestoes, setSugestoes] = useState<Partial<FormularioRevenda>>({})
@@ -117,7 +133,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
   }
 
   async function consultar(origem: 'cnpj' | 'cep', repetir = false) {
-    if (savingRef.current || somenteLeitura) return
+    if (savingRef.current || somenteLeitura || !consultasExternas) return
     const snapshot = current.current
     const cnpj = origem === 'cnpj'
     const key = cnpj ? normalizarCnpj(snapshot.valores.documento) : normalizarCep(snapshot.valores.cep)
@@ -163,13 +179,13 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
   }
 
   useEffect(() => {
-    if (disabled || form.tipo_pessoa !== 'JURIDICA' || assistido.origens.documento !== 'manual' || !cnpjValido(form.documento)) return
+    if (disabled || !consultasExternas || form.tipo_pessoa !== 'JURIDICA' || assistido.origens.documento !== 'manual' || !cnpjValido(form.documento)) return
     const timer = setTimeout(() => { void consultar('cnpj') }, 500)
     return () => clearTimeout(timer)
   }, [form.documento, form.tipo_pessoa, disabled])
 
   useEffect(() => {
-    if (disabled || !cepValido(form.cep) || !['manual', 'cnpj'].includes(assistido.origens.cep ?? '')) return
+    if (disabled || !consultasExternas || !cepValido(form.cep) || !['manual', 'cnpj'].includes(assistido.origens.cep ?? '')) return
     const timer = setTimeout(() => { void consultar('cep') }, 500)
     return () => clearTimeout(timer)
   }, [form.cep, disabled])
@@ -205,7 +221,11 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
     requests.current.cnpj++; requests.current.cep++
     try {
       const payload = payloadDaRevenda(current.current.valores)
-      const result = revenda ? await atualizarRevenda(revenda.id, payload) : await criarRevenda(payload)
+      const result = onSubmit
+        ? await onSubmit(payload)
+        : revenda
+          ? await atualizarRevenda(revenda.id, payload)
+          : await criarRevenda(payload)
       if (mounted.current) onSaved(result)
     } catch (error) {
       if (mounted.current) setErro(error instanceof Error ? error.message : 'Não foi possível salvar a revenda.')
@@ -216,20 +236,25 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
   }
 
   function field(campo: CampoRevenda, label: string, options: { value: string; label: string }[] | undefined = undefined, maxLength = 255, type = 'text') {
+    const origemBloqueada = camposOriginaisSomenteLeitura && [
+      'tipo_pessoa', 'documento', 'nome', 'email', 'telefone', 'telefone_celular',
+      'site', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade',
+      'estado', 'limite_credito',
+    ].includes(campo)
     return <label className="cad-field" key={campo}>
       <span>{label}{campo === 'nome' ? ' *' : ''}</span>
       {options
-        ? <select name={campo} value={form[campo]} disabled={disabled} onChange={event => change(campo, event.target.value)}>
+        ? <select name={campo} value={form[campo]} disabled={disabled || origemBloqueada} onChange={event => change(campo, event.target.value)}>
           {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        : <input className={['nome', 'razao_social', 'nome_fantasia', 'responsavel'].includes(campo) && commercialDisplayText(form[campo]) === form[campo].toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} name={campo} type={type} value={form[campo]} required={campo === 'nome'} disabled={disabled} maxLength={maxLength}
+        : <input className={['nome', 'razao_social', 'nome_fantasia', 'responsavel'].includes(campo) && commercialDisplayText(form[campo]) === form[campo].toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} name={campo} type={type} value={form[campo]} required={campo === 'nome'} disabled={disabled || origemBloqueada} maxLength={maxLength}
           step={campo === 'percentual_padrao' ? '0.0001' : type === 'number' ? '0.01' : undefined}
           min={type === 'number' ? 0 : undefined} max={campo === 'percentual_padrao' ? 100 : undefined}
           onChange={event => change(campo, event.target.value)} />}
     </label>
   }
   function checkbox(campo: CampoRevenda, label: string) {
-    return <label className="cad-checkbox"><input type="checkbox" name={campo} checked={form[campo] === 'true'} disabled={disabled}
+    return <label className="cad-checkbox"><input type="checkbox" name={campo} checked={form[campo] === 'true'} disabled={disabled || (camposOriginaisSomenteLeitura && campo === 'permitir_exceder_limite')}
       onChange={event => change(campo, String(event.target.checked))} /><span>{label}</span></label>
   }
   function consultaStatus(status: ConsultaStatus, origem: 'cnpj' | 'cep') {
@@ -237,16 +262,16 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
       {status.carregando && <span><Loader2 size={14} className="spinning" /> Consultando {origem.toUpperCase()}...</span>}
       {status.mensagem && <p>{status.mensagem}</p>}
       {status.erro && <p className="revenda-warning" role="status">{status.erro}</p>}
-      {!somenteLeitura && <button type="button" className="cad-secondary" disabled={saving || status.carregando}
+      {!somenteLeitura && consultasExternas && <button type="button" className="cad-secondary" disabled={saving || status.carregando}
         onClick={() => void consultar(origem, true)}>{status.erro || status.mensagem ? 'Consultar novamente' : `Consultar ${origem.toUpperCase()}`}</button>}
     </div>
   }
   const hasSugestoes = Object.keys(sugestoes).length > 0
   const modal = <div className="cad-modal-backdrop revenda-modal-backdrop" onMouseDown={close}>
-    <div ref={dialogRef} className="cad-modal revenda-modal" role="dialog" aria-modal="true" aria-label={somenteLeitura ? 'Visualizar revenda' : revenda ? 'Editar revenda' : 'Nova revenda'}
+    <div ref={dialogRef} className="cad-modal revenda-modal" role="dialog" aria-modal="true" aria-label={titulo || (somenteLeitura ? 'Visualizar revenda' : revenda ? 'Editar revenda' : 'Nova revenda')}
       onMouseDown={event => event.stopPropagation()} onKeyDown={dialogKeyDown}>
-      <div className="cad-modal-header"><div><span>{somenteLeitura ? 'VISUALIZAR CADASTRO' : revenda ? 'EDITAR CADASTRO' : 'NOVA REVENDA'}</span>
-        <h2>{commercialDisplayText(revenda?.nome || 'Cadastro de revenda')}</h2><p className="revenda-hint">Informe CNPJ e CEP para agilizar. Apenas o nome de exibição é obrigatório.</p></div>
+      <div className="cad-modal-header"><div><span>{titulo || (somenteLeitura ? 'VISUALIZAR CADASTRO' : revenda ? 'EDITAR CADASTRO' : 'NOVA REVENDA')}</span>
+        <h2>{commercialDisplayText(revenda?.nome || initialValues?.nome || 'Cadastro de revenda')}</h2><p className="revenda-hint">{descricao || 'Informe CNPJ e CEP para agilizar. Apenas o nome de exibição é obrigatório.'}</p></div>
         <button type="button" aria-label="Fechar" disabled={saving} onClick={close}><X size={19} /></button>
       </div>
       <form className="revenda-modal-form" onSubmit={event => { event.preventDefault(); void save() }}>
@@ -271,7 +296,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
           {field('responsavel', 'Contato responsável na revenda', undefined, 120)}{field('site', 'Site', undefined, 500)}
         </div></section>
         <section className="revenda-section"><h3 className="commercial-title">3. Endereço principal</h3>
-          <EnderecoPrincipalFields valores={form} disabled={disabled} onChange={change} />
+          <EnderecoPrincipalFields valores={form} disabled={disabled || camposOriginaisSomenteLeitura} onChange={change} />
           {consultaStatus(cepStatus, 'cep')}
         </section>
         <details className="revenda-section"><summary>4. Fiscal</summary><div className="revenda-fields">
@@ -301,7 +326,7 @@ export function RevendaForm({ revenda, somenteLeitura = false, onClose, onSaved 
         {erro && <div className="cad-error" role="alert">{erro}</div>}
         </div>
         <div className="cad-modal-footer"><button type="button" className="cad-secondary" disabled={saving} onClick={close}>{somenteLeitura ? 'Voltar' : 'Cancelar'}</button>
-          {!somenteLeitura && <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Salvando...' : 'Salvar revenda'}</button>}
+          {!somenteLeitura && <button type="submit" className="primary-button" disabled={saving}>{saving ? 'Salvando...' : textoSalvar || 'Salvar revenda'}</button>}
         </div>
       </form>
     </div>

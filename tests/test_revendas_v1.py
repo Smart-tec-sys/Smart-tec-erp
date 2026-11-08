@@ -209,6 +209,46 @@ class ParceiroServiceTests(unittest.TestCase):
                 TENANT,
                 ParceiroCreate(nome="Loja", vendedor_responsavel_id=4),
             )
+        query, parameters = db.execute.call_args.args
+        self.assertIn("empresa_id = :empresa_id", str(query))
+        self.assertEqual(parameters, {"vendedor_id": 4, "empresa_id": TENANT.empresa_id})
+        db.commit.assert_not_called()
+
+    def test_patch_rejeita_vendedor_de_outra_empresa(self):
+        db = Mock()
+        db.execute.return_value.mappings.return_value.first.return_value = None
+        with self.assertRaisesRegex(ValueError, "empresa atual"):
+            parceiros.atualizar_parceiro(
+                db, TENANT, 8, ParceiroUpdate(vendedor_responsavel_id=4)
+            )
+        query, parameters = db.execute.call_args.args
+        self.assertIn("empresa_id = :empresa_id", str(query))
+        self.assertEqual(parameters, {"vendedor_id": 4, "empresa_id": TENANT.empresa_id})
+        db.commit.assert_not_called()
+
+    def test_api_ignora_empresa_enviada_pelo_navegador(self):
+        returned = _parceiro()
+        db = Mock()
+        db.execute.return_value.mappings.return_value.one.return_value = returned
+
+        data = ParceiroCreate(nome="Loja")
+        object.__setattr__(data, "empresa_id", 999)
+        representante_routes.criar_parceiro(data, db, TENANT)
+
+        _, parameters = db.execute.call_args.args
+        self.assertEqual(parameters["empresa_id"], TENANT.empresa_id)
+        db.commit.assert_called_once()
+
+    def test_api_rejeita_vendedor_de_outra_empresa(self):
+        db = Mock()
+        db.execute.return_value.mappings.return_value.first.return_value = None
+        with self.assertRaises(HTTPException) as error:
+            representante_routes.criar_parceiro(
+                ParceiroCreate(nome="Loja", vendedor_responsavel_id=4),
+                db,
+                TENANT,
+            )
+        self.assertEqual(error.exception.status_code, 400)
         db.commit.assert_not_called()
 
     def test_vendedor_inativo_da_mesma_empresa_pode_ser_preservado_no_patch(self):
@@ -693,6 +733,10 @@ class RevendasMigrationTests(unittest.TestCase):
         self.assertNotIn("UPDATE public.parceiros_comerciais", migration)
         self.assertIn("ck_parceiros_comerciais_cep_v1", migration)
         self.assertIn("cep ~ '^[0-9]{8}$'", migration)
+        self.assertIn("UNIQUE (empresa_id, id)", migration)
+        self.assertIn("FOREIGN KEY (empresa_id, vendedor_responsavel_id)", migration)
+        self.assertIn("REFERENCES public.funcionarios (empresa_id, id)", migration)
+        self.assertIn("ON DELETE SET NULL (vendedor_responsavel_id)", migration)
         self.assertIn(
             "ON public.parceiros_comerciais (empresa_id, vendedor_responsavel_id)",
             migration,
@@ -713,6 +757,10 @@ class RevendasMigrationTests(unittest.TestCase):
         self.assertNotIn("DROP TABLE", down)
         self.assertIn("DROP INDEX IF EXISTS public.ix_parceiros_comerciais_empresa_vendedor_v1", down)
         self.assertIn("DROP CONSTRAINT IF EXISTS ck_parceiros_comerciais_cep_v1", down)
+        self.assertIn(
+            "DROP CONSTRAINT IF EXISTS uq_funcionarios_empresa_id_revendas_v1",
+            down,
+        )
 
 
 class ConsultationInputTests(unittest.TestCase):

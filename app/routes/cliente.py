@@ -1,9 +1,17 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from typing import List
 
 from app.database import get_db
-from app.schemas.cliente import Cliente, ClienteCreate, ClienteUpdate
+from app.schemas.cliente import (
+    Cliente,
+    ClienteCreate,
+    ClienteReclassificarRevenda,
+    ClienteUpdate,
+)
 from app.services import cliente_service
 from app.tenant.context import TenantContext
 from app.tenant.dependencies import get_current_tenant
@@ -11,6 +19,7 @@ from app.tenant.dependencies import get_current_tenant
 from app.routes.cliente_importacao import router as router_importacao
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error.clientes")
 router.include_router(router_importacao)
 
 
@@ -21,8 +30,11 @@ def listar(db: Session=Depends(get_db), tenant: TenantContext=Depends(get_curren
         return clientes or []
 
     except Exception as e:
-        print(f"Erro na rota listar clientes: {e}")
-        return []
+        logger.exception("Falha ao listar clientes.")
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao carregar clientes.",
+        ) from e
 
 
 @router.get("/{cliente_id}", response_model=Cliente)
@@ -63,9 +75,40 @@ def atualizar(cliente_id: int, data: ClienteUpdate, db: Session=Depends(get_db),
         raise HTTPException(status_code=500, detail="Erro ao atualizar cliente no banco.")
 
 
+@router.post("/{cliente_id}/reclassificar-revenda")
+def reclassificar_como_revenda(
+    cliente_id: int,
+    data: ClienteReclassificarRevenda,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant),
+):
+    try:
+        parceiro = cliente_service.reclassificar_como_revenda(
+            db, cliente_id, data, tenant
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        logger.exception("Falha ao reclassificar cliente como revenda.")
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Erro ao reclassificar cliente como revenda.",
+        ) from exc
+
+    if parceiro is None:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+    return parceiro
+
+
 @router.delete("/{cliente_id}")
 def deletar(cliente_id: int, db: Session=Depends(get_db), tenant: TenantContext=Depends(get_current_tenant)):
-    cliente = cliente_service.delete(db, cliente_id, tenant)
+    try:
+        cliente = cliente_service.delete(db, cliente_id, tenant)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente não encontrado.")

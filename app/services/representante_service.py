@@ -134,6 +134,9 @@ def _validar_consistencia_fiscal(dados):
 def _validar_vendedor_empresa(db, empresa_id, vendedor_id):
     if vendedor_id is None:
         return
+    bind = getattr(db, "bind", None)
+    dialect = getattr(getattr(bind, "dialect", None), "name", None)
+    lock_clause = " FOR KEY SHARE" if dialect == "postgresql" else ""
     vendedor = db.execute(
         text(
             """
@@ -142,6 +145,7 @@ def _validar_vendedor_empresa(db, empresa_id, vendedor_id):
             WHERE id = :vendedor_id
               AND empresa_id = :empresa_id
             """
+            + lock_clause
         ),
         {"vendedor_id": vendedor_id, "empresa_id": empresa_id},
     ).mappings().first()

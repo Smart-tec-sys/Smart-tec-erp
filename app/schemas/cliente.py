@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional
 
+from app.schemas.representante import ParceiroCreate
+
 
 class ClienteBase(BaseModel):
     # Dados gerais
@@ -48,3 +50,7 @@ class Cliente(ClienteBase):
     class Config:
         orm_mode = True
         from_attributes = True
+
+
+class ClienteReclassificarRevenda(ParceiroCreate):
+    """Campos comerciais adicionais; dados já existentes do cliente são reaproveitados."""

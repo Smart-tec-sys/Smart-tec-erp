@@ -37,6 +37,10 @@ BEGIN
         RAISE EXCEPTION
             'Pré-requisito: parceiros_comerciais.empresa_id e funcionarios.empresa_id devem existir';
     END IF;
+    IF current_setting('server_version_num')::INTEGER < 150000 THEN
+        RAISE EXCEPTION
+            'Pré-requisito: PostgreSQL 15+ para preservar empresa_id ao remover vendedor opcional';
+    END IF;
 END;
 $preflight$;
 
@@ -135,6 +139,16 @@ DO $constraints$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'public.funcionarios'::regclass
+          AND conname = 'uq_funcionarios_empresa_id_revendas_v1'
+    ) THEN
+        ALTER TABLE public.funcionarios
+            ADD CONSTRAINT uq_funcionarios_empresa_id_revendas_v1
+            UNIQUE (empresa_id, id);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conrelid = 'public.parceiros_comerciais'::regclass
           AND conname = 'ck_parceiros_comerciais_tipo_pessoa_v1'
     ) THEN
@@ -182,17 +196,13 @@ BEGIN
             );
     END IF;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conrelid = 'public.parceiros_comerciais'::regclass
-          AND conname = 'fk_parceiros_comerciais_vendedor_responsavel_v1'
-    ) THEN
-        ALTER TABLE public.parceiros_comerciais
-            ADD CONSTRAINT fk_parceiros_comerciais_vendedor_responsavel_v1
-            FOREIGN KEY (vendedor_responsavel_id)
-            REFERENCES public.funcionarios(id)
-            ON DELETE SET NULL;
-    END IF;
+    ALTER TABLE public.parceiros_comerciais
+        DROP CONSTRAINT IF EXISTS fk_parceiros_comerciais_vendedor_responsavel_v1;
+    ALTER TABLE public.parceiros_comerciais
+        ADD CONSTRAINT fk_parceiros_comerciais_vendedor_responsavel_v1
+        FOREIGN KEY (empresa_id, vendedor_responsavel_id)
+        REFERENCES public.funcionarios (empresa_id, id)
+        ON DELETE SET NULL (vendedor_responsavel_id);
 END;
 $constraints$;
 
@@ -208,7 +218,7 @@ BEGIN
             ('ck_parceiros_comerciais_tipo_contribuinte_v1', 'c', ARRAY['tipo_contribuinte', 'contribuinte', 'isento', 'nao_contribuinte']::TEXT[]),
             ('ck_parceiros_comerciais_cep_v1', 'c', ARRAY['cep', '^[0-9]{8}$']::TEXT[]),
             ('ck_parceiros_comerciais_limite_credito_v1', 'c', ARRAY['limite_credito', 'nan', 'infinity', '>=']::TEXT[]),
-            ('fk_parceiros_comerciais_vendedor_responsavel_v1', 'f', ARRAY['vendedor_responsavel_id', 'funcionarios', 'set null']::TEXT[])
+            ('fk_parceiros_comerciais_vendedor_responsavel_v1', 'f', ARRAY['empresa_id', 'vendedor_responsavel_id', 'funcionarios', 'set null']::TEXT[])
         ) AS expected(constraint_name, constraint_type, required_fragments)
     LOOP
         SELECT lower(pg_get_constraintdef(c.oid))
@@ -223,18 +233,17 @@ BEGIN
               OR (
                   c.confrelid = 'public.funcionarios'::regclass
                   AND c.confdeltype = 'n'
-                  AND c.conkey = ARRAY[(
-                      SELECT attnum
-                      FROM pg_attribute
-                      WHERE attrelid = c.conrelid
-                        AND attname = 'vendedor_responsavel_id'
-                  )]::SMALLINT[]
-                  AND c.confkey = ARRAY[(
-                      SELECT attnum
-                      FROM pg_attribute
-                      WHERE attrelid = c.confrelid
-                        AND attname = 'id'
-                  )]::SMALLINT[]
+                  AND c.conkey = ARRAY[
+                      (SELECT attnum FROM pg_attribute WHERE attrelid = c.conrelid AND attname = 'empresa_id'),
+                      (SELECT attnum FROM pg_attribute WHERE attrelid = c.conrelid AND attname = 'vendedor_responsavel_id')
+                  ]::SMALLINT[]
+                  AND c.confkey = ARRAY[
+                      (SELECT attnum FROM pg_attribute WHERE attrelid = c.confrelid AND attname = 'empresa_id'),
+                      (SELECT attnum FROM pg_attribute WHERE attrelid = c.confrelid AND attname = 'id')
+                  ]::SMALLINT[]
+                  AND c.confdelsetcols = ARRAY[
+                      (SELECT attnum FROM pg_attribute WHERE attrelid = c.conrelid AND attname = 'vendedor_responsavel_id')
+                  ]::SMALLINT[]
               )
           );
         IF v_definition IS NULL THEN
@@ -254,6 +263,26 @@ BEGIN
     END LOOP;
 END;
 $validate_constraints$;
+
+DO $validate_employee_key$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint c
+        WHERE c.conrelid = 'public.funcionarios'::regclass
+          AND c.conname = 'uq_funcionarios_empresa_id_revendas_v1'
+          AND c.contype = 'u'
+          AND c.convalidated
+          AND c.conkey = ARRAY[
+              (SELECT attnum FROM pg_attribute WHERE attrelid = c.conrelid AND attname = 'empresa_id'),
+              (SELECT attnum FROM pg_attribute WHERE attrelid = c.conrelid AND attname = 'id')
+          ]::SMALLINT[]
+    ) THEN
+        RAISE EXCEPTION
+            'Chave composta de funcionário (empresa_id, id) ausente ou incompatível';
+    END IF;
+END;
+$validate_employee_key$;
 
 CREATE INDEX IF NOT EXISTS ix_parceiros_comerciais_empresa_vendedor_v1
     ON public.parceiros_comerciais (empresa_id, vendedor_responsavel_id)
