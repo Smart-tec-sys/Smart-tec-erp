@@ -51,6 +51,8 @@ def initialize_backend_configuration() -> None:
     load_backend_environment()
     validate_auth_configuration()
     get_database_url()
+    from app.media_storage import validar_configuracao_media
+    validar_configuracao_media()
 
 
 def get_commercial_mode_setting() -> str:

@@ -1,9 +1,9 @@
-from pathlib import Path
-import uuid
 """Endpoints autenticados sem login improvisado ou escolha livre de tenant."""
 
 from fastapi import UploadFile, File, APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.auth.service import ExternalIdentity
@@ -12,6 +12,7 @@ from app.models.empresa import EmpresaDB
 from app.models.empresa_usuario import EmpresaUsuarioDB
 from app.models.usuario import UsuarioDB
 from app.database import get_db
+from app.media_storage import ImagemInvalida, MediaStorageError, remover_imagem, trocar_imagem
 
 
 router = APIRouter()
@@ -22,111 +23,53 @@ class AuthMeUpdate(BaseModel):
 
 
 
+def _usuario_ativo(db: Session, identity: ExternalIdentity, status_ausente: int):
+    usuario = db.query(UsuarioDB).filter(
+        UsuarioDB.provedor == identity.provider,
+        UsuarioDB.provedor_subject == identity.subject,
+        UsuarioDB.status == "ATIVO",
+    ).one_or_none()
+    if usuario is None:
+        detalhe = "usuário sem acesso" if status_ausente == status.HTTP_403_FORBIDDEN else "Usuário não encontrado."
+        raise HTTPException(status_code=status_ausente, detail=detalhe)
+    return usuario
+
+
 @router.post("/me/photo")
 async def upload_auth_me_photo(
     file: UploadFile = File(...),
     identity: ExternalIdentity = Depends(get_verified_external_identity),
     db: Session = Depends(get_db),
 ):
-    usuario = db.query(UsuarioDB).filter(
-        UsuarioDB.provedor == identity.provider,
-        UsuarioDB.provedor_subject == identity.subject,
-        UsuarioDB.status == "ATIVO",
-    ).one_or_none()
-
-    if usuario is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="usuário sem acesso",
+    usuario = _usuario_ativo(db, identity, status.HTTP_403_FORBIDDEN)
+    conteudo = await file.read()
+    try:
+        foto_url = await run_in_threadpool(
+            trocar_imagem, db, usuario, "foto_url",
+            conteudo=conteudo, content_type=file.content_type,
+            pasta="usuarios", dono_id=usuario.id, prefixo_legado="user", nome="avatar",
         )
+    except ImagemInvalida as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
+    except MediaStorageError:
+        raise HTTPException(status_code=503, detail="armazenamento de imagens indisponível") from None
+    except SQLAlchemyError:
+        raise HTTPException(status_code=500, detail="não foi possível salvar a foto") from None
+    return {"foto_url": foto_url}
 
-    allowed_types = {
-        "image/jpeg": ".jpg",
-        "image/png": ".png",
-        "image/webp": ".webp",
-    }
 
-    extension = allowed_types.get(file.content_type or "")
-
-    if extension is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="formato de imagem não permitido",
-        )
-
-    content = await file.read()
-
-    if not content:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="arquivo vazio",
-        )
-
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="imagem deve ter no máximo 5 MB",
-        )
-
-    media_dir = Path("media") / "usuarios"
-    media_dir.mkdir(parents=True, exist_ok=True)
-
-    filename = f"user-{usuario.id}-{uuid.uuid4().hex}{extension}"
-    destination = media_dir / filename
-
-    destination.write_bytes(content)
-
-    old_photo = usuario.foto_url
-
-    usuario.foto_url = f"/media/usuarios/{filename}"
-
-    db.commit()
-    db.refresh(usuario)
-
-    if old_photo and old_photo.startswith("/media/usuarios/"):
-        old_path = Path(old_photo.lstrip("/"))
-
-        if old_path.exists() and old_path != destination:
-            try:
-                old_path.unlink()
-            except OSError:
-                pass
-
-    return {
-        "foto_url": usuario.foto_url
-    }
 @router.delete("/me/photo")
 def delete_auth_me_photo(
     identity: ExternalIdentity = Depends(get_verified_external_identity),
     db: Session = Depends(get_db),
 ):
-    usuario = db.query(UsuarioDB).filter(
-        UsuarioDB.provedor == identity.provider,
-        UsuarioDB.provedor_subject == identity.subject,
-        UsuarioDB.status == "ATIVO",
-    ).one_or_none()
-
-    if usuario is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usu?rio n?o encontrado.",
-        )
-
-    old_photo = usuario.foto_url
-
-    usuario.foto_url = None
-    db.commit()
-    db.refresh(usuario)
-
-    if old_photo and old_photo.startswith("/media/usuarios/"):
-        old_path = Path(old_photo.lstrip("/"))
-
-        if old_path.exists():
-            try:
-                old_path.unlink()
-            except OSError:
-                pass
-
+    usuario = _usuario_ativo(db, identity, status.HTTP_404_NOT_FOUND)
+    try:
+        remover_imagem(db, usuario, "foto_url", pasta="usuarios", dono_id=usuario.id, prefixo_legado="user")
+    except MediaStorageError:
+        raise HTTPException(status_code=503, detail="armazenamento de imagens indisponível") from None
+    except SQLAlchemyError:
+        raise HTTPException(status_code=500, detail="não foi possível remover a foto") from None
     return {"foto_url": None}
 
 

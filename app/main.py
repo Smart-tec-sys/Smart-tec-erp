@@ -3,11 +3,17 @@ from app.settings import get_commercial_mode_setting, initialize_backend_configu
 
 initialize_backend_configuration()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from app.database import engine
+from app import media_storage
+from app.media_storage import (
+    MediaNaoEncontrada,
+    MediaStorageError,
+    chave_valida,
+    tipo_da_chave,
+)
 
 from app.tenant.commercial_observer_integration import preparar_integracao_comercial
 from app.routes.webhooks_wix import router as router_webhooks_wix
@@ -55,16 +61,22 @@ app = FastAPI(
 )
 
 # Integracao comercial inicializada e encerrada pelo lifespan do FastAPI.
-from pathlib import Path
-
-MEDIA_DIR = Path("media")
-MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-
-app.mount(
-    "/media",
-    StaticFiles(directory=str(MEDIA_DIR)),
-    name="media",
-)
+# Imagens servidas pela propria API para manter as URLs /media/... ja gravadas no banco.
+@app.api_route("/media/{chave:path}", methods=["GET", "HEAD"], include_in_schema=False)
+def servir_media(chave: str):
+    if not chave_valida(chave):
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        conteudo = media_storage.obter_media_storage().ler(chave)
+    except MediaNaoEncontrada:
+        raise HTTPException(status_code=404, detail="Not Found") from None
+    except MediaStorageError:
+        raise HTTPException(status_code=503, detail="armazenamento de imagens indisponível") from None
+    return Response(
+        content=conteudo,
+        media_type=tipo_da_chave(chave),
+        headers={"Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 # =========================================================

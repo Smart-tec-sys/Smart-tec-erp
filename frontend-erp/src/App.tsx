@@ -41,6 +41,7 @@ import { FinancePage, type FinanceFocus } from './pages/FinancePage'
 import { NewBudgetPage } from './pages/NewBudgetPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { CadastrosPage, type CadastroEntity } from './pages/CadastrosPage'
+import { hashDaNavegacao, navegacaoDoHash, urlSemHash, type AppView } from './navigation/rotas'
 import { MyProfilePage } from './pages/MyProfilePage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AdminDashboardPage } from './pages/AdminDashboardPage'
@@ -133,12 +134,14 @@ function formatDashboardDate() {
 function App() {
     const authSession = useAuthSession()
     const [adminAvailable, setAdminAvailable] = useState(false)
+    const [adminChecked, setAdminChecked] = useState(false)
 
     useEffect(() => {
         let cancelled = false
 
         if (!authSession?.user?.id) {
             setAdminAvailable(false)
+            setAdminChecked(true)
             return
         }
 
@@ -149,6 +152,9 @@ function App() {
             .catch(() => {
                 if (!cancelled) setAdminAvailable(false)
             })
+            .finally(() => {
+                if (!cancelled) setAdminChecked(true)
+            })
 
         return () => {
             cancelled = true
@@ -157,47 +163,9 @@ function App() {
     const [collapsed, setCollapsed] = useState(false)
     const [mobileOpen, setMobileOpen] = useState(false)
     const [cadastrosOpen, setCadastrosOpen] = useState(true)
-const [activePage, setActivePage] = useState(() => {
-        const saved = window.localStorage.getItem(
-            'smarttec:last-active-page',
-        )
-
-        return saved || 'Início'
-    })
-    const [view, setView] = useState<
-        'dashboard' |
-        'budgets' |
-        'sales' |
-        'sale-detail' |
-        'new-sale' |
-        'accounting' |
-        'finance' |
-        'new-budget' |
-        'products' |
-        'cadastro' |
-        'profile' |
-        'settings' |
-        'agenda' |
-        'admin'
-    >(() => {
-        const saved = window.localStorage.getItem(
-            'smarttec:last-view',
-        )
-
-        if (saved === 'budgets') return 'budgets'
-        if (saved === 'sales' || saved === 'sale-detail' || saved === 'new-sale') return 'sales'
-        if (saved === 'accounting') return 'accounting'
-        if (saved === 'finance') return 'finance'
-        if (saved === 'new-budget') return 'new-budget'
-        if (saved === 'products') return 'products'
-        if (saved === 'cadastro') return 'cadastro'
-        if (saved === 'profile') return 'profile'
-        if (saved === 'settings') return 'settings'
-        if (saved === 'agenda') return 'agenda'
-        if (saved === 'admin') return 'admin'
-
-        return 'dashboard'
-    })
+    const [navegacaoInicial] = useState(() => navegacaoDoHash(window.location.hash))
+    const [activePage, setActivePage] = useState(navegacaoInicial.activePage)
+    const [view, setView] = useState<AppView>(navegacaoInicial.view)
     const [searchOpen, setSearchOpen] = useState(false)
     const [userMenuOpen, setUserMenuOpen] = useState(false)
     const [budgetId, setBudgetId] = useState<number | null>(null)
@@ -224,50 +192,35 @@ const [activePage, setActivePage] = useState(() => {
         setMobileOpen(false)
     }
     const [cadastroEntity, setCadastroEntity] =
-        useState<CadastroEntity>(() => {
-            const saved =
-                window.localStorage.getItem(
-                    'smarttec:last-cadastro',
-                )
+        useState<CadastroEntity>(navegacaoInicial.cadastro ?? 'clientes')
 
-            if (saved === 'revendas' || saved === 'representantes' || saved === 'servicos') return saved
-
-            if (saved === 'fornecedores') {
-                return 'fornecedores'
-            }
-
-            if (saved === 'transportadoras') {
-                return 'transportadoras'
-            }
-
-            if (saved === 'funcionarios') {
-                return 'funcionarios'
-            }
-
-            return 'clientes'
-        })
-
+    // A tela vem somente da URL; o localStorage não decide mais a tela inicial.
+    const hashAtual = hashDaNavegacao(view, cadastroEntity, { orcamentoExistente: budgetId !== null })
+    useEffect(() => {
+        if (window.location.hash === hashAtual) return
+        const destino = hashAtual || urlSemHash(window.location.pathname, window.location.search)
+        window.history.replaceState(window.history.state, '', destino)
+    }, [hashAtual])
 
     useEffect(() => {
-        window.localStorage.setItem(
-            'smarttec:last-view',
-            view,
-        )
-    }, [view])
+        const aplicarHash = () => {
+            const destino = navegacaoDoHash(window.location.hash)
+            if (destino.cadastro) setCadastroEntity(destino.cadastro)
+            if (destino.view === 'new-budget') setBudgetId(null)
+            setActivePage(destino.activePage)
+            setView(destino.view)
+            setMobileOpen(false)
+        }
+        window.addEventListener('hashchange', aplicarHash)
+        return () => window.removeEventListener('hashchange', aplicarHash)
+    }, [])
 
     useEffect(() => {
-        window.localStorage.setItem(
-            'smarttec:last-active-page',
-            activePage,
-        )
-    }, [activePage])
-
-    useEffect(() => {
-        window.localStorage.setItem(
-            'smarttec:last-cadastro',
-            cadastroEntity,
-        )
-    }, [cadastroEntity])
+        if (view === 'admin' && adminChecked && !adminAvailable) {
+            setActivePage('Início')
+            setView('dashboard')
+        }
+    }, [view, adminChecked, adminAvailable])
 
 
     const userName =
@@ -320,6 +273,11 @@ const [activePage, setActivePage] = useState(() => {
             'smarttec:last-cadastro',
         )
 
+        window.history.replaceState(
+            window.history.state,
+            '',
+            urlSemHash(window.location.pathname, window.location.search),
+        )
         window.location.reload()
     }
 
