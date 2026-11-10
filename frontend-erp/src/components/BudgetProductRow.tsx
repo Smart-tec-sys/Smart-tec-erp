@@ -3,6 +3,7 @@ import { CurtainColorField } from './CurtainColorField'
 import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
 import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
 import { fabricDisplay, fabricVariantKey, groupFabricSuggestions } from '../utils/fabricDisplay'
+import { rankProductSuggestions } from '../utils/productSuggestionRank'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -49,6 +50,9 @@ type Props = {
 }
 
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
+
+const isFinishedProduct = (p: ApiProduct) =>
+  Boolean(romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p))
 
 const isCurtainCatalogItem = (p: ApiProduct) =>
   normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' ||
@@ -102,7 +106,8 @@ export function BudgetProductRow({
     if (q.includes('CORTINA')) {
       return []
     }
-    return groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p)))
+    // Relevância antes do limite: tecidos e componentes não podem esconder produtos acabados.
+    return rankProductSuggestions(groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p))), query, isFinishedProduct)
       .slice(0, 12)
   }, [matches, query])
 
