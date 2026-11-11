@@ -14,7 +14,16 @@ export async function generateBudgetPdf(budget:ApiBudget,mode:BudgetPdfMode,cont
 async function loadCompanyLogo(path:string,apiUrl:string):Promise<string>{
  const url=new URL(path,apiUrl)
  if(!['http:','https:'].includes(url.protocol))throw new Error('Endereço de logo inválido.')
- const response=await fetch(url,{signal:AbortSignal.timeout(10000),credentials:'omit'})
+ const apiOrigin = new URL(apiUrl).origin
+const headers = url.origin === apiOrigin
+  ? await (await import('./auth')).getApiAuthHeaders()
+  : {}
+
+const response = await fetch(url, {
+  signal: AbortSignal.timeout(10000),
+  credentials: 'omit',
+  headers
+})
  if(!response.ok)throw new Error('Logo indisponível.')
  const blob=await response.blob()
  if(!['image/png','image/jpeg','image/webp'].includes(blob.type)||blob.size===0||blob.size>5*1024*1024)throw new Error('Logo inválida.')
