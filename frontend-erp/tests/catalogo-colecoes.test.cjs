@@ -160,6 +160,63 @@ check('Eixo de Romana permanece componente, não produto acabado', () => {
   assert.equal(fabric.isClearlyFinishedProduct(p),false)
   assert.equal(fabric.commercialVariantKey(p),null)
 })
+check('Pinpoint: a coleção mantém cores e larguras distintas', () => {
+  const items=['BEGE','CINZA'].map((cor,i)=>cloth(4000+i,'',{
+    nome:'TECIDO BK - PINPOINT '+cor+' - 2,50M',cor:null,produto_base:null,
+    familia_tecnica:null,largura:2.5,grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL'
+  }))
+  assert.equal(fabric.fabricColor(items[0]),'BEGE')
+  assert.equal(fabric.fabricDisplay(items[0]).name,'TECIDO BK - PINPOINT')
+  const grouped=fabric.groupFabricCollections(items)
+  assert.equal(grouped.length,1)
+  assert.equal(grouped[0].colors.length,2)
+})
+check('Venice: cores explícitas sem cor cadastral', () => {
+  const items=['BEGE','FENDI'].map((cor,i)=>cloth(4100+i,'',{
+    nome:'TECIDO BK - VENICE '+cor+' - 2,00M',cor:null,produto_base:null,
+    familia_tecnica:null,grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL'
+  }))
+  assert.equal(fabric.groupFabricCollections(items).length,1)
+})
+check('Screen: cor entre coleção e qualificador STANDARD', () => {
+  const items=['GREY','WHITE'].map((cor,i)=>cloth(4200+i,'',{
+    nome:'TECIDO SC - SCREEN 3% '+cor+' STANDARD - 2,00M',cor:null,
+    produto_base:null,familia_tecnica:null,largura:2,
+    grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL'
+  }))
+  assert.equal(fabric.fabricDisplay(items[0]).name,'TECIDO SC - SCREEN 3% STANDARD')
+  assert.equal(fabric.groupFabricCollections(items).length,1)
+})
+check('Aquarela: cor e largura compostas nos parênteses', () => {
+  const items=['GREY','BEGE','CINZA'].map((cor,i)=>cloth(4300+i,'',{
+    nome:'AQUARELA ('+cor+' / 2,50)',cor:null,produto_base:null,
+    familia_tecnica:null,largura:0,
+    grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL'
+  }))
+  assert.equal(fabric.fabricColor(items[0]),'GREY')
+  assert.equal(fabric.fabricDisplay(items[0]).name,'AQUARELA')
+  assert.equal(fabric.groupFabricCollections(items).length,1)
+})
+check('Double Vision: referências numéricas permanecem códigos, não cores', () => {
+  const items=['3','4','06'].map((ref,i)=>cloth(4400+i,'',{
+    nome:'DOUBLE VISION W00D ('+ref+')',cor:null,produto_base:null,
+    familia_tecnica:null,largura:0,modelo_tecnico:'DOUBLE_VISION',
+    grupo_tecnico:'TECIDOS_PERSIANAS_DOUBLE_VISION'
+  }))
+  assert.equal(fabric.fabricColor(items[0]),'')
+  assert.equal(fabric.fabricReference(items[0]),'3')
+  const groups=fabric.groupFabricCollections(items)
+  assert.equal(groups.length,1)
+  assert.equal(groups[0].variants.length,3)
+  assert.deepEqual(groups[0].colors.map(c=>c.color),['Ref. 3','Ref. 4','Ref. 06'])
+})
+check('Códigos e medidas ambíguos continuam isolados', () => {
+  const items=['TECIDO TR - AMAZONAS (44 / 2,50)','TUBO 32MM','TECIDO INDEFINIDO'].map((nome,i)=>cloth(4500+i,'',{
+    nome,cor:null,produto_base:null,familia_tecnica:null
+  }))
+  for(const item of items) assert.equal(fabric.fabricColor(item),'')
+  assert.equal(fabric.groupFabricCollections(items).length,3)
+})
 check('não mistura fornecedor diferente', () =>
   assert.equal(fabric.groupFabricCollections([white, cloth(105, 'CINZA', { nome_fornecedor: 'FORNECEDOR B' })]).length, 2))
 check('não mistura BK Brisk com Nápoles', () =>
