@@ -36,10 +36,10 @@ const emptyProduct: FiscalProdutoDados = {
   cst_pis:null,cst_cofins:null,cst_ibs_cbs:null,cclass_trib_ibs_cbs:null,
 }
 
-export function FiscalPage() {
+export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: boolean } = {}) {
   const session = useAuthSession()
-  const canEdit = session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
-  const companyId=session?.empresa.id
+  const canEdit = modoHomologacao || session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
+  const companyId=modoHomologacao ? 999 : session?.empresa.id
   const [tab,setTab]=useState<'empresa'|'produto'>('empresa')
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
   const [product,setProduct]=useState<FiscalProdutoDados>(emptyProduct)
@@ -50,6 +50,7 @@ export function FiscalPage() {
   const [saving,setSaving]=useState(false)
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
+  const [demoProductsSaved,setDemoProductsSaved]=useState<Record<number,FiscalProdutoDados>>({})
 
   useEffect(()=>{
     let active=true
@@ -59,20 +60,34 @@ export function FiscalPage() {
     setCatalog([])
     setLoading(true)
     setError('')
+    if (modoHomologacao) {
+      setCompany({...emptyCompany,uf:'SP',cidade:'Cidade Fictícia',logradouro:'Rua Demonstração',numero:'10',bairro:'Centro',cep:'01001000',municipio_codigo_ibge:'3550308',serie_nfe:1})
+      setLoading(false)
+      return () => {active=false}
+    }
     getFiscalEmpresa().then(r=>{if(active)setCompany(r.dados)}).catch(e=>{if(active)setError(String(e.message||e))}).finally(()=>{if(active)setLoading(false)})
     return()=>{active=false}
-  },[companyId])
+  },[companyId,modoHomologacao])
 
   useEffect(()=>{
     if(tab!=='produto'||catalog.length)return
+    if(modoHomologacao){
+      setCatalog([
+        {id:101,nome:'Persiana Rolô de demonstração',codigo_interno:'DEMO-RL-101'},
+        {id:202,nome:'Cortina Wave de demonstração',codigo_interno:'DEMO-CW-202'},
+        {id:303,nome:'Persiana Romana de demonstração',codigo_interno:'DEMO-RM-303'},
+      ] as ApiProduct[])
+      return
+    }
     let active=true
     getAllProducts().then(p=>{if(active)setCatalog(p)})
       .catch(e=>{if(active)setError(String(e.message||e))})
     return()=>{active=false}
-  },[tab,companyId,catalog.length])
+  },[tab,companyId,catalog.length,modoHomologacao])
 
   async function selectProduct(id:number){
     setError('');setMessage('');setSelectedId(id);setLoading(true)
+    if(modoHomologacao){setProduct(demoProductsSaved[id]??emptyProduct);setLoading(false);return}
     try{const result=await getFiscalProduto(id);setProduct(result.dados)}
     catch(e){setSelectedId(null);setError(e instanceof Error?e.message:'Falha ao carregar produto.')}
     finally{setLoading(false)}
@@ -80,6 +95,7 @@ export function FiscalPage() {
   async function saveCompany(){
     if(!canEdit)return
     setSaving(true);setError('');setMessage('')
+    if(modoHomologacao){setMessage('Prévia: preenchimento simulado somente nesta tela. Nada foi enviado a um banco.');setSaving(false);return}
     try{const result=await patchFiscalEmpresa(company);setCompany(result.dados);setMessage('Cadastro fiscal da empresa salvo. Emissão continua desabilitada.')}
     catch(e){setError(e instanceof Error?e.message:'Erro ao salvar.')}
     finally{setSaving(false)}
@@ -87,6 +103,7 @@ export function FiscalPage() {
   async function saveProduct(){
     if(!canEdit||selectedId===null)return
     setSaving(true);setError('');setMessage('')
+    if(modoHomologacao){setDemoProductsSaved(v=>({...v,[selectedId]:{...product}}));setMessage('Prévia: produto simulado apenas na memória desta página, sem banco.');setSaving(false);return}
     try{const result=await patchFiscalProduto(selectedId,product);setProduct(result.dados);setMessage('Classificação fiscal do produto salva. Emissão continua desabilitada.')}
     catch(e){setError(e instanceof Error?e.message:'Erro ao salvar.')}
     finally{setSaving(false)}
@@ -100,7 +117,7 @@ export function FiscalPage() {
       <h1>Fiscal · Cadastros V1</h1>
       <p>Preparação de NF-e sem emissão ou transmissão. Confira todos os códigos com a contabilidade.</p>
     </header>
-    <div className="fiscal-v1-warning" role="status">Ambiente: homologação de cadastro · NF-e e SEFAZ desabilitadas</div>
+    <div className="fiscal-v1-warning" role="status">{modoHomologacao ? 'PRÉVIA VISUAL — dados fictícios e não persistidos. Sem API, sem banco, sem SEFAZ.' : 'Ambiente: homologação de cadastro · NF-e e SEFAZ desabilitadas'}</div>
     <div className="fiscal-v1-tabs">
       <button type="button" aria-pressed={tab==='empresa'} onClick={()=>{setTab('empresa');setError('');setMessage('')}}>Dados da empresa</button>
       <button type="button" aria-pressed={tab==='produto'} onClick={()=>{setTab('produto');setError('');setMessage('')}}>Tributação dos produtos</button>
