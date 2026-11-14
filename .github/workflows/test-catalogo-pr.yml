@@ -1,0 +1,33 @@
+name: Validar catálogo e orçamento (PR)
+
+on:
+  push:
+    branches:
+      - 'fix/catalogo-colecoes-cores-20261114'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  catalogo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend-erp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b163ce8c5fc4e5d6fd1fef2185b # v4.2.2
+      - name: Preparar Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend-erp/package-lock.json
+      - name: Instalar dependências travadas
+        run: npm ci --no-audit --no-fund
+      - name: TypeScript e build completo
+        run: npm run build
+      - name: Testes de regressão do catálogo
+        run: node tests/catalogo-colecoes.test.cjs
