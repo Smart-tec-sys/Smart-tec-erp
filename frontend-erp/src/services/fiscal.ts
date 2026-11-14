@@ -57,12 +57,22 @@ export const getFiscalProduto = (id:number)=>fiscalRequest<FiscalProdutoResponse
 export const patchFiscalProduto = (id:number,data:Partial<FiscalProdutoDados>)=>
   fiscalRequest<FiscalProdutoResponse>('/fiscal/cadastros/produtos/'+id,'PATCH',data)
 
+export type FiscalPreXmlCampo = { campo_xml:string; descricao:string; situacao:'INFORMADO'|'PENDENTE'|'INTEGRACAO_PENDENTE' }
+export type FiscalPreXmlGrupo = { grupo:string; titulo:string; situacao:'BLOQUEADO'; campos:FiscalPreXmlCampo[] }
+export type FiscalPreXmlMapa = {
+  tipo:'MAPA_PRE_XML_NFE'; versao_mapa:number; modelo:'55'; estado:'NAO_APTO_EMISSAO';
+  xml_gerado:false; schema_validado:false; chave_gerada:false; assinado:false; transmitido:false;
+  grupos:FiscalPreXmlGrupo[];
+  resumo:{grupos_total:number;campos_informados:number;campos_pendentes:number;integracoes_pendentes:number};
+  aviso:string;
+}
 export type FiscalPendencia = { codigo:string; campo:string; nivel:string; mensagem:string }
 export type PreparacaoNfeResponse = {
   documento: 'NFE'; estado: 'NAO_APTO_EMISSAO'; simulacao:true; transmitido:false;
   pedido_id:number; numero_venda:string|null;
   resumo: Record<string,string|number|null>;
   quantidade_pendencias:number; pendencias:FiscalPendencia[];
+  mapa_pre_xml?:FiscalPreXmlMapa;
   cadastros_fiscais?:{
     emitente_cadastrado:boolean; total_skus:number;
     skus_com_cadastro:number; skus_sem_cadastro:number[];
