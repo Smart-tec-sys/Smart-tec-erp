@@ -7,6 +7,7 @@ import re
 from app.models.cliente import ClienteDB
 from app.models.empresa import EmpresaDB
 from app.services import pedido_service
+from app.services.fiscal_nfe_cadastros import conferir_cadastros_fiscais
 
 _CENT = Decimal("0.01")
 _DIGITS = re.compile(r"\D")
@@ -165,8 +166,17 @@ def preparar_venda_nfe(db, pedido_id: int, tenant):
             cliente = {field: getattr(row, field) for field in (
                 "nome", "documento", "cep", "logradouro", "numero", "bairro", "cidade", "estado"
             )}
-    return analisar_venda_nfe(
+    resultado = analisar_venda_nfe(
         pedido,
         {"id": empresa.id, "documento": empresa.documento},
         cliente,
     )
+    # Validação cadastral complementar por empresa e SKU: apenas leitura.
+    pendencias_fiscais, resumo_cadastros = conferir_cadastros_fiscais(
+        db, pedido, empresa, empresa_id,
+    )
+    # Mensagens de cadastro detalhadas complementam o diagnóstico geral.
+    resultado["pendencias"].extend(pendencias_fiscais)
+    resultado["quantidade_pendencias"] = len(resultado["pendencias"])
+    resultado["cadastros_fiscais"] = resumo_cadastros
+    return resultado
