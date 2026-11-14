@@ -54,3 +54,11 @@ jobs:
       - name: Compilar frontend fiscal
         working-directory: frontend-erp
         run: npm run build
+      - name: Construir a prévia visual isolada e sem API
+        working-directory: frontend-erp
+        run: |
+          npx vite build --config vite.fiscal-qa.config.ts
+          test -s dist-fiscal-qa/qa-fiscal.html
+          cp dist-fiscal-qa/qa-fiscal.html dist-fiscal-qa/index.html
+          test -s dist-fiscal-qa/index.html
+          grep -q "qa-fiscal" dist-fiscal-qa/index.html
