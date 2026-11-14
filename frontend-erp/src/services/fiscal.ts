@@ -52,3 +52,19 @@ export const patchFiscalEmpresa = (data:Partial<FiscalEmpresaDados>)=>
 export const getFiscalProduto = (id:number)=>fiscalRequest<FiscalProdutoResponse>('/fiscal/cadastros/produtos/'+id)
 export const patchFiscalProduto = (id:number,data:Partial<FiscalProdutoDados>)=>
   fiscalRequest<FiscalProdutoResponse>('/fiscal/cadastros/produtos/'+id,'PATCH',data)
+
+export type FiscalPendencia = { codigo:string; campo:string; nivel:string; mensagem:string }
+export type PreparacaoNfeResponse = {
+  documento: 'NFE'; estado: 'NAO_APTO_EMISSAO'; simulacao:true; transmitido:false;
+  pedido_id:number; numero_venda:string|null;
+  resumo: Record<string,string|number|null>;
+  quantidade_pendencias:number; pendencias:FiscalPendencia[];
+  cadastros_fiscais?:{
+    emitente_cadastrado:boolean; total_skus:number;
+    skus_com_cadastro:number; skus_sem_cadastro:number[];
+    tipo_validacao:string;
+  };
+  aviso:string;
+}
+export const prepararNfeVenda = (pedidoId:number)=>
+  fiscalRequest<PreparacaoNfeResponse>('/pedidos/'+pedidoId+'/fiscal/preparacao-nfe')
