@@ -18,6 +18,7 @@ __all__ = [
     "UsuarioDB",
     "EmpresaUsuarioDB",
     "ProdutoDB",
+    "FiscalProdutoDB",
     "ClassificacaoTecnicaProdutoDB",
     "EmpresaEquivalenciaTecnicaDB",
     "FuncaoTecnicaReferenciaDB",
