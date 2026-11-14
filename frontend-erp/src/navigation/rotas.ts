@@ -92,6 +92,7 @@ export function hashDaNavegacao(
         case 'sale-detail': return '#/vendas'
         case 'new-sale': return '#/vendas/nova'
         case 'finance': return '#/financeiro'
+        case 'fiscal': return '#/fiscal'
         case 'accounting': return '#/contabilidade'
         case 'products': return '#/produtos'
         case 'agenda': return '#/agenda'
