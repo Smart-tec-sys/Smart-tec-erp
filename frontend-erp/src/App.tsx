@@ -306,7 +306,7 @@ function App() {
             return
         }
 
-        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Produtos' && label !== 'Configurações') return
+        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Fiscal' && label !== 'Produtos' && label !== 'Configurações') return
 
         setActivePage(label)
 
