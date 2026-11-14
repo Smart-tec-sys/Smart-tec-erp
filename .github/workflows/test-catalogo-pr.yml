@@ -29,5 +29,7 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: TypeScript e build completo
         run: npm run build
+      - name: Preparar transpilador isolado para testes
+        run: npm install --prefix /tmp/smarttec-test-ts --no-save --no-audit --no-fund --ignore-scripts typescript@5.8.3
       - name: Testes de regressão do catálogo
         run: node tests/catalogo-colecoes.test.cjs
