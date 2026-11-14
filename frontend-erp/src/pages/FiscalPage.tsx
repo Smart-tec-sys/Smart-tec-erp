@@ -5,6 +5,7 @@ import { useAuthSession } from '../components/AuthGate'
 import { getFiscalEmpresa, getFiscalProduto, patchFiscalEmpresa, patchFiscalProduto } from '../services/fiscal'
 import type { FiscalEmpresaDados, FiscalProdutoDados } from '../services/fiscal'
 import './FiscalPage.css'
+import { NfeGestaoClickPreview } from './NfeGestaoClickPreview'
 
 type Field = { id:string; label:string; placeholder?:string }
 const companyFields:Field[] = [
@@ -40,8 +41,9 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const session = useAuthSession()
   const canEdit = modoHomologacao || session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
   const companyId=modoHomologacao ? 999 : session?.empresa.id
-  const [tab,setTab]=useState<'empresa'|'produto'>('empresa')
+  const [tab,setTab]=useState<'empresa'|'produto'|'nfe'>('empresa')
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
+  const [emitente,setEmitente]=useState({razao_social:'',nome_fantasia:'',documento:''})
   const [product,setProduct]=useState<FiscalProdutoDados>(emptyProduct)
   const [selectedId,setSelectedId]=useState<number|null>(null)
   const [catalog,setCatalog]=useState<ApiProduct[]>([])
@@ -55,17 +57,19 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   useEffect(()=>{
     let active=true
     setCompany(emptyCompany)
+    setEmitente({razao_social:'',nome_fantasia:'',documento:''})
     setProduct(emptyProduct)
     setSelectedId(null)
     setCatalog([])
     setLoading(true)
     setError('')
     if (modoHomologacao) {
+      setEmitente({razao_social:'Empresa de Demonstração Ltda.',nome_fantasia:'Smart-tec — Exemplo',documento:'11.222.333/0001-81'})
       setCompany({...emptyCompany,uf:'SP',cidade:'Cidade Fictícia',logradouro:'Rua Demonstração',numero:'10',bairro:'Centro',cep:'01001000',municipio_codigo_ibge:'3550308',serie_nfe:1})
       setLoading(false)
       return () => {active=false}
     }
-    getFiscalEmpresa().then(r=>{if(active)setCompany(r.dados)}).catch(e=>{if(active)setError(String(e.message||e))}).finally(()=>{if(active)setLoading(false)})
+    getFiscalEmpresa().then(r=>{if(active){setCompany(r.dados);setEmitente({razao_social:r.razao_social||'',nome_fantasia:r.nome_fantasia||'',documento:r.documento||''})}}).catch(e=>{if(active)setError(String(e.message||e))}).finally(()=>{if(active)setLoading(false)})
     return()=>{active=false}
   },[companyId,modoHomologacao])
 
@@ -96,7 +100,7 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     if(!canEdit)return
     setSaving(true);setError('');setMessage('')
     if(modoHomologacao){setMessage('Prévia: preenchimento simulado somente nesta tela. Nada foi enviado a um banco.');setSaving(false);return}
-    try{const result=await patchFiscalEmpresa(company);setCompany(result.dados);setMessage('Cadastro fiscal da empresa salvo. Emissão continua desabilitada.')}
+    try{const result=await patchFiscalEmpresa(company);setCompany(result.dados);setEmitente({razao_social:result.razao_social||'',nome_fantasia:result.nome_fantasia||'',documento:result.documento||''});setMessage('Cadastro fiscal da empresa salvo. Emissão continua desabilitada.')}
     catch(e){setError(e instanceof Error?e.message:'Erro ao salvar.')}
     finally{setSaving(false)}
   }
@@ -121,12 +125,18 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     <div className="fiscal-v1-tabs">
       <button type="button" aria-pressed={tab==='empresa'} onClick={()=>{setTab('empresa');setError('');setMessage('')}}>Dados da empresa</button>
       <button type="button" aria-pressed={tab==='produto'} onClick={()=>{setTab('produto');setError('');setMessage('')}}>Tributação dos produtos</button>
+      <button type="button" aria-pressed={tab==='nfe'} onClick={()=>{setTab('nfe');setError('');setMessage('')}}>NF-e · Referência GestãoClick</button>
     </div>
     {error&&<p className="fiscal-v1-error" role="alert">{error}</p>}
     {message&&<p className="fiscal-v1-success" role="status">{message}</p>}
     {!canEdit&&<p className="fiscal-v1-muted">Apenas proprietários e administradores podem alterar estes cadastros.</p>}
-    {tab==='empresa'?<section className="fiscal-v1-panel">
+    {tab==='nfe' ? <NfeGestaoClickPreview /> : tab==='empresa'?<section className="fiscal-v1-panel">
       <h2>Emitente</h2><p>Os dados são específicos da empresa ativa, sem alterar outras empresas.</p>
+      <div className="fiscal-v1-grid fiscal-v1-company-identification">
+        <label><span>CNPJ do emitente</span><input readOnly value={emitente.documento} placeholder="CNPJ do cadastro da empresa"/><small>Vinculado ao cadastro central da empresa.</small></label>
+        <label><span>Razão social</span><input readOnly value={emitente.razao_social} placeholder="Razão social cadastrada"/><small>Edite no cadastro da empresa, não na NF-e.</small></label>
+        <label><span>Nome fantasia</span><input readOnly value={emitente.nome_fantasia} placeholder="Nome fantasia cadastrado"/></label>
+      </div>
       <div className="fiscal-v1-grid">{companyFields.map(field=><label key={field.id}>
         <span>{field.label}</span>
         <input disabled={loading||saving||!canEdit} placeholder={field.placeholder||''}
@@ -137,6 +147,7 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
       <button type="button" className="fiscal-v1-save" disabled={loading||saving||!canEdit} onClick={saveCompany}>{saving?'Salvando...':'Salvar dados fiscais'}</button>
     </section>:<section className="fiscal-v1-panel">
       <h2>Classificação fiscal por produto</h2>
+      {modoHomologacao && <div className="fiscal-v1-sample-products"><strong>Produtos de exemplo — clique para conferir a tributação</strong><div className="fiscal-v1-matches">{catalog.map(p=><button type="button" key={p.id} onClick={()=>{void selectProduct(p.id);setQuery(p.nome)}}>{p.nome} · #{p.id}</button>)}</div></div>}
       <label className="fiscal-v1-product-search"><span>Buscar pelo nome ou código</span>
         <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Ex.: Rolô BK Nápoles" />
       </label>
