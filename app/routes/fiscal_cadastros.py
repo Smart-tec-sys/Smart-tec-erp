@@ -29,3 +29,11 @@ def salvar_produto_fiscal(dados: FiscalProdutoPatch, produto_id: int = Path(gt=0
                          db: Session = Depends(get_db),
                          tenant: TenantContext = Depends(get_current_tenant)):
     return fiscal_cadastros.atualizar_produto(db, tenant, produto_id, dados)
+
+
+@router.get("/certificado-a1/status")
+def certificado_a1_status(db: Session = Depends(get_db),
+                          tenant: TenantContext = Depends(get_current_tenant)):
+    """Status administrativo por empresa, sem PFX/senha, cofre ou emissão."""
+    from app.services.fiscal_certificado_a1 import status_a1_empresa
+    return status_a1_empresa(db, tenant)
