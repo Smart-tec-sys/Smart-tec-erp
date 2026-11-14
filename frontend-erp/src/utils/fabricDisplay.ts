@@ -18,7 +18,18 @@ export function fabricColor(product: ApiProduct): string {
   return match && displayColor.test(match[1].trim()) ? match[1].trim() : ''
 }
 
+// O catálogo legado contém persianas acabadas dentro de grupos técnicos chamados TECIDOS.
+// Somente um tipo FABRICADO explícito + nome de produto acabado prevalece sobre o grupo.
+export function isClearlyFinishedProduct(product: ApiProduct): boolean {
+  const type = normalizeField(product.tipo_produto)
+  const name = normalizeField(product.nome)
+  return /^(?:PRODUTO FABRICADO|PRODUTO ACABADO|PERSIANA ACABADA)$/.test(type)
+    && /^(?:ROMANA|ROLO|PERSIANA|DOUBLE VISION|CORTINA|TOLDO)(?: |$)/.test(name)
+}
+
 export function isFabricProduct(product: ApiProduct): boolean {
+  if (isClearlyFinishedProduct(product)) return false
+
   const technical = [product.grupo_tecnico, product.familia_tecnica, product.grupo_produto]
     .map(normalizeField)
   if (technical.some(value => /(?:^| )TECIDOS?(?: |$)/.test(value))) return true
@@ -35,7 +46,14 @@ export function isFabricProduct(product: ApiProduct): boolean {
 
 export function fabricDisplay(product: ApiProduct) {
   const raw = product.nome.trim()
-  if (!isFabricProduct(product)) return { name: raw, width: '', fabric: false }
+  if (!isFabricProduct(product)) {
+    // Ex.: ROMANA BK BRISK (AMENDOA) é produto acabado, com cor escolhida por SKU.
+    const color = normalizeField(product.variacao_cor || product.cor || product.cor_componente)
+    const suffix = raw.match(/\s*\(([^()]*)\)\s*$/)
+    const label = isClearlyFinishedProduct(product) && suffix && color && normalizeField(suffix[1]) === color
+      ? raw.slice(0, suffix.index).trim() : raw
+    return { name: label, width: '', fabric: false }
+  }
   const color = normalizeField(fabricColor(product))
   // O cadastro legado também usa "TECIDO BK BRISK (WHITE)" e "ROMANA BK BRISK (AMENDOA)".
   // Remover cor só quando corresponder ao campo cor do SKU (ou a uma cor conhecida).
@@ -89,11 +107,17 @@ export function fabricVariantKey(product: ApiProduct) {
 
 // Identidade própria para produtos acabados, independente da identificação dos tecidos.
 export function commercialVariantKey(product: ApiProduct) {
-  if (!product.produto_base?.trim()) return null
+  if (!isClearlyFinishedProduct(product)) return null
+  const view = fabricDisplay(product)
+  const base = normalizeField(view.name)
+  // Sem cor estruturada ou nome-base confiável, não agrupar SKUs acabados.
+  const raw = normalizeField(product.nome)
+  if (!base || base === raw || !fabricColor(product)) return null
   return JSON.stringify([
-    product.produto_base, product.familia_tecnica, product.modelo_tecnico,
+    base, product.produto_base, product.familia_tecnica, product.modelo_tecnico,
     product.grupo_tecnico, product.tipo_produto, product.unidade_venda ?? product.unidade,
-  ].map(value => normalizeField(value)))
+    (product as ApiProduct & { empresa_id?: number | null }).empresa_id ?? null,
+  ].map(normalizeField))
 }
 
 export type FabricCollection = {
@@ -110,8 +134,10 @@ export function groupFabricCollections(products: ApiProduct[]): FabricCollection
   const collections = new Map<string, FabricCollection>()
   for (const product of products) {
     const view = fabricDisplay(product)
-    const groupable = view.fabric && !!(fabricColor(product) || product.produto_base?.trim())
-    const key = groupable ? 'fabric:' + fabricVariantKey(product)
+    const groupableFabric = view.fabric && !!(fabricColor(product) || product.produto_base?.trim())
+    const finishedKey = !view.fabric ? commercialVariantKey(product) : null
+    const key = groupableFabric ? 'fabric:' + fabricVariantKey(product)
+      : finishedKey ? 'finished:' + finishedKey
       : 'product:' + String((product as ApiProduct & { empresa_id?: number | null }).empresa_id ?? '') + ':' + product.id
     let collection = collections.get(key)
     if (!collection) {
