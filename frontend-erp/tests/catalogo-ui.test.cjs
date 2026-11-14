@@ -11,7 +11,7 @@ const assert = require('node:assert/strict')
   const selected = () => page.getByTestId('selected-json').textContent().then(JSON.parse)
   async function choose(name, search, sku) {
     await query.fill(search)
-    const item=page.locator('.product-suggestions button').filter({hasText:name})
+    const item=page.locator('.product-suggestions button').filter({hasText:name}).filter({hasNotText:'ROLÔ'})
     await item.first().waitFor()
     assert.equal(await item.count(),1, 'Cada coleção deve aparecer uma vez')
     await item.first().click()
