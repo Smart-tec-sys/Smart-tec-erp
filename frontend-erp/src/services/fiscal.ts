@@ -27,7 +27,7 @@ export type FiscalProdutoDados = {
   cst_ibs_cbs: string | null
   cclass_trib_ibs_cbs: string | null
 }
-export type FiscalEmpresaResponse = { empresa_id:number; documento:string|null; dados:FiscalEmpresaDados; emissao_habilitada:false }
+export type FiscalEmpresaResponse = { empresa_id:number; documento:string|null; razao_social:string|null; nome_fantasia:string|null; dados:FiscalEmpresaDados; emissao_habilitada:false }
 export type FiscalProdutoResponse = { empresa_id:number; produto_id:number; dados:FiscalProdutoDados; configurado:boolean; emissao_habilitada:false }
 
 async function fiscalRequest<T>(path:string, method:'GET'|'PATCH'='GET', body?:Record<string,unknown>):Promise<T> {
