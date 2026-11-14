@@ -8,6 +8,12 @@ const COMPONENT_FAMILIES = ['TUBO', 'COMANDO', 'ACESSORIO', 'ACESSÓRIO', 'CORRE
 
 const COMPONENT_TYPES = ['COMPONENTE', 'COMPONENT', 'PECA', 'PEÇA', 'ACESSORIO', 'ACESSÓRIO', 'INSUMO', 'MATERIA_PRIMA', 'MATÉRIA_PRIMA', 'MATERIA-PRIMA', 'MATÉRIA-PRIMA', 'SEMIACABADO', 'SEMI-ACABADO', 'SEMI ACABADO', 'SUBMONTAGEM', 'SUB-MONTAGEM', 'KIT_COMPONENTE', 'KIT_COMPONENT']
 
+function isFabricSupply(p: ApiProduct): boolean {
+  const technical = [p.grupo_tecnico, p.familia_tecnica, p.grupo_produto].map(value => normalize(value || ''))
+  return technical.some(value => /(?:^| )TECIDOS?(?: |$)/.test(value))
+    || normalize(p.nome || '').startsWith('TECIDO ')
+}
+
 function isComponent(p: ApiProduct): boolean {
   const gt = normalize(p.grupo_tecnico || '')
   const ft = normalize(p.familia_tecnica || '')
@@ -21,7 +27,7 @@ function isComponent(p: ApiProduct): boolean {
 }
 
 export function roloKind(p: ApiProduct): 'MANUAL' | 'MOTORIZADA' | null {
-  if (isComponent(p)) return null
+  if (isComponent(p) || isFabricSupply(p)) return null
   const text = normalize(`${p.modelo_tecnico || ''} ${p.modelo || ''} ${p.nome}`)
   if (!text.includes('ROL') && !text.includes('ROLÔ')) return null
   if (text.includes('MOTORIZ')) return 'MOTORIZADA'
@@ -31,11 +37,16 @@ export function roloKind(p: ApiProduct): 'MANUAL' | 'MOTORIZADA' | null {
   return null
 }
 
+// O parser explícito distingue entrada inválida de entrada manual.
+export function parseRoloDrive(value: string | undefined): 'manual' | 'motorizado' | null {
+  if (!value?.trim()) return 'manual'
+  const v = normalize(value).trim()
+  if (/^(?:MOTORIZAD[OA]|MOTOR(?: ELETRICO)?|ELETRIC[OA]|AUTOMATIC[OA])$/.test(v)) return 'motorizado'
+  if (/^(?:MANUAL|CORRENTE|BASTAO|SEM MOTOR)$/.test(v)) return 'manual'
+  return null
+}
 export function normalizeRoloDrive(value: string | undefined): 'manual' | 'motorizado' {
-  if (!value) return 'manual'
-  const v = value.trim().toLowerCase()
-  if (v === 'motorizado' || v === 'motorizada') return 'motorizado'
-  return 'manual'
+  return parseRoloDrive(value) ?? 'manual'
 }
 
 export type RoloResult = {
