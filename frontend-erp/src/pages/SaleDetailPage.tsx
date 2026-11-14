@@ -224,6 +224,24 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
                 <li key={p.codigo+'-'+p.campo+'-'+i}><strong>{p.nivel==='revisao'?'Revisão':'Pendente'}:</strong> {p.mensagem}</li>
               )}</ul>
             </div>
+            {fiscalResultado.mapa_pre_xml && <details style={{margin:'16px 0'}}>
+              <summary style={{cursor:'pointer',fontWeight:600}}>
+                Mapa pré-XML NF-e (somente conferência — sem gerar XML)
+              </summary>
+              <p>Campos informados: {fiscalResultado.mapa_pre_xml.resumo.campos_informados} ·
+                Cadastros pendentes: {fiscalResultado.mapa_pre_xml.resumo.campos_pendentes} ·
+                Integrações pendentes: {fiscalResultado.mapa_pre_xml.resumo.integracoes_pendentes}</p>
+              <div style={{maxHeight:400,overflowY:'auto'}}>
+                {fiscalResultado.mapa_pre_xml.grupos.map(grupo=><details key={grupo.grupo} style={{marginBottom:10}}>
+                  <summary style={{cursor:'pointer'}}>{grupo.titulo} · {grupo.campos.filter(c=>c.situacao!=='INFORMADO').length} itens pendentes</summary>
+                  <ul>{grupo.campos.map((campo,i)=><li key={campo.campo_xml+'-'+i}>
+                    <strong>{campo.campo_xml}</strong> — {campo.descricao}
+                    {' · '}{campo.situacao==='INFORMADO'?'Informado':campo.situacao==='PENDENTE'?'Cadastro pendente':'Integração pendente'}
+                  </li>)}</ul>
+                </details>)}
+              </div>
+              <p>Este mapa não é um arquivo XML válido, não assina, não calcula impostos nem transmite à SEFAZ.</p>
+            </details>}
             <button type="button" className="secondary-button" onClick={()=>{void conferirFiscal()}}>Atualizar conferência</button>
           </>}
         </section>}
