@@ -28,3 +28,15 @@ jobs:
         run: python -m py_compile app/services/fiscal_nfe_preparacao.py app/routes/pedido.py app/services/fiscal_cadastros.py app/routes/fiscal_cadastros.py app/schemas/fiscal_cadastros.py app/models/fiscal_produto.py tests/test_fiscal_nfe_preparacao.py tests/test_fiscal_cadastros.py
       - name: Testes de pre-validacao e isolamento
         run: python -m unittest -v tests/test_fiscal_nfe_preparacao.py tests/test_fiscal_cadastros.py
+      - name: Preparar Node.js frontend
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend-erp/package-lock.json
+      - name: Instalar dependências frontend
+        working-directory: frontend-erp
+        run: npm ci --no-audit --no-fund
+      - name: Compilar frontend fiscal
+        working-directory: frontend-erp
+        run: npm run build
