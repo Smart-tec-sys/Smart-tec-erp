@@ -22,6 +22,16 @@ class CadastrosFiscaisTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValidationError):
                 FiscalEmpresaPatch.model_validate({field: "segredo"})
 
+    def test_referencia_gestaoclick_campos_de_empresa_sem_certificado(self):
+        obj = FiscalEmpresaPatch(inscricao_municipal="ISENTO", cnae_principal="4755502",
+                                  regime_especial_tributacao="A confirmar",
+                                  informacoes_complementares="Texto de teste")
+        self.assertEqual(obj.cnae_principal, "4755502")
+        self.assertEqual(obj.model_dump(exclude_unset=True)["inscricao_municipal"], "ISENTO")
+        for dados in ({"cnae_principal":"123"}, {"informacoes_complementares":"a"*2001}):
+            with self.assertRaises(ValidationError):
+                FiscalEmpresaPatch.model_validate(dados)
+
     def test_empresa_campos_validos_e_invalidos(self):
         FiscalEmpresaPatch(uf="SP", municipio_codigo_ibge="3550308", inscricao_estadual="ISENTO", serie_nfe=8)
         for data in ({"serie_nfe": 0}, {"cep": "123"}, {"municipio_codigo_ibge": "abc"}, {"crt": "5"}, {"uf": "SPO"}):

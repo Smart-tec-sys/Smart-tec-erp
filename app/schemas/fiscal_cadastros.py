@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class FiscalEmpresaDados(BaseModel):
     model_config = ConfigDict(extra="forbid")
     inscricao_estadual: str | None = Field(default=None, max_length=20)
+    inscricao_municipal: str | None = Field(default=None, max_length=30)
+    cnae_principal: str | None = Field(default=None, pattern=r"^\d{7}$")
+    regime_especial_tributacao: str | None = Field(default=None, max_length=80)
+    informacoes_complementares: str | None = Field(default=None, max_length=2000)
     crt: Literal["1", "2", "3", "4"] | None = None
     uf: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
     municipio_codigo_ibge: str | None = Field(default=None, pattern=r"^\d{7}$")
@@ -18,7 +22,7 @@ class FiscalEmpresaDados(BaseModel):
     serie_nfe: int | None = Field(default=None, ge=1, le=899)
     ambiente: Literal["HOMOLOGACAO"] = "HOMOLOGACAO"
 
-    @field_validator("inscricao_estadual", "cidade", "logradouro", "numero", "bairro", "complemento")
+    @field_validator("inscricao_estadual", "inscricao_municipal", "regime_especial_tributacao", "informacoes_complementares", "cidade", "logradouro", "numero", "bairro", "complemento")
     @classmethod
     def normalizar_texto(cls, value):
         return value.strip() or None if isinstance(value, str) else value

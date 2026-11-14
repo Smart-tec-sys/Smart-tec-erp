@@ -3,6 +3,10 @@ import { getApiAuthHeaders } from './auth'
 
 export type FiscalEmpresaDados = {
   inscricao_estadual: string | null
+  inscricao_municipal: string | null
+  cnae_principal: string | null
+  regime_especial_tributacao: string | null
+  informacoes_complementares: string | null
   crt: '1' | '2' | '3' | '4' | null
   uf: string | null
   municipio_codigo_ibge: string | null

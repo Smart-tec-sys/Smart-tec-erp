@@ -9,7 +9,10 @@ import { NfeGestaoClickPreview } from './NfeGestaoClickPreview'
 
 type Field = { id:string; label:string; placeholder?:string }
 const companyFields:Field[] = [
-  {id:'inscricao_estadual',label:'Inscrição estadual'},
+  {id:'inscricao_estadual',label:'Inscrição Estadual (IE)'},
+  {id:'inscricao_municipal',label:'Inscrição Municipal (IM)'},
+  {id:'cnae_principal',label:'CNAE principal (7 dígitos)'},
+  {id:'regime_especial_tributacao',label:'Regime especial de tributação'},
   {id:'crt',label:'CRT (1 a 4)'},
   {id:'uf',label:'UF',placeholder:'SP'},
   {id:'municipio_codigo_ibge',label:'Código IBGE do município',placeholder:'3550308'},
@@ -19,7 +22,6 @@ const companyFields:Field[] = [
   {id:'numero',label:'Número'},
   {id:'bairro',label:'Bairro'},
   {id:'complemento',label:'Complemento'},
-  {id:'serie_nfe',label:'Série de homologação',placeholder:'1'},
 ]
 const productFields:Field[] = [
   {id:'ncm',label:'NCM (8 dígitos)'},{id:'cfop_padrao_saida',label:'CFOP de saída (4 dígitos)'},
@@ -29,7 +31,8 @@ const productFields:Field[] = [
   {id:'cst_ibs_cbs',label:'CST IBS/CBS'},{id:'cclass_trib_ibs_cbs',label:'cClassTrib IBS/CBS'},
 ]
 const emptyCompany: FiscalEmpresaDados = {
-  inscricao_estadual:null,crt:null,uf:null,municipio_codigo_ibge:null,cidade:null,
+  inscricao_estadual:null,inscricao_municipal:null,cnae_principal:null,regime_especial_tributacao:null,
+  informacoes_complementares:null,crt:null,uf:null,municipio_codigo_ibge:null,cidade:null,
   cep:null,logradouro:null,numero:null,bairro:null,complemento:null,serie_nfe:null,ambiente:'HOMOLOGACAO',
 }
 const emptyProduct: FiscalProdutoDados = {
@@ -41,7 +44,7 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const session = useAuthSession()
   const canEdit = modoHomologacao || session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
   const companyId=modoHomologacao ? 999 : session?.empresa.id
-  const [tab,setTab]=useState<'empresa'|'produto'|'nfe'>('empresa')
+  const [tab,setTab]=useState<'empresa'|'produto'|'nfe'|'certificado'|'configuracoes'|'confirmacao'>('empresa')
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
   const [emitente,setEmitente]=useState({razao_social:'',nome_fantasia:'',documento:''})
   const [product,setProduct]=useState<FiscalProdutoDados>(emptyProduct)
@@ -122,6 +125,23 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
       <p>Preparação de NF-e sem emissão ou transmissão. Confira todos os códigos com a contabilidade.</p>
     </header>
     <div className="fiscal-v1-warning" role="status">{modoHomologacao ? 'PRÉVIA VISUAL — dados fictícios e não persistidos. Sem API, sem banco, sem SEFAZ.' : 'Ambiente: homologação de cadastro · NF-e e SEFAZ desabilitadas'}</div>
+    <section className="fiscal-v1-setup" aria-label="Etapas da configuração de NF-e">
+      <h2>Configurar emissão de NF-e</h2>
+      <p>Fluxo de preparação inspirado na referência enviada. Nenhuma etapa habilita emissão nesta versão.</p>
+      <nav className="fiscal-v1-steps" aria-label="Etapas da NF-e">
+        {([
+          ['empresa','1','Dados da empresa'],
+          ['certificado','2','Certificado digital'],
+          ['configuracoes','3','Configurações'],
+          ['confirmacao','4','Confirmação'],
+        ] as const).map(([value,n,label])=>
+          <button key={value} type="button" aria-current={tab===value?'step':undefined}
+            onClick={()=>{setTab(value);setError('');setMessage('')}}>
+            <span className="fiscal-v1-step-num">{n}</span><span>{label}</span>
+          </button>
+        )}
+      </nav>
+    </section>
     <div className="fiscal-v1-tabs">
       <button type="button" aria-pressed={tab==='empresa'} onClick={()=>{setTab('empresa');setError('');setMessage('')}}>Dados da empresa</button>
       <button type="button" aria-pressed={tab==='produto'} onClick={()=>{setTab('produto');setError('');setMessage('')}}>Tributação dos produtos</button>
@@ -130,7 +150,53 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     {error&&<p className="fiscal-v1-error" role="alert">{error}</p>}
     {message&&<p className="fiscal-v1-success" role="status">{message}</p>}
     {!canEdit&&<p className="fiscal-v1-muted">Apenas proprietários e administradores podem alterar estes cadastros.</p>}
-    {tab==='nfe' ? <NfeGestaoClickPreview /> : tab==='empresa'?<section className="fiscal-v1-panel">
+    {tab==='nfe' ? <NfeGestaoClickPreview />
+      : tab==='certificado' ? <section className="fiscal-v1-panel">
+        <h2>Certificado digital</h2>
+        <p>O GestãoClick apresenta certificados A1 e A3. Nesta primeira versão da Smart-tec, estamos preparando a integração segura do <strong>A1 (arquivo PFX/P12)</strong>.</p>
+        <div className="fiscal-v1-cert-types">
+          <article><strong>Certificado A1</strong><p>Arquivo e senha serão tratados em fluxo protegido, com autorização por empresa. Ainda não disponível nesta prévia.</p></article>
+          <article><strong>Certificado A3</strong><p>Compatibilidade futura, condicionada a integração com dispositivo ou provedor de assinatura.</p></article>
+        </div>
+        <p className="fiscal-v1-warning">Não envie certificados ou senhas nesta tela. Importação e assinatura ainda desativadas.</p>
+        <button className="fiscal-v1-add" type="button" onClick={()=>setTab('configuracoes')}>Ver configurações de homologação</button>
+      </section>
+      : tab==='configuracoes' ? <section className="fiscal-v1-panel">
+        <h2>Configurações de NF-e</h2>
+        <p>Separe as opções da NF-e de produtos da NFC-e, NFS-e e notas de entrada.</p>
+        <div className="fiscal-v1-grid">
+          <label><span>Ambiente</span><input readOnly value="Homologação (sem valor fiscal)" /></label>
+          <label><span>Série de NF-e — homologação</span><input
+            type="number" min={1} max={899} disabled={loading||saving||!canEdit}
+            value={company.serie_nfe??''} placeholder="1"
+            onChange={e=>setCompany(v=>({...v,serie_nfe:e.target.value?Number(e.target.value):null}))}/></label>
+          <label><span>Última NF-e autorizada</span><input readOnly value="" placeholder="Indisponível até integrar a SEFAZ"/></label>
+        </div>
+        <label className="fiscal-v1-multiline"><span>Informações complementares padrão da NF-e</span>
+          <textarea rows={4} maxLength={2000} disabled={loading||saving||!canEdit}
+            value={company.informacoes_complementares??''}
+            onChange={e=>setCompany(v=>({...v,informacoes_complementares:e.target.value||null}))}
+            placeholder="Texto padrão, sujeito à revisão fiscal"/></label>
+        <p className="fiscal-v1-muted">Dados salvos apenas como cadastro preparatório. Não reservam número nem calculam tributos.</p>
+        <button type="button" className="fiscal-v1-save" disabled={loading||saving||!canEdit} onClick={saveCompany}>{saving?'Salvando...':'Salvar configurações'}</button>
+      </section>
+      : tab==='confirmacao' ? <section className="fiscal-v1-panel">
+        <h2>Confirmação e pendências</h2>
+        <p>Conferência cadastral inicial. A emissão permanece indisponível mesmo quando os campos estão preenchidos.</p>
+        <ul className="fiscal-v1-review">
+          <li>{emitente.documento?'✓':'○'} CNPJ do emitente</li>
+          <li>{emitente.razao_social?'✓':'○'} Razão social</li>
+          <li>{company.inscricao_estadual?'✓':'○'} Inscrição Estadual ou situação a confirmar</li>
+          <li>{company.cnae_principal?'✓':'○'} CNAE principal</li>
+          <li>{company.crt?'✓':'○'} CRT confirmado pela contabilidade</li>
+          <li>{company.cep&&company.logradouro&&company.numero&&company.bairro&&company.cidade&&company.uf?'✓':'○'} Endereço completo</li>
+          <li>{company.serie_nfe?'✓':'○'} Série de homologação</li>
+          <li>○ Certificado A1 ainda não integrado</li>
+          <li>○ XML, regras tributárias e autorização SEFAZ ainda pendentes</li>
+        </ul>
+        <button type="button" className="fiscal-v1-add" onClick={()=>setTab('empresa')}>Revisar dados da empresa</button>
+      </section>
+      : tab==='empresa'?<section className="fiscal-v1-panel">
       <h2>Emitente</h2><p>Os dados são específicos da empresa ativa, sem alterar outras empresas.</p>
       <div className="fiscal-v1-grid fiscal-v1-company-identification">
         <label><span>CNPJ do emitente</span><input readOnly value={emitente.documento} placeholder="CNPJ do cadastro da empresa"/><small>Vinculado ao cadastro central da empresa.</small></label>
