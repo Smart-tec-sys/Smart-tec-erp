@@ -98,6 +98,15 @@ class MapaPreXmlTest(unittest.TestCase):
         # Não grava quantidade, apenas sinaliza presença/positividade.
         self.assertNotIn("0.0001",json.dumps(mapa))
 
+    def test_prevalidacao_nao_arredonda_quantidade_positiva(self):
+        pedido = sale()
+        pedido["itens"][0]["quantidade"] = "0.0001"
+        r = analisar_venda_nfe(pedido, {"id":1,"documento":"11222333000181"}, customer())
+        self.assertNotIn("QUANTIDADE_INVALIDA", {p["codigo"] for p in r["pendencias"]})
+        pedido["itens"][0]["quantidade"] = "0.00001"
+        r = analisar_venda_nfe(pedido, {"id":1,"documento":"11222333000181"}, customer())
+        self.assertIn("QUANTIDADE_INVALIDA", {p["codigo"] for p in r["pendencias"]})
+
     def test_numeros_invalidos_bloqueiam_itens(self):
         pedido=sale()
         pedido["itens"][0]["quantidade"]="NaN"
