@@ -4,10 +4,19 @@ import { normalizeSearch, type ApiProduct } from '../types/budget'
 const normalizeField = (value: unknown) => normalizeSearch(String(value ?? ''))
   .replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
 const supplyMeasure = /^\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?|METROS? LINEARES?)$/i
-const displayColor = /^(?:CINZA|BEGE|BRANCO|BRANCA|PRETO|PRETA|CREME|MARROM|LINHO|PALHA|PRATA|TINTO (?:BEGE|PALHA|PRATA))$/i
+// Cores inequívocas observadas no cadastro; não interpretar códigos ou larguras como cor.
+const displayColor = /^(?:CINZA|BEGE|BRANCO|BRANCA|PRETO|PRETA|CREME|MARROM|LINHO|PALHA|PRATA|AMENDOA|FENDI|GELO|ALPINO|WHITE|BLACK|GREY|GRAY|IVORY|LINEN|NAVY|PEACH|BROWN|MESCLA|NATURAL|OFF WHITE|OFF WHAIT|TINTO (?:BEGE|PALHA|PRATA))$/i
 
-export const fabricColor = (product: ApiProduct) =>
-  product.variacao_cor?.trim() || product.cor?.trim() || product.cor_componente?.trim() || ''
+export function fabricColor(product: ApiProduct): string {
+  const structured = product.variacao_cor?.trim() || product.cor?.trim() || product.cor_componente?.trim()
+  if (structured) return structured
+  if (!isFabricProduct(product)) return ''
+
+  // Exemplos reais sem cor estruturada: "TEC PICASSO BK - AMENDOA - 2,50M".
+  // Fallback intencionalmente estrito: nomes genéricos e códigos numéricos não são cores.
+  const match = product.nome.trim().match(/\s+[-–—]\s+([^–—]+?)\s+[-–—]\s+(\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?))\s*$/i)
+  return match && displayColor.test(match[1].trim()) ? match[1].trim() : ''
+}
 
 export function isFabricProduct(product: ApiProduct): boolean {
   const technical = [product.grupo_tecnico, product.familia_tecnica, product.grupo_produto]
