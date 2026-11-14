@@ -27,8 +27,15 @@ export function isFabricProduct(product: ApiProduct): boolean {
 export function fabricDisplay(product: ApiProduct) {
   const raw = product.nome.trim()
   if (!isFabricProduct(product)) return { name: raw, width: '', fabric: false }
-  const parts = raw.split(/\s+[-–—]\s+/)
   const color = normalizeField(fabricColor(product))
+  // O cadastro legado também usa "TECIDO BK BRISK (WHITE)" e "ROMANA BK BRISK (AMENDOA)".
+  // Remover cor só quando corresponder ao campo cor do SKU (ou a uma cor conhecida).
+  let label = raw
+  const suffix = label.match(/\s*\(([^()]*)\)\s*$/)
+  if (suffix && ((color && normalizeField(suffix[1]) === color) || displayColor.test(suffix[1]))) {
+    label = label.slice(0, suffix.index).trim()
+  }
+  const parts = label.split(/\s+[-–—]\s+/)
   let width = ''
   while (parts.length > 1) {
     const last = parts[parts.length - 1].trim()
@@ -42,7 +49,16 @@ export function fabricDisplay(product: ApiProduct) {
     const colorWords = color.split(/\s+/).length
     if (words.length > colorWords) name = words.slice(0, -colorWords).join(' ')
   }
-  return { name, width: width || (Number(product.largura) > 0 ? String(product.largura) + ' m' : ''), fabric: true }
+  // Existem tecidos com a largura dentro do nome (ex.: "TECIDO BK BRISK 1,80M"),
+  // enquanto outros guardam essa informação só no campo largura. Priorizar a
+  // largura explícita na descrição para não separar cores do mesmo tecido.
+  const namedWidth = name.match(/(?:^|\s)(\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?))\s*$/i)
+  return {
+    name,
+    width: width || (namedWidth ? namedWidth[1] : '') ||
+      (Number(product.largura) > 0 ? String(product.largura) + ' m' : ''),
+    fabric: true,
+  }
 }
 
 function normalizedWidth(value: string) {
