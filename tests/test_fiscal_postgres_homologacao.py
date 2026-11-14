@@ -195,6 +195,41 @@ class FiscalPostgresHomologacao(unittest.TestCase):
             count=conn.execute(text("SELECT count(*) FROM fiscal_produtos")).scalar_one()
         self.assertEqual(count,1)
 
+    def test_07_permissao_http_impede_usuario_comum_de_salvar(self):
+        app = FastAPI()
+        app.include_router(fiscal_router, prefix="/fiscal/cadastros")
+        context = {"tenant": TenantContext(empresa_id=1, user_id=1001)}
+        app.dependency_overrides[get_current_tenant] = lambda: context["tenant"]
+
+        def database():
+            with Session(self.engine) as db:
+                yield db
+
+        app.dependency_overrides[get_db] = database
+        with TestClient(app) as client:
+            payload = {"uf": "RJ"}
+            # Simula um usuário autenticado que não possui vínculo OWNER/ADMIN.
+            context["tenant"] = TenantContext(empresa_id=1, user_id=1002)
+            forbidden = client.patch("/fiscal/cadastros/empresa", json=payload)
+            self.assertEqual(forbidden.status_code, 403)
+            # Não pode editar produto de outra empresa, mesmo sendo OWNER na sua.
+            context["tenant"] = TenantContext(empresa_id=2, user_id=1002)
+            forbidden_product = client.patch("/fiscal/cadastros/produtos/101", json={"ncm": "63039200"})
+            self.assertEqual(forbidden_product.status_code, 404)
+            valid_owner = client.get("/fiscal/cadastros/empresa")
+            self.assertEqual(valid_owner.status_code, 200)
+            self.assertNotEqual(valid_owner.json()["dados"]["uf"], "RJ")
+
+    def test_99_rollback_no_postgres_efemero(self):
+        # Rollback APENAS no PostgreSQL transitório descartado ao fim do job.
+        run_sql(self.engine, fiscal_sql("20261114_fiscal_v1_cadastros_down.sql"))
+        with self.engine.connect() as conn:
+            self.assertIsNone(conn.execute(
+                text("SELECT to_regclass('public.fiscal_produtos')")).scalar_one())
+            self.assertEqual(conn.execute(text("SELECT count(*) FROM produtos")).scalar_one(), 2)
+            self.assertEqual(conn.execute(text("SELECT count(*) FROM empresas")).scalar_one(), 2)
+
+
 
 if __name__=="__main__":
     unittest.main()
