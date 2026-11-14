@@ -7,7 +7,7 @@ const ts = require('typescript')
 function loadTS(relativePath, dependencies = {}) {
   const original = fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8')
   const transpiled = ts.transpileModule(original, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
+    compilerOptions: { module: 1, target: 9 }
   }).outputText
   const mod = { exports: {} }
   const requireLocal = (id) => {
