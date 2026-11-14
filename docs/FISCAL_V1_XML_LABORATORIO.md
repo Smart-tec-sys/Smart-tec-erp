@@ -29,3 +29,21 @@ A função \`validar_xsd_documento_assinado(xml, caminho_schema)\` recusa explic
 5. Assinar e validar XML no ambiente de homologação, testar rejeições e só depois avaliar transmissão SEFAZ, autorização, protocolo, cancelamento e DANFE.
 
 **Não ativar emissão em produção, alterar Render ou mesclar automaticamente este PR.**
+
+
+## Validação estrutural com XSD de referência (não oficial)
+
+O workflow \`.github/workflows/fiscal-prevalidacao-v1.yml\` baixa em CI uma cópia **pública e versionada** do pacote de schemas do projeto \`Samuel-Oliveira/Java_NFe\`, tag \`4.3.0\`. Antes de executar testes, confirma:
+- Commit Git \`272f7b75437f234d9c963aacd8502eeb8a941e4e\`
+- Git blob SHA do \`schemas/nfe_v4.00.xsd\`: \`5b2eb0810b9c77bf33b1d46d448364dfc6f64f28\`
+- Git blob SHA do \`schemas/leiauteNFe_v4.00.xsd\`: \`4f1ad97fa39840afff140286415f105ca8d3145d\`
+
+Estes hashes confirmam apenas que os arquivos da **referência** são estáveis; **não autenticam o pacote PL_010g v1.03 do Portal Nacional da NF-e**. O download do ZIP oficial diretamente da fonte primária não estava acessível nesta sessão. Não armazenar, distribuir ou identificar a cópia do GitHub como oficial.
+
+Os testes em \`tests/test_fiscal_nfe_xsd_referencia.py\` usam \`lxml.etree.XMLSchema\` offline para exigir:
+1. Rejeição de XML sem \`ds:Signature\` no schema de NF-e completo.
+2. Ausência de outras incompatibilidades estruturais no XML fictício (além da assinatura).
+3. Rejeição de campos desconhecidos propositalmente inseridos.
+4. Ausência de assinatura no gerador de laboratório.
+
+Uma rejeição por assinatura **não comprova nem substitui assinatura válida**. Ainda é obrigatório testar integridade, X509, digest, referência do \`infNFe/@Id\`, canonicalização, regras da SEFAZ e o XSD **oficial verificado** com a versão correta. Nenhuma emissão ou integração com banco real foi habilitada.
