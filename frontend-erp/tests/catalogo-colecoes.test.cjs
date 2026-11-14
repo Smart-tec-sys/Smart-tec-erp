@@ -109,6 +109,32 @@ check('Romana Teto mantém estrutura e não confunde cores inativas com catálog
   assert.equal(ativos.length,1)
   assert.equal(ativos[0].cor,null)
 })
+check('Picasso BK: cores no nome sem campo cor agrupam sem perda de SKU', () => {
+  const items = ['AMENDOA','BEGE','CINZA','FENDI','GELO'].map((cor, i) => cloth(1600+i, '', {
+    nome: 'TEC PICASSO BK - '+cor+' - 2,50M', cor: null, familia_tecnica: null,
+    grupo_tecnico: 'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',
+    produto_base: null, largura: 2.5, unidade_venda: 'M²'
+  }))
+  const groups = fabric.groupFabricCollections(items)
+  assert.equal(groups.length,1)
+  assert.equal(groups[0].colors.length,5)
+  assert.equal(fabric.fabricColor(items[0]), 'AMENDOA')
+})
+check('Picasso Trans não se mistura com Picasso BK', () => {
+  const base={grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',cor:null,
+    familia_tecnica:null,produto_base:null,largura:2.5,unidade_venda:'M²'}
+  const groups=fabric.groupFabricCollections([
+    {id:1901,nome:'TEC PICASSO BK - BEGE - 2,50M',...base},
+    {id:1902,nome:'TEC PICASSO TRANS - BEGE - 2,50M',...base}
+  ])
+  assert.equal(groups.length,2)
+})
+check('sem campo cor: código numérico de Double Vision não é inventado', () => {
+  const item=cloth(1800,'',{nome:'DOUBLE VISION W00D (3)',cor:null,
+    grupo_tecnico:'TECIDOS_PERSIANAS_DOUBLE_VISION',modelo_tecnico:'DOUBLE_VISION',
+    familia_tecnica:null,produto_base:null,largura:0})
+  assert.equal(fabric.fabricColor(item),'')
+})
 check('não mistura fornecedor diferente', () =>
   assert.equal(fabric.groupFabricCollections([white, cloth(105, 'CINZA', { nome_fornecedor: 'FORNECEDOR B' })]).length, 2))
 check('não mistura BK Brisk com Nápoles', () =>
