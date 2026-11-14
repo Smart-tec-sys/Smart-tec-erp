@@ -47,3 +47,14 @@ Os testes em \`tests/test_fiscal_nfe_xsd_referencia.py\` usam \`lxml.etree.XMLSc
 4. Ausência de assinatura no gerador de laboratório.
 
 Uma rejeição por assinatura **não comprova nem substitui assinatura válida**. Ainda é obrigatório testar integridade, X509, digest, referência do \`infNFe/@Id\`, canonicalização, regras da SEFAZ e o XSD **oficial verificado** com a versão correta. Nenhuma emissão ou integração com banco real foi habilitada.
+
+## Laboratório XMLDSig e PFX fictício (14/11/2026)
+
+- `app/services/fiscal_nfe_assinatura_laboratorio.py` implementa assinatura `ds:Signature` enveloped em `NFe/infNFe`, `Reference URI="#NFe..."`, C14N e algoritmo RSA-SHA1/SHA1 especificado no padrão de NF-e consultado. SHA-1 é legado e seu uso fica restrito ao laboratório, **não constitui recomendação para outras assinaturas**.
+- A função de assinatura recebe bytes de PFX e senha exclusivamente em memória e **só aceita certificado RSA autossinado e identificado com CN fixo de laboratório**, com key usage de assinatura, validade e correspondência chave pública/privada. Não importa certificado de empresas e não persiste arquivo nem senha.
+- `verificar_xml_assinado_laboratorio` verifica o hash do `infNFe`, assinatura `SignedInfo`, algoritmos, referência interna única e validade do certificado fictício; rejeita alteração de valores/ID, senha incorreta, expiração, certificado diferente, algoritmos inesperados e XML externo.
+- Testes geram certificados PFX com chaves efêmeras e senhas fictícias. Nenhum certificado real, credencial SEFAZ, banco ou cliente é utilizado.
+- O exemplo **assinado artificialmente** passa no XSD estrutural espelhado e versionado do projeto Java_NFe 4.3.0, verificado por hash; **isso NÃO comprova a conformidade com schemas oficiais PL_010g v1.03**, verificação ICP-Brasil, cálculos tributários, regras SEFAZ ou autorização fiscal.
+- Nenhuma API pública, integração de emissão, assinatura de venda real, armazenamento/rotação de certificados ou transmissão foi criada. O estágio para usar A1 real necessita cofre de segredos por CNPJ, política de acesso, auditoria, validade/revogação ICP-Brasil, idempotência, numeração, revalidação de NTs vigentes e homologação SEFAZ.
+
+**Status:** ensaio criptográfico local exclusivamente fictício; emissão permanece bloqueada.
