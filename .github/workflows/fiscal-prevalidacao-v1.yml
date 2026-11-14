@@ -41,7 +41,7 @@ jobs:
       - name: Compilar modulos fiscais sem executar API
         run: python -m py_compile app/services/fiscal_nfe_preparacao.py app/services/fiscal_nfe_cadastros.py app/routes/pedido.py app/services/fiscal_cadastros.py app/routes/fiscal_cadastros.py app/schemas/fiscal_cadastros.py app/models/fiscal_produto.py tests/test_fiscal_nfe_preparacao.py tests/test_fiscal_cadastros.py tests/test_fiscal_postgres_homologacao.py tests/test_fiscal_staging_runner.py scripts/fiscal/staging_migrate.py
       - name: Testes de pre-validacao e isolamento
-        run: python -m unittest -v tests/test_fiscal_nfe_preparacao.py tests/test_fiscal_cadastros.py tests/test_fiscal_postgres_homologacao.py
+        run: python -m unittest -v tests/test_fiscal_nfe_preparacao.py tests/test_fiscal_cadastros.py tests/test_fiscal_postgres_homologacao.py tests/test_fiscal_staging_runner.py
       - name: Preparar Node.js frontend
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
