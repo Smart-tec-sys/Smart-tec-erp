@@ -27,6 +27,7 @@ from app.routes.produto import router as router_produto
 from app.routes.servico import router as router_servico
 from app.routes.orcamento import router as router_orcamento
 from app.routes.pedido import router as router_pedido
+from app.routes.fiscal_cadastros import router as router_fiscal_cadastros
 from app.routes.producao import router as router_producao
 from app.routes.contabilidade import router as router_contabilidade
 from app.routes.representante import router as router_representante
