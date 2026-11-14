@@ -135,6 +135,31 @@ check('sem campo cor: código numérico de Double Vision não é inventado', () 
     familia_tecnica:null,produto_base:null,largura:0})
   assert.equal(fabric.fabricColor(item),'')
 })
+check('Romana acabada cadastrada como TECIDOS é produto fabricado, não tecido', () => {
+  const p={id:2100,nome:'ROMANA BK NÁPOLES (BRANCO)',cor:'BRANCO',
+    tipo_produto:'Produto fabricado',grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',
+    grupo_produto:'ROMANA',modelo_tecnico:'ROMANA',familia_tecnica:'ROMANA_BK_NAPOLES',unidade_venda:'M²'}
+  assert.equal(fabric.isFabricProduct(p), false)
+  assert.equal(fabric.fabricDisplay(p).name,'ROMANA BK NÁPOLES')
+  assert.ok(fabric.commercialVariantKey(p))
+})
+check('Cores de Romana fabricada compartilham coleção, mas não se misturam aos tecidos', () => {
+  const rows=['BRANCO','BEGE','CINZA'].map((cor,i)=>({
+    id:2200+i,nome:'ROMANA BK NÁPOLES ('+cor+')',cor,
+    tipo_produto:'Produto fabricado',grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',
+    grupo_produto:'ROMANA',modelo_tecnico:'ROMANA',familia_tecnica:'ROMANA_BK_NAPOLES',unidade_venda:'M²',
+  }))
+  const fabricRow=cloth(2300,'BRANCO',{nome:'TECIDO BK NÁPOLES - BRANCO - 2,60M'})
+  const groups=fabric.groupFabricCollections([...rows,fabricRow])
+  assert.equal(groups.length,2)
+  assert.equal(groups.find(g=>g.representative.id===2200).variants.length,3)
+})
+check('Eixo de Romana permanece componente, não produto acabado', () => {
+  const p={id:2400,nome:'EIXO P/ ROMANA - 7,2MM',tipo_produto:'Produto fabricado',
+    grupo_tecnico:'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',modelo_tecnico:'ROMANA'}
+  assert.equal(fabric.isClearlyFinishedProduct(p),false)
+  assert.equal(fabric.commercialVariantKey(p),null)
+})
 check('não mistura fornecedor diferente', () =>
   assert.equal(fabric.groupFabricCollections([white, cloth(105, 'CINZA', { nome_fornecedor: 'FORNECEDOR B' })]).length, 2))
 check('não mistura BK Brisk com Nápoles', () =>
