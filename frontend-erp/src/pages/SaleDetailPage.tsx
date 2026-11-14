@@ -16,6 +16,7 @@ import { formatCurrency, type ApiClient } from '../types/budget'
 import './saleDetailPage.css'
 import { ProducaoPanel } from '../components/ProducaoPanel'
 import { producaoV1Enabled } from '../services/producaoFlag'
+import { prepararNfeVenda, type PreparacaoNfeResponse } from '../services/fiscal'
 
 type Props = { saleId: number; onBack: () => void }
 
@@ -114,12 +115,35 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
   const [notFound, setNotFound] = useState(false)
   const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false)
   const [producaoAberta, setProducaoAberta] = useState(false)
+  const [fiscalOpen, setFiscalOpen] = useState(false)
+  const [fiscalLoading, setFiscalLoading] = useState(false)
+  const [fiscalError, setFiscalError] = useState('')
+  const [fiscalResultado, setFiscalResultado] = useState<PreparacaoNfeResponse | null>(null)
+
+  const conferirFiscal = async () => {
+    setFiscalOpen(true)
+    setFiscalLoading(true)
+    setFiscalError('')
+    setFiscalResultado(null)
+    try {
+      const resultado = await prepararNfeVenda(saleId)
+      setFiscalResultado(resultado)
+    } catch (error) {
+      setFiscalError(error instanceof Error ? error.message : 'Falha ao preparar diagnóstico fiscal.')
+    } finally {
+      setFiscalLoading(false)
+    }
+  }
+
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError('')
     setNotFound(false)
+    setFiscalOpen(false)
+    setFiscalResultado(null)
+    setFiscalError('')
     setOrder(null)
     setClients([])
     setSellers([])
@@ -179,6 +203,30 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
           </div>
           <div className="budget-number"><span>NÚMERO</span><strong>{order.numero || `#${order.id}`}</strong></div>
         </section>
+        <div style={{margin:'16px 0'}}>
+          <button type="button" className="secondary-button" disabled={fiscalLoading} onClick={() => {
+            if (fiscalOpen) {setFiscalOpen(false);return}
+            void conferirFiscal()
+          }}>{fiscalLoading?'Conferindo dados fiscais...':fiscalOpen?'Fechar conferência NF-e':'Conferir dados para NF-e (sem emissão)'}</button>
+        </div>
+        {fiscalOpen && <section className="form-section panel" aria-label="Pré-validação de NF-e">
+          <h2 className="commercial-title">Preparação de NF-e — somente leitura</h2>
+          <p>Este diagnóstico não gera XML, não reserva numeração e não transmite à SEFAZ.</p>
+          {fiscalLoading && <p role="status">Conferindo cadastro da empresa e produtos...</p>}
+          {fiscalError && <div className="api-message error" role="alert">{fiscalError}</div>}
+          {fiscalResultado && <>
+            <p role="status">Estado: <strong>Não apto para emissão</strong> · {fiscalResultado.quantidade_pendencias} pendências</p>
+            {fiscalResultado.cadastros_fiscais && <p>
+              SKUs fiscais cadastrados: {fiscalResultado.cadastros_fiscais.skus_com_cadastro} de {fiscalResultado.cadastros_fiscais.total_skus}
+            </p>}
+            <div style={{maxHeight:320,overflowY:'auto'}}>
+              <ul>{fiscalResultado.pendencias.map((p,i)=>
+                <li key={p.codigo+'-'+p.campo+'-'+i}><strong>{p.nivel==='revisao'?'Revisão':'Pendente'}:</strong> {p.mensagem}</li>
+              )}</ul>
+            </div>
+            <button type="button" className="secondary-button" onClick={()=>{void conferirFiscal()}}>Atualizar conferência</button>
+          </>}
+        </section>}
         {producaoV1Enabled && <button type="button" className="secondary-button" onClick={() => setProducaoAberta(value => !value)}>
           {producaoAberta ? 'Fechar produção' : 'Abrir produção V1'}
         </button>}
