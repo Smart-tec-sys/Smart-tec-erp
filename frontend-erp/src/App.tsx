@@ -38,6 +38,7 @@ import { SalesPage } from './pages/SalesPage'
 import { SaleDetailPage } from './pages/SaleDetailPage'
 import { AccountingPage } from './pages/AccountingPage'
 import { FinancePage, type FinanceFocus } from './pages/FinancePage'
+import { FiscalPage } from './pages/FiscalPage'
 import { NewBudgetPage } from './pages/NewBudgetPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { CadastrosPage, type CadastroEntity } from './pages/CadastrosPage'
@@ -305,7 +306,7 @@ function App() {
             return
         }
 
-        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Produtos' && label !== 'Configurações') return
+        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Fiscal' && label !== 'Produtos' && label !== 'Configurações') return
 
         setActivePage(label)
 
@@ -313,6 +314,7 @@ function App() {
         else if (label === 'Vendas') setView('sales')
         else if (label === 'Contabilidade') setView('accounting')
         else if (label === 'Financeiro') setView('finance')
+        else if (label === 'Fiscal') setView('fiscal')
         else if (label === 'Produtos') setView('products')
         else if (label === 'Configurações') setView('settings')
         else setView('dashboard')
@@ -552,6 +554,7 @@ function App() {
                     {view === 'new-sale' && <NewSalePage onBack={() => navigate('Vendas')} onSaved={() => { navigate('Vendas'); setBudgetSavedToast({ message: 'Venda salva com sucesso.' }) }} />}
                     {view === 'accounting' && <AccountingPage />}
                     {view === 'finance' && <FinancePage focus={financeFocus} onClearFocus={() => setFinanceFocus(null)} />}
+                    {view === 'fiscal' && <FiscalPage />}
                     {view === 'new-budget' && <NewBudgetPage budgetId={budgetId} onBack={() => navigate('Orçamentos')} onSaved={(id, mode) => { setBudgetId(id); setBudgetRefresh((value) => value + 1); navigate('Orçamentos'); setBudgetSavedToast({ message: mode === 'created' ? 'Orçamento salvo com sucesso.' : 'Orçamento atualizado com sucesso.' }) }} onConverted={() => navigate('Vendas')} />}
                     {view === 'products' && <ProductsPage />}
                     {view === 'cadastro' && <CadastrosPage entity={cadastroEntity} />}

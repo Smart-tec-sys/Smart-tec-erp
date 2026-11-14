@@ -8,6 +8,7 @@ export type AppView =
     | 'new-sale'
     | 'accounting'
     | 'finance'
+    | 'fiscal'
     | 'new-budget'
     | 'products'
     | 'cadastro'
@@ -40,6 +41,7 @@ const ROTAS: Record<string, { view: AppView; activePage: string }> = {
     'vendas': { view: 'sales', activePage: 'Vendas' },
     'vendas/nova': { view: 'new-sale', activePage: 'Vendas' },
     'financeiro': { view: 'finance', activePage: 'Financeiro' },
+    'fiscal': { view: 'fiscal', activePage: 'Fiscal' },
     'contabilidade': { view: 'accounting', activePage: 'Contabilidade' },
     'produtos': { view: 'products', activePage: 'Produtos' },
     'agenda': { view: 'agenda', activePage: 'Agenda' },
@@ -90,6 +92,7 @@ export function hashDaNavegacao(
         case 'sale-detail': return '#/vendas'
         case 'new-sale': return '#/vendas/nova'
         case 'finance': return '#/financeiro'
+        case 'fiscal': return '#/fiscal'
         case 'accounting': return '#/contabilidade'
         case 'products': return '#/produtos'
         case 'agenda': return '#/agenda'
