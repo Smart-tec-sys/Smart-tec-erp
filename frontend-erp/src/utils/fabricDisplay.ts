@@ -5,17 +5,40 @@ const normalizeField = (value: unknown) => normalizeSearch(String(value ?? ''))
   .replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
 const supplyMeasure = /^\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?|METROS? LINEARES?)$/i
 // Cores inequívocas observadas no cadastro; não interpretar códigos ou larguras como cor.
-const displayColor = /^(?:CINZA|BEGE|BRANCO|BRANCA|PRETO|PRETA|CREME|MARROM|LINHO|PALHA|PRATA|AMENDOA|FENDI|GELO|ALPINO|WHITE|BLACK|GREY|GRAY|IVORY|LINEN|NAVY|PEACH|BROWN|MESCLA|NATURAL|OFF WHITE|OFF WHAIT|TINTO (?:BEGE|PALHA|PRATA))$/i
+const displayColor = /^(?:CINZA|BEGE|BRANCO|BRANCA|PRETO|PRETA|CREME|MARROM|LINHO|PALHA|PRATA|AMENDOA|FENDI|GELO|ALPINO|WHITE|BLACK|GREY|GRAY|IVORY|LINEN|NAVY|PEACH|BROWN|MESCLA|NATURAL|OFF WHITE|OFF WHAIT|DK GREY|LT GREY|INK BLACK|AZUL ROYAL|CHOCOLATE|TINTO (?:BEGE|PALHA|PRATA))$/i
+const trailingColor = /\b(DK GREY|LT GREY|INK BLACK|AZUL ROYAL|OFF WHAIT|OFF WHITE|TINTO (?:BEGE|PALHA|PRATA)|BRANCO|BRANCA|BEGE|PRETO|PRETA|CINZA|WHITE|BLACK|GREY|GRAY|IVORY|CREME|MARROM|FENDI|GELO|AMENDOA|ALPINO|LINHO|LINEN|NATURAL|PALHA|PRATA|NAVY|PEACH|BROWN|MESCLA|CHOCOLATE)\s*$/i
+
+// Referência da cartela, não uma cor. Apenas inteiros em parênteses.
+export function fabricReference(product: ApiProduct): string {
+  if (!isFabricProduct(product)) return ''
+  return product.nome.trim().match(/\((\d{1,3})\)\s*$/)?.[1] || ''
+}
+
+function inferredColor(name: string): string {
+  // Ex.: "AQUARELA (GREY / 2,50)".
+  const coloredWidth = name.match(/\(([^()/]+?)\s*\/\s*(\d+(?:[.,]\d+)?)\)\s*$/)
+  if (coloredWidth && displayColor.test(coloredWidth[1].trim())) {
+    const stem = name.slice(0, coloredWidth.index)
+    const otherColor = stem.match(trailingColor)
+    if (!otherColor || normalizeField(otherColor[1]) === normalizeField(coloredWidth[1])) return coloredWidth[1].trim()
+  }
+  // Ex.: "TECIDO BK - PINPOINT BEGE - 1,83M".
+  const last = name.match(/\s+[-–—]\s+([^–—]+?)\s+[-–—]\s+(\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?))\s*$/i)?.[1]?.trim()
+  if (!last) return ''
+  if (displayColor.test(last)) return last
+  const qualified = last.match(/\b(DK GREY|LT GREY|INK BLACK|AZUL ROYAL|OFF WHAIT|OFF WHITE|BRANCO|BRANCA|BEGE|PRETO|PRETA|CINZA|WHITE|BLACK|GREY|GRAY|IVORY|CREME|MARROM|FENDI|GELO|AMENDOA|ALPINO|LINHO|LINEN|NATURAL|PALHA|PRATA|NAVY|PEACH|BROWN|MESCLA)\s+(STANDARD|PREMIUM)\s*$/i)
+  if (qualified) return qualified[1]
+  const trailing = last.match(trailingColor)
+  // Não apagar códigos (ex.: 5101, 812) nem medidas antes da cor.
+  if (trailing && last.slice(0, trailing.index).trim() && !/\d$/.test(last.slice(0, trailing.index).trim())) return trailing[1]
+  return ''
+}
 
 export function fabricColor(product: ApiProduct): string {
   const structured = product.variacao_cor?.trim() || product.cor?.trim() || product.cor_componente?.trim()
   if (structured) return structured
   if (!isFabricProduct(product)) return ''
-
-  // Exemplos reais sem cor estruturada: "TEC PICASSO BK - AMENDOA - 2,50M".
-  // Fallback intencionalmente estrito: nomes genéricos e códigos numéricos não são cores.
-  const match = product.nome.trim().match(/\s+[-–—]\s+([^–—]+?)\s+[-–—]\s+(\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?))\s*$/i)
-  return match && displayColor.test(match[1].trim()) ? match[1].trim() : ''
+  return inferredColor(product.nome.trim())
 }
 
 // O catálogo legado contém persianas acabadas dentro de grupos técnicos chamados TECIDOS.
@@ -55,20 +78,39 @@ export function fabricDisplay(product: ApiProduct) {
     return { name: label, width: '', fabric: false }
   }
   const color = normalizeField(fabricColor(product))
-  // O cadastro legado também usa "TECIDO BK BRISK (WHITE)" e "ROMANA BK BRISK (AMENDOA)".
-  // Remover cor só quando corresponder ao campo cor do SKU (ou a uma cor conhecida).
   let label = raw
+  let width = ''
+  const slashWidth = label.match(/\s*\(([^()/]+?)\s*\/\s*(\d+(?:[.,]\d+)?)\)\s*$/)
+  if (slashWidth && color && normalizeField(slashWidth[1]) === color) {
+    label = label.slice(0, slashWidth.index).trim()
+    width = slashWidth[2] + ' M'
+  }
   const suffix = label.match(/\s*\(([^()]*)\)\s*$/)
-  if (suffix && ((color && normalizeField(suffix[1]) === color) || displayColor.test(suffix[1]))) {
+  const reference = fabricReference(product)
+  if (suffix && ((color && normalizeField(suffix[1]) === color) ||
+      displayColor.test(suffix[1].trim()) || (reference && suffix[1].trim() === reference))) {
     label = label.slice(0, suffix.index).trim()
   }
   const parts = label.split(/\s+[-–—]\s+/)
-  let width = ''
   while (parts.length > 1) {
     const last = parts[parts.length - 1].trim()
-    if (supplyMeasure.test(last)) { width = last; parts.pop() }
-    else if ((color && normalizeField(last) === color) || displayColor.test(last)) parts.pop()
-    else break
+    if (supplyMeasure.test(last)) { width = last; parts.pop(); continue }
+    if (color && (normalizeField(last) === color || displayColor.test(last))) {
+      parts.pop()
+      continue
+    }
+    // Preservar nome da coleção e eventuais qualificadores (STANDARD/PREMIUM).
+    const escaped = color.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
+    const qualifier = color && last.match(new RegExp('^(.*?)\\s+' + escaped + '\\s+(STANDARD|PREMIUM)$', 'i'))
+    if (qualifier) {
+      parts[parts.length - 1] = (qualifier[1] + ' ' + qualifier[2]).trim()
+      break
+    }
+    const trailing = color && last.match(new RegExp('^(.*?)\\s+' + escaped + '$', 'i'))
+    if (trailing && trailing[1].trim()) {
+      parts[parts.length - 1] = trailing[1].trim()
+    }
+    break
   }
   let name = parts.join(' - ').trim()
   if (color && normalizeField(name).endsWith(' ' + color)) {
@@ -134,7 +176,7 @@ export function groupFabricCollections(products: ApiProduct[]): FabricCollection
   const collections = new Map<string, FabricCollection>()
   for (const product of products) {
     const view = fabricDisplay(product)
-    const groupableFabric = view.fabric && !!(fabricColor(product) || product.produto_base?.trim())
+    const groupableFabric = view.fabric && !!(fabricColor(product) || fabricReference(product) || product.produto_base?.trim())
     const finishedKey = !view.fabric ? commercialVariantKey(product) : null
     const key = groupableFabric ? 'fabric:' + fabricVariantKey(product)
       : finishedKey ? 'finished:' + finishedKey
@@ -145,7 +187,7 @@ export function groupFabricCollections(products: ApiProduct[]): FabricCollection
       collections.set(key, collection)
     }
     collection.variants.push(product)
-    const color = fabricColor(product)
+    const color = fabricColor(product) || (fabricReference(product) ? 'Ref. ' + fabricReference(product) : '')
     const colorKey = normalizeField(color)
     const matching = collection.colors.find(c => normalizeField(c.color) === colorKey)
     if (matching) matching.variants.push(product)
