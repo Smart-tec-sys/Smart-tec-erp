@@ -25,6 +25,18 @@ const sample: ApiProduct[] = [
     cor: color, unidade_venda: 'M²', custo_final: 30+i*8,
     status_comercial: 'ATIVO', empresa_id: 1,
   })),
+  ...['AMENDOA','BEGE','CINZA','FENDI','GELO'].map((color, i) => ({
+    id: 501+i, nome: 'TEC PICASSO BK - '+color+' - 2,50M',
+    grupo_tecnico: 'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',
+    cor: null, largura: 2.5, unidade_venda: 'M²', custo_final: 12+i*4,
+    status_comercial: 'ATIVO', empresa_id: 1,
+  })),
+  ...['WHITE','BLACK','IVORY'].map((color,i) => ({
+    id: 601+i, nome: 'DOUBLE VISION BK. MEXICO ('+color+')',
+    grupo_tecnico: 'TECIDOS_PERSIANAS_DOUBLE_VISION',
+    modelo_tecnico: 'DOUBLE_VISION', cor: color, unidade_venda: 'M²',
+    custo_final: 20+i*3, status_comercial: 'ATIVO', empresa_id: 1,
+  })),
   { id: 401, nome: 'ROLÔ BK NAPOLES', grupo_tecnico: 'PERSIANA_ROLO',
     familia_tecnica: 'ROLO_BK_NAPOLES', modelo_tecnico: 'ROLO',
     status_comercial: 'ATIVO', unidade_venda: 'M²', custo_final: 80 },
