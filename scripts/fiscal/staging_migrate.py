@@ -93,7 +93,7 @@ def inspect(conn) -> dict:
               FROM pg_constraint
              WHERE conrelid='public.fiscal_produtos'::regclass
                AND conname IN ('pk_fiscal_produtos', 'fk_fiscal_produto_tenant')
-        """)))
+        """)).tuples().all())
         if fiscal_constraints != {
             "pk_fiscal_produtos": "p",
             "fk_fiscal_produto_tenant": "f",
