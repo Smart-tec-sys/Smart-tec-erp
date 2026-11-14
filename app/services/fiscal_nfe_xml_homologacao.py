@@ -34,7 +34,7 @@ class XmlFiscalNaoHabilitado(ValueError):
 def _e(parent: ET.Element, tag: str, value: str) -> ET.Element:
     if not isinstance(value, str) or not value.strip():
         raise XmlFiscalNaoHabilitado(f"Campo obrigatório do exemplo ausente: {tag}")
-    return ET.SubElement(parent, f"{{{NS_NFE}}}{tag}", text=value) if False else _insert(parent, tag, value)
+    return _insert(parent, tag, value)
 
 
 def _insert(parent: ET.Element, tag: str, value: str) -> ET.Element:
