@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const ts = require('typescript')
+const ts = require('/tmp/smarttec-test-ts/node_modules/typescript')
 
 function loadTS(relativePath, dependencies = {}) {
   const original = fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8')
