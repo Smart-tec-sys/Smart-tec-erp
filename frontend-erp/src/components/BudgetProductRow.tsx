@@ -2,7 +2,7 @@ import { commercialDisplayText } from '../utils/commercialDisplay'
 import { CurtainColorField } from './CurtainColorField'
 import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
 import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
-import { commercialVariantKey, fabricColor, fabricDisplay, fabricVariantKey, groupFabricCollections, isFabricProduct } from '../utils/fabricDisplay'
+import { commercialVariantKey, fabricColor, fabricReference, fabricDisplay, fabricVariantKey, groupFabricCollections, isFabricProduct } from '../utils/fabricDisplay'
 import { rankProductSuggestions } from '../utils/productSuggestionRank'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
@@ -101,7 +101,7 @@ export function BudgetProductRow({
     const commercialKey = isFinishedProduct(selected) ? commercialVariantKey(selected) : null
     if (commercialKey) return catalog.filter(p => active(p) && isFinishedProduct(p) && commercialVariantKey(p) === commercialKey)
     if (fabricDisplay(selected).fabric) {
-      if (!(fabricColor(selected) || selected.produto_base?.trim())) return [selected]
+      if (!(fabricColor(selected) || fabricReference(selected) || selected.produto_base?.trim())) return [selected]
       return catalog.filter(p => active(p) && fabricDisplay(p).fabric && fabricVariantKey(p) === fabricVariantKey(selected))
     }
     return selected.familia_tecnica ? catalog.filter(p => active(p) && p.familia_tecnica === selected.familia_tecnica) : [selected]
@@ -126,15 +126,15 @@ export function BudgetProductRow({
   ]
 
   const colorOptions = useMemo(() => {
-    const items = variants.filter((p) => !isCurtainCatalogItem(p) && (fabricDisplay(p).fabric ? fabricColor(p) : productColor(p)))
+    const items = variants.filter((p) => !isCurtainCatalogItem(p) && (fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p)))
     const counts = new Map<string, number>()
     items.forEach(p => {
-      const color = fabricDisplay(p).fabric ? fabricColor(p) : productColor(p)
+      const color = fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p)
       const key = normalizeSearch(color)
       counts.set(key, (counts.get(key) ?? 0) + 1)
     })
     return items.map(p => {
-      const color = fabricDisplay(p).fabric ? fabricColor(p) : productColor(p)
+      const color = fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p)
       const duplicate = (counts.get(normalizeSearch(color)) ?? 0) > 1
       return { product: p, label: duplicate ? color + ' (' + (p.codigo_interno || p.codigo || 'ID ' + p.id) + ')' : color }
     })
@@ -179,7 +179,7 @@ export function BudgetProductRow({
       groupTechnical: p.grupo_tecnico || '',
       modelTechnical: p.modelo_tecnico || '',
       unit: p.unidade_venda || p.unidade || '',
-      color: fabricDisplay(p).fabric ? fabricColor(p) : productColor(p),
+      color: fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p),
       price: rKind ? 0 : rlKind ? 0 : dvKind ? 0 : rtKind ? 0 : commercialPrice(p, commercialType),
       priceManual:false,
       suggestedPrice:rKind || rlKind || dvKind || rtKind ? undefined : commercialPrice(p,commercialType),
