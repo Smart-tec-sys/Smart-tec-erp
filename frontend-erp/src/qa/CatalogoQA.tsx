@@ -37,6 +37,18 @@ const sample: ApiProduct[] = [
     modelo_tecnico: 'DOUBLE_VISION', cor: color, unidade_venda: 'M²',
     custo_final: 20+i*3, status_comercial: 'ATIVO', empresa_id: 1,
   })),
+  ...['51','52','53'].map((reference,i) => ({
+    id: 701+i, nome: 'SCREEN 1% ONE ('+reference+')',
+    grupo_tecnico: 'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',
+    cor: null, unidade_venda: 'M²', custo_final: 24+i*3,
+    status_comercial: 'ATIVO', empresa_id: 1,
+  })),
+  ...['GREY','BEGE','CINZA'].map((color,i) => ({
+    id: 801+i, nome: 'AQUARELA ('+color+' / 2,50)',
+    grupo_tecnico: 'TECIDOS_PERSIANAS_ROLO_ROMANA_PAINEL',
+    cor: null, unidade_venda: 'M²', custo_final: 19+i*5,
+    status_comercial: 'ATIVO', empresa_id: 1,
+  })),
   { id: 401, nome: 'ROLÔ BK NAPOLES', grupo_tecnico: 'PERSIANA_ROLO',
     familia_tecnica: 'ROLO_BK_NAPOLES', modelo_tecnico: 'ROLO',
     status_comercial: 'ATIVO', unidade_venda: 'M²', custo_final: 80 },
