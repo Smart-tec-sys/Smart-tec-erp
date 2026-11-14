@@ -4,9 +4,19 @@ import unittest
 
 from sqlalchemy import create_engine, text
 
-from scripts.fiscal.staging_migrate import (
-    EXPECTED_DATABASE, PreflightError, check_database_url, run,
-)
+# scripts/__init__.py do projeto legado não é importável; carregar o arquivo
+# do migrador isoladamente, sem executar outros scripts do ERP.
+import importlib.util
+from pathlib import Path
+location = Path(__file__).resolve().parents[1] / "scripts/fiscal/staging_migrate.py"
+spec = importlib.util.spec_from_file_location("fiscal_staging_migrate", location)
+module = importlib.util.module_from_spec(spec)
+assert spec is not None and spec.loader is not None
+spec.loader.exec_module(module)
+EXPECTED_DATABASE = module.EXPECTED_DATABASE
+PreflightError = module.PreflightError
+check_database_url = module.check_database_url
+run = module.run
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 if not DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://")):
