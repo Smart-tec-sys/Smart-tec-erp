@@ -1,42 +1,109 @@
-import { normalizeSearch, productColor, type ApiProduct } from '../types/budget'
+import { normalizeSearch, type ApiProduct } from '../types/budget'
 
-const supplyMeasure = /^\d+(?:[.,]\d+)?\s*(?:M|METROS?)$/i
-// Reconhecimento apenas para apresentação; não cria uma relação de cores no cadastro.
+// Agrupamento exclusivamente visual; estoque, preço e identidade do SKU permanecem intactos.
+const normalizeField = (value: unknown) => normalizeSearch(String(value ?? ''))
+  .replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+const supplyMeasure = /^\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?|METROS? LINEARES?)$/i
 const displayColor = /^(?:CINZA|BEGE|BRANCO|BRANCA|PRETO|PRETA|CREME|MARROM|LINHO|PALHA|PRATA|TINTO (?:BEGE|PALHA|PRATA))$/i
+
+export const fabricColor = (product: ApiProduct) =>
+  product.variacao_cor?.trim() || product.cor?.trim() || product.cor_componente?.trim() || ''
+
+export function isFabricProduct(product: ApiProduct): boolean {
+  const technical = [product.grupo_tecnico, product.familia_tecnica, product.grupo_produto]
+    .map(normalizeField)
+  if (technical.some(value => /(?:^| )TECIDOS?(?: |$)/.test(value))) return true
+  const type = normalizeField(product.tipo_produto)
+  if (/(?:^| )(?:PRODUTO ACABADO|PERSIANA ACABADA)(?: |$)/.test(type)) return false
+  if (technical.some(value => /(?:^| )(?:PERSIANAS?|CORTINAS? PRONTAS?)(?: |$)/.test(value))) return false
+  const name = normalizeField(product.nome)
+  if (/^(?:PERSIANA|CORTINA PRONTA) /.test(name)) return false
+  if (/(?:^| )TECIDOS?(?: |$)/.test(name)) return true
+  const model = normalizeField(product.modelo_tecnico)
+  if (/^(?:ROLO|ROMANA|ROMANA TETO|DOUBLE VISION)(?: |$)/.test(model)) return false
+  return /(?:^| )(?:SCREEN|BLACKOUT)(?: |$)/.test(name)
+}
+
 export function fabricDisplay(product: ApiProduct) {
   const raw = product.nome.trim()
-  const fabric = /\b(?:SCREEN|TECIDOS?|BLACKOUT)\b/.test(normalizeSearch([raw, product.grupo_tecnico, product.grupo_produto, product.familia_tecnica].join(' ')))
-  if (!fabric) return { name: raw, width: '', fabric: false }
+  if (!isFabricProduct(product)) return { name: raw, width: '', fabric: false }
   const parts = raw.split(/\s+[-–—]\s+/)
-  const color = normalizeSearch(productColor(product))
+  const color = normalizeField(fabricColor(product))
   let width = ''
   while (parts.length > 1) {
     const last = parts[parts.length - 1].trim()
     if (supplyMeasure.test(last)) { width = last; parts.pop() }
-    else if ((color && normalizeSearch(last) === color) || displayColor.test(last)) parts.pop()
+    else if ((color && normalizeField(last) === color) || displayColor.test(last)) parts.pop()
     else break
   }
-  const name = parts.join(' - ').trim()
+  let name = parts.join(' - ').trim()
+  if (color && normalizeField(name).endsWith(' ' + color)) {
+    const words = name.split(/\s+/)
+    const colorWords = color.split(/\s+/).length
+    if (words.length > colorWords) name = words.slice(0, -colorWords).join(' ')
+  }
   return { name, width: width || (Number(product.largura) > 0 ? String(product.largura) + ' m' : ''), fabric: true }
 }
+
+function normalizedWidth(value: string) {
+  const match = value.match(/^(\d+(?:[.,]\d+)?)\s*(?:M|ML|METROS?|METROS? LINEARES?)$/i)
+  return match ? String(Number(match[1].replace(',', '.'))) + ' M' : normalizeField(value)
+}
+
 export function fabricVariantKey(product: ApiProduct) {
   const view = fabricDisplay(product)
-  return JSON.stringify([normalizeSearch(view.name), product.familia_tecnica ?? '', product.modelo_tecnico ?? '', product.grupo_tecnico ?? '', product.tipo_produto ?? '', product.unidade_venda ?? product.unidade ?? '', normalizeSearch(view.width).replace(',', '.')])
+  return JSON.stringify([
+    normalizeField(view.name), normalizeField(product.produto_base),
+    normalizeField(product.nome_fornecedor || product.fornecedores || ''),
+    normalizeField(product.grupo_tecnico), normalizeField(product.familia_tecnica),
+    normalizeField(product.modelo_tecnico), normalizeField(product.tipo_produto),
+    normalizeField(product.unidade_venda || product.unidade), normalizedWidth(view.width),
+    (product as ApiProduct & { empresa_id?: number | null }).empresa_id ?? null,
+  ])
 }
-export function groupFabricSuggestions(products: ApiProduct[]) {
-  const groups = new Map<string, ApiProduct[]>()
+
+// Identidade própria para produtos acabados, independente da identificação dos tecidos.
+export function commercialVariantKey(product: ApiProduct) {
+  if (!product.produto_base?.trim()) return null
+  return JSON.stringify([
+    product.produto_base, product.familia_tecnica, product.modelo_tecnico,
+    product.grupo_tecnico, product.tipo_produto, product.unidade_venda ?? product.unidade,
+  ].map(value => normalizeField(value)))
+}
+
+export type FabricCollection = {
+  key: string
+  name: string
+  width: string
+  representative: ApiProduct
+  variants: ApiProduct[]
+  colors: Array<{ color: string; variants: ApiProduct[] }>
+}
+
+// Uma coleção por entrada na busca, com as cores e SKUs preservados.
+export function groupFabricCollections(products: ApiProduct[]): FabricCollection[] {
+  const collections = new Map<string, FabricCollection>()
   for (const product of products) {
     const view = fabricDisplay(product)
-    // Sem cor estruturada, preservar cada registro e o comportamento já existente.
-    const key = view.fabric && productColor(product) ? fabricVariantKey(product) : `id:${product.id}`
-    groups.set(key, [...(groups.get(key) ?? []), product])
+    const groupable = view.fabric && !!(fabricColor(product) || product.produto_base?.trim())
+    const key = groupable ? 'fabric:' + fabricVariantKey(product)
+      : 'product:' + String((product as ApiProduct & { empresa_id?: number | null }).empresa_id ?? '') + ':' + product.id
+    let collection = collections.get(key)
+    if (!collection) {
+      collection = { key, name: view.name, width: view.width, representative: product, variants: [], colors: [] }
+      collections.set(key, collection)
+    }
+    collection.variants.push(product)
+    const color = fabricColor(product)
+    const colorKey = normalizeField(color)
+    const matching = collection.colors.find(c => normalizeField(c.color) === colorKey)
+    if (matching) matching.variants.push(product)
+    else collection.colors.push({ color, variants: [product] })
   }
-  const result: ApiProduct[] = []
-  for (const rows of groups.values()) {
-    const colors = rows.map(row => normalizeSearch(productColor(row)))
-    // Duplicidades da mesma cor podem ser cadastros distintos: não ocultá-las.
-    if (new Set(colors).size < rows.length) result.push(...rows)
-    else result.push(rows[0])
-  }
-  return result
+  return [...collections.values()]
+}
+
+// Não perde SKUs nas telas que ainda usam a interface antiga.
+export function groupFabricSuggestions(products: ApiProduct[]): ApiProduct[] {
+  return groupFabricCollections(products).flatMap(group => group.variants)
 }

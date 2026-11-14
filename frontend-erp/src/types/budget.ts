@@ -287,7 +287,7 @@ export const usesSquareMeter = (unit:string) => ['M2','M²','METRO QUADRADO','MQ
 export const curtainKey = (item:BudgetProduct, profile:CommercialType) => {
   const c=item.curtain
   if(!c) return ''
-  return JSON.stringify([Object.entries(profileLabel).find(([,label])=>label===profile)?.[0],item.discount,c.tecidoProdutoId??null,parseDecimal(item.width),parseDecimal(item.height),Math.max(1,item.quantity||1),c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,c.tipoForro??'',c.trilhoLinha??'',c.trilhoModelo??'',c.rodizioTipo??'',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,c.tipoEntretela,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina,c.possuiForro?c.forroProdutoId??null:null,c.possuiForro?c.larguraForro??null:null,c.trilhoProdutoId??null,c.rodizioProdutoId??null,c.ganchoProdutoId??null,c.botaoProdutoId??null,c.entretelaProdutoId??null,c.componentes?.map(l=>[l.produto_id??null,l.quantidade,l.unidades_por_embalagem??1])??null,c.baseMaoObra??'ALTURA_VERTICAL_150'])
+  return JSON.stringify([Object.entries(profileLabel).find(([,label])=>label===profile)?.[0],item.discount,c.tecidoProdutoId??null,c.tecido,c.tecidoNome??'',c.colecaoTecido??'',c.fornecedorTecido??'',c.cor??'',item.color??'',parseDecimal(item.width),parseDecimal(item.height),Math.max(1,item.quantity||1),c.fator,c.larguraTecido,c.modeloPrega,c.possuiForro,c.tipoForro??'',c.trilhoLinha??'',c.trilhoModelo??'',c.rodizioTipo??'',c.cabecaCm,c.barraCm,c.barraDupla,c.usaEntretela,c.tipoEntretela,c.fixacaoCortina,c.trilhoComCordas,c.sistemaWave,c.espacamentoBotaoCm,c.aberturaCortina,c.possuiForro?c.forroProdutoId??null:null,c.possuiForro?c.larguraForro??null:null,c.trilhoProdutoId??null,c.rodizioProdutoId??null,c.ganchoProdutoId??null,c.botaoProdutoId??null,c.entretelaProdutoId??null,c.componentes?.map(l=>[l.produto_id??null,l.quantidade,l.unidades_por_embalagem??1])??null,c.baseMaoObra??'ALTURA_VERTICAL_150'])
 }
 // Sugestão e negociação têm estados distintos: a simulação nunca apaga um preço manual.
 export const applySuggestedProductPrice = (item:BudgetProduct, price:number|undefined):BudgetProduct =>
@@ -428,7 +428,7 @@ export function getProductCompleteness(product: ApiProduct): ProductCompleteness
   }
 
   // Unidade de venda
-  if (!product.unidade_venda?.trim()) {
+  if (!product.unidade_venda?.trim() && !product.unidade?.trim()) {
     missingFields.push('unidade de venda')
   }
 
@@ -441,7 +441,7 @@ export function getProductCompleteness(product: ApiProduct): ProductCompleteness
   }
 
   // Cor / variação (campos que existem no tipo atual)
-  if (!product.cor?.trim() && !product.cor_componente?.trim() && !product.variacao_cor?.trim()) {
+  if (product.varia_cor === true && !!product.produto_base?.trim() && !product.cor?.trim() && !product.cor_componente?.trim() && !product.variacao_cor?.trim()) {
     missingFields.push('cor/variação')
   }
 
