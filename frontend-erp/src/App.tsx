@@ -554,6 +554,7 @@ function App() {
                     {view === 'new-sale' && <NewSalePage onBack={() => navigate('Vendas')} onSaved={() => { navigate('Vendas'); setBudgetSavedToast({ message: 'Venda salva com sucesso.' }) }} />}
                     {view === 'accounting' && <AccountingPage />}
                     {view === 'finance' && <FinancePage focus={financeFocus} onClearFocus={() => setFinanceFocus(null)} />}
+                    {view === 'fiscal' && <FiscalPage />}
                     {view === 'new-budget' && <NewBudgetPage budgetId={budgetId} onBack={() => navigate('Orçamentos')} onSaved={(id, mode) => { setBudgetId(id); setBudgetRefresh((value) => value + 1); navigate('Orçamentos'); setBudgetSavedToast({ message: mode === 'created' ? 'Orçamento salvo com sucesso.' : 'Orçamento atualizado com sucesso.' }) }} onConverted={() => navigate('Vendas')} />}
                     {view === 'products' && <ProductsPage />}
                     {view === 'cadastro' && <CadastrosPage entity={cadastroEntity} />}
