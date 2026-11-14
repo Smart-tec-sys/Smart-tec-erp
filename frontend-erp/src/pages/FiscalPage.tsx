@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { getAllProducts } from '../services/api'
 import type { ApiProduct } from '../types/budget'
 import { useAuthSession } from '../components/AuthGate'
-import { getFiscalEmpresa, getFiscalProduto, patchFiscalEmpresa, patchFiscalProduto } from '../services/fiscal'
-import type { FiscalEmpresaDados, FiscalProdutoDados } from '../services/fiscal'
+import { getFiscalEmpresa, getFiscalProduto, getFiscalCertificadoA1Status, patchFiscalEmpresa, patchFiscalProduto } from '../services/fiscal'
+import type { FiscalEmpresaDados, FiscalProdutoDados, FiscalCertificadoA1Status } from '../services/fiscal'
 import './FiscalPage.css'
 import { NfeGestaoClickPreview } from './NfeGestaoClickPreview'
 
@@ -56,6 +56,9 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
   const [demoProductsSaved,setDemoProductsSaved]=useState<Record<number,FiscalProdutoDados>>({})
+  const [certStatus,setCertStatus]=useState<FiscalCertificadoA1Status|null>(null)
+  const [certError,setCertError]=useState('')
+  const [certLoading,setCertLoading]=useState(false)
 
   useEffect(()=>{
     let active=true
@@ -75,6 +78,30 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     getFiscalEmpresa().then(r=>{if(active){setCompany(r.dados);setEmitente({razao_social:r.razao_social||'',nome_fantasia:r.nome_fantasia||'',documento:r.documento||''})}}).catch(e=>{if(active)setError(String(e.message||e))}).finally(()=>{if(active)setLoading(false)})
     return()=>{active=false}
   },[companyId,modoHomologacao])
+
+  useEffect(()=>{
+    if(tab!=='certificado')return
+    if(modoHomologacao){
+      setCertStatus({empresa_id:999,tipo:'A1',situacao:'NAO_CONFIGURADO',cofre_configurado:false,
+        certificado_armazenado:false,emissao_habilitada:false,
+        aviso:'Prévia fictícia: armazenamento A1 não configurado.'})
+      setCertError('')
+      return
+    }
+    if(!canEdit){
+      setCertStatus(null)
+      setCertError('Somente proprietário ou administrador pode conferir o certificado.')
+      return
+    }
+    let active=true
+    setCertStatus(null)
+    setCertError('')
+    setCertLoading(true)
+    getFiscalCertificadoA1Status().then(r=>{if(active)setCertStatus(r)})
+      .catch(e=>{if(active)setCertError(e instanceof Error?e.message:'Falha ao consultar A1.')})
+      .finally(()=>{if(active)setCertLoading(false)})
+    return()=>{active=false}
+  },[tab,companyId,modoHomologacao,canEdit])
 
   useEffect(()=>{
     if(tab!=='produto'||catalog.length)return
@@ -154,6 +181,15 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
       : tab==='certificado' ? <section className="fiscal-v1-panel">
         <h2>Certificado digital</h2>
         <p>O GestãoClick apresenta certificados A1 e A3. Nesta primeira versão da Smart-tec, estamos preparando a integração segura do <strong>A1 (arquivo PFX/P12)</strong>.</p>
+        <div className="fiscal-v1-company-identification" role="status" style={{padding:14,margin:'12px 0'}}>
+          <strong>Status do A1 da empresa ativa</strong>
+          {certLoading&&<p>Consultando situação do A1...</p>}
+          {certError&&<p className="fiscal-v1-error">{certError}</p>}
+          {certStatus&&<>
+            <p><strong>{certStatus.situacao==='NAO_CONFIGURADO'?'Não configurado':certStatus.situacao}</strong> · Cofre: não configurado · Emissão: bloqueada</p>
+            <p>{certStatus.aviso}</p>
+          </>}
+        </div>
         <div className="fiscal-v1-cert-types">
           <article><strong>Certificado A1</strong><p>Arquivo e senha serão tratados em fluxo protegido, com autorização por empresa. Ainda não disponível nesta prévia.</p></article>
           <article><strong>Certificado A3</strong><p>Compatibilidade futura, condicionada a integração com dispositivo ou provedor de assinatura.</p></article>
