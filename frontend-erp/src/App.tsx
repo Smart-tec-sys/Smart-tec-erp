@@ -314,6 +314,7 @@ function App() {
         else if (label === 'Vendas') setView('sales')
         else if (label === 'Contabilidade') setView('accounting')
         else if (label === 'Financeiro') setView('finance')
+        else if (label === 'Fiscal') setView('fiscal')
         else if (label === 'Produtos') setView('products')
         else if (label === 'Configurações') setView('settings')
         else setView('dashboard')
