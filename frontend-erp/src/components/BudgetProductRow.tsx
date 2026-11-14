@@ -2,7 +2,7 @@ import { commercialDisplayText } from '../utils/commercialDisplay'
 import { CurtainColorField } from './CurtainColorField'
 import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
 import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
-import { commercialVariantKey, fabricColor, fabricDisplay, fabricVariantKey, groupFabricCollections } from '../utils/fabricDisplay'
+import { commercialVariantKey, fabricColor, fabricDisplay, fabricVariantKey, groupFabricCollections, isFabricProduct } from '../utils/fabricDisplay'
 import { rankProductSuggestions } from '../utils/productSuggestionRank'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
@@ -52,7 +52,7 @@ type Props = {
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
 
 const isFinishedProduct = (p: ApiProduct) =>
-  Boolean(romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p))
+  !isFabricProduct(p) && Boolean(romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p))
 
 const isCurtainCatalogItem = (p: ApiProduct) =>
   normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' ||
@@ -164,10 +164,11 @@ export function BudgetProductRow({
 
   const choose = (p: ApiProduct) => {
     if (!confirmPriceReset()) return
-    const rKind = romanaKind(p)
-    const rtKind = romanaTetoKind(p)
-    const rlKind = roloKind(p)
-    const dvKind = doubleVisionKind(p)
+    const isSupply = isFabricProduct(p)
+    const rKind = isSupply ? null : romanaKind(p)
+    const rtKind = isSupply ? null : romanaTetoKind(p)
+    const rlKind = isSupply ? null : roloKind(p)
+    const dvKind = isSupply ? null : doubleVisionKind(p)
     setQuery(fabricDisplay(p).name)
     onChange({
       ...product,
