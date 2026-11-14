@@ -33,3 +33,14 @@ jobs:
         run: npm install --prefix /tmp/smarttec-test-ts --no-save --no-audit --no-fund --ignore-scripts typescript@5.8.3
       - name: Testes de regressão do catálogo
         run: node tests/catalogo-colecoes.test.cjs
+      - name: Instalar navegador de teste isolado
+        run: |
+          npm install --prefix /tmp/smarttec-qa-browser --no-save --no-audit --no-fund --ignore-scripts playwright@1.55.0
+          node /tmp/smarttec-qa-browser/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Homologar interface do orçamento com catálogo fictício
+        run: |
+          (npm run dev -- --host 127.0.0.1 --port 5175 > /tmp/smarttec-vite-qa.log 2>&1) &
+          vite_pid=$!
+          trap 'kill "$vite_pid" 2>/dev/null || true' EXIT
+          node tests/catalogo-ui.test.cjs
+
