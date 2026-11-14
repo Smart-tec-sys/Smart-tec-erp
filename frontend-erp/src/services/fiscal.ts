@@ -82,3 +82,9 @@ export type PreparacaoNfeResponse = {
 }
 export const prepararNfeVenda = (pedidoId:number)=>
   fiscalRequest<PreparacaoNfeResponse>('/pedidos/'+pedidoId+'/fiscal/preparacao-nfe')
+
+export type FiscalCertificadoA1Status = {
+  empresa_id:number;tipo:'A1';situacao:'NAO_CONFIGURADO';
+  cofre_configurado:false;certificado_armazenado:false;emissao_habilitada:false;aviso:string;
+}
+export const getFiscalCertificadoA1Status = ()=>fiscalRequest<FiscalCertificadoA1Status>('/fiscal/cadastros/certificado-a1/status')
