@@ -26,6 +26,22 @@ def _money(value) -> Decimal | None:
         return None
 
 
+def _quantidade(value) -> Decimal | None:
+    """Quantidades do ERP preservam até quatro casas decimais (não são dinheiro)."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        numero = Decimal(str(value))
+        if not numero.is_finite():
+            return None
+        # Não arredondar dados com precisão maior, que exigem revisão.
+        if numero != numero.quantize(Decimal("0.0001")):
+            return None
+        return numero
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
 def _document(value) -> str:
     return _DIGITS.sub("", str(value or ""))
 
@@ -90,7 +106,7 @@ def analisar_venda_nfe(pedido: dict, empresa: dict, destinatario: dict | None) -
             add("PRODUTO_SEM_ID", "Produto sem vínculo cadastral.", scope + ".produto_id")
         if not str(item.get("descricao") or "").strip():
             add("ITEM_SEM_DESCRICAO", "Descrição do item ausente.", scope + ".descricao")
-        quantidade = _money(item.get("quantidade"))
+        quantidade = _quantidade(item.get("quantidade"))
         subtotal = _money(item.get("subtotal"))
         if quantidade is None or quantidade <= 0:
             add("QUANTIDADE_INVALIDA", "Quantidade ausente ou inválida.", scope + ".quantidade")
