@@ -11,7 +11,20 @@ const trailingColor = /\b(DK GREY|LT GREY|INK BLACK|AZUL ROYAL|OFF WHAIT|OFF WHI
 // Referência da cartela, não uma cor. Apenas inteiros em parênteses.
 export function fabricReference(product: ApiProduct): string {
   if (!isFabricProduct(product)) return ''
-  return product.nome.trim().match(/\((\d{1,3})\)\s*$/)?.[1] || ''
+  const name = product.nome.trim()
+  const numeric = name.match(/\((\d{1,3})\)\s*$/)
+  if (numeric) return numeric[1]
+  const combined = name.match(/\((\d{1,3})\s*\/\s*\d+(?:[.,]\d+)?\)\s*$/)
+  if (combined) return combined[1]
+  // "TEC HOUSTON BK - BEGE 812 - 2,50M": 812 é referência do SKU, não cor.
+  const parts = name.split(/\s+[-–—]\s+/)
+  if (parts.length < 3 || !supplyMeasure.test(parts[parts.length - 1])) return ''
+  const segment = parts[parts.length - 2]
+  const code = segment.match(/^(?:BEGE|BRANCO|CINZA|PRETO|WHITE|BLACK|GREY|FENDI|MARROM|CREME|NATURAL|AMENDOA|ALPINO|LINEN|GELO)\s+(\d{3,4})$/i)
+  if (!code) return ''
+  const base = parts.slice(0,-2).join(' - ')
+  if (/^(?:TECIDO|TEC|TECDO)\s+(?:BK|TR|SC|JP)$/i.test(base)) return ''
+  return code[1]
 }
 
 function inferredColor(name: string): string {
@@ -24,7 +37,18 @@ function inferredColor(name: string): string {
   }
   // Ex.: "TECIDO BK - PINPOINT BEGE - 1,83M".
   const last = name.match(/\s+[-–—]\s+([^–—]+?)\s+[-–—]\s+(\d+(?:[.,]\d+)?\s*(?:M|ML|METROS?))\s*$/i)?.[1]?.trim()
-  if (!last) return ''
+  if (!last) {
+    // "TECIDO BK - PINPOINT CINZA 3,00M": largura sem segundo hífen.
+    const trailingWidth = name.match(/^(.*?)\s+(\d+(?:[.,]\d+)?)\s*M\s*$/i)
+    const stem = trailingWidth?.[1]?.trim() || ''
+    const suffix = stem.match(trailingColor)
+    return suffix && stem.slice(0, suffix.index).trim() ? suffix[1] : ''
+  }
+  const colorCode = last.match(/^(BEGE|BRANCO|CINZA|PRETO|WHITE|BLACK|GREY|FENDI|MARROM|CREME|NATURAL|AMENDOA|ALPINO|LINEN|GELO)\s+(\d{3,4})$/i)
+  if (colorCode) {
+    const base = name.slice(0, name.lastIndexOf(last)).replace(/\s+[-–—]\s*$/, '').trim()
+    if (!/^(?:TECIDO|TEC|TECDO)\s+(?:BK|TR|SC|JP)$/i.test(base)) return colorCode[1]
+  }
   if (displayColor.test(last)) return last
   const qualified = last.match(/\b(DK GREY|LT GREY|INK BLACK|AZUL ROYAL|OFF WHAIT|OFF WHITE|BRANCO|BRANCA|BEGE|PRETO|PRETA|CINZA|WHITE|BLACK|GREY|GRAY|IVORY|CREME|MARROM|FENDI|GELO|AMENDOA|ALPINO|LINHO|LINEN|NATURAL|PALHA|PRATA|NAVY|PEACH|BROWN|MESCLA)\s+(STANDARD|PREMIUM)\s*$/i)
   if (qualified) return qualified[1]
@@ -50,8 +74,14 @@ export function isClearlyFinishedProduct(product: ApiProduct): boolean {
     && /^(?:ROMANA|ROLO|PERSIANA|DOUBLE VISION|CORTINA|TOLDO)(?: |$)/.test(name)
 }
 
+// Prefixos que identificam componentes mesmo quando o grupo legado diz "TECIDOS".
+export function isClearlyAccessory(product: ApiProduct): boolean {
+  const name = normalizeField(product.nome)
+  return /^(?:EIXO|FITA|BANDO|PRESILHA|CABECEIRA|BRACO|TUBO|SUPORTE|MOTOR|RODIZIO|TRILHO|PERFIL|CORRENTE|BUCHA|PONTEIRA|ROLDANA|CARRETEL|PARAFUSO)(?: |$)/.test(name)
+}
+
 export function isFabricProduct(product: ApiProduct): boolean {
-  if (isClearlyFinishedProduct(product)) return false
+  if (isClearlyFinishedProduct(product) || isClearlyAccessory(product)) return false
 
   const technical = [product.grupo_tecnico, product.familia_tecnica, product.grupo_produto]
     .map(normalizeField)
@@ -80,6 +110,19 @@ export function fabricDisplay(product: ApiProduct) {
   const color = normalizeField(fabricColor(product))
   let label = raw
   let width = ''
+  const refWidth = label.match(/\s*\((\d{1,3})\s*\/\s*(\d+(?:[.,]\d+)?)\)\s*$/)
+  if (refWidth && fabricReference(product) === refWidth[1]) {
+    label = label.slice(0, refWidth.index).trim()
+    width = refWidth[2] + ' M'
+  }
+  const trailingWidth = label.match(/^(.*?)\s+(\d+(?:[.,]\d+)?)\s*M\s*$/i)
+  if (trailingWidth && color && trailingWidth[1].trim()) {
+    const colored = trailingWidth[1].match(trailingColor)
+    if (colored && normalizeField(colored[1]) === color && trailingWidth[1].slice(0, colored.index).trim()) {
+      label = trailingWidth[1].slice(0, colored.index).trim()
+      width = trailingWidth[2] + ' M'
+    }
+  }
   const slashWidth = label.match(/\s*\(([^()/]+?)\s*\/\s*(\d+(?:[.,]\d+)?)\)\s*$/)
   if (slashWidth && color && normalizeField(slashWidth[1]) === color) {
     label = label.slice(0, slashWidth.index).trim()
@@ -94,6 +137,11 @@ export function fabricDisplay(product: ApiProduct) {
   const parts = label.split(/\s+[-–—]\s+/)
   while (parts.length > 1) {
     const last = parts[parts.length - 1].trim()
+    const reference = fabricReference(product)
+    if (color && reference && normalizeField(last) === normalizeField(color + ' ' + reference)) {
+      parts.pop()
+      break
+    }
     if (supplyMeasure.test(last)) { width = last; parts.pop(); continue }
     if (color && (normalizeField(last) === color || displayColor.test(last))) {
       parts.pop()

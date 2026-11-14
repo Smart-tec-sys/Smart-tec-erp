@@ -217,6 +217,54 @@ check('Códigos e medidas ambíguos continuam isolados', () => {
   for(const item of items) assert.equal(fabric.fabricColor(item),'')
   assert.equal(fabric.groupFabricCollections(items).length,3)
 })
+check('Pinpoint sem segundo hífen: cor e largura preservadas', () => {
+  const p=cloth(5701,'',{nome:'TECIDO BK - PINPOINT CINZA 3,00M',cor:null,produto_base:null,familia_tecnica:null})
+  assert.equal(fabric.fabricColor(p),'CINZA')
+  assert.equal(fabric.fabricDisplay(p).name,'TECIDO BK - PINPOINT')
+  assert.equal(fabric.fabricDisplay(p).width,'3,00 M')
+})
+check('Jade Double Vision com cor antes da largura é tecido, não produto acabado', () => {
+  const p=cloth(5702,'',{nome:'JADE/DOUBLE VISION BRANCO 2,5M',cor:null,produto_base:null,familia_tecnica:null,
+    modelo_tecnico:'DOUBLE_VISION',grupo_tecnico:'TECIDOS_PERSIANAS_DOUBLE_VISION'})
+  assert.equal(fabric.fabricColor(p),'BRANCO')
+  assert.equal(fabric.fabricDisplay(p).name,'JADE/DOUBLE VISION')
+})
+check('Amazonas: referência e largura juntas são reconhecidas sem criar cor', () => {
+  const a=cloth(5703,'',{nome:'TECIDO TR - AMAZONAS (44 / 2,50)',cor:null,produto_base:null,familia_tecnica:null})
+  const b={...a,id:5704}
+  assert.equal(fabric.fabricColor(a),'')
+  assert.equal(fabric.fabricReference(a),'44')
+  assert.equal(fabric.fabricDisplay(a).name,'TECIDO TR - AMAZONAS')
+  assert.equal(fabric.fabricDisplay(a).width,'2,50 M')
+  const groups=fabric.groupFabricCollections([a,b])
+  assert.equal(groups.length,1)
+  assert.equal(groups[0].variants.length,2)
+  assert.equal(groups[0].colors[0].color,'Ref. 44')
+})
+check('Houston BK: cor e referência numerada preservadas com coleção única', () => {
+  const a=cloth(5705,'',{nome:'TEC HOUSTON BK - BEGE 812 - 2,50M',cor:null,produto_base:null,familia_tecnica:null})
+  const b=cloth(5706,'',{nome:'TEC HOUSTON BK - BRANCO 802 - 2,50M',cor:null,produto_base:null,familia_tecnica:null})
+  assert.equal(fabric.fabricColor(a),'BEGE')
+  assert.equal(fabric.fabricReference(a),'812')
+  assert.equal(fabric.fabricDisplay(a).name,'TEC HOUSTON BK')
+  assert.equal(fabric.fabricDisplay(b).name,'TEC HOUSTON BK')
+  const group=fabric.groupFabricCollections([a,b])
+  assert.equal(group.length,1)
+  assert.deepEqual(group[0].colors.map(c=>c.color),['BEGE','BRANCO'])
+})
+check('Nome genérico TECIDO BK - NATURAL 4303 não é agrupado por adivinhação', () => {
+  const a=cloth(5707,'',{nome:'TECIDO BK - NATURAL 4303 - 2,50M',cor:null,produto_base:null,familia_tecnica:null})
+  assert.equal(fabric.fabricColor(a),'')
+  assert.equal(fabric.fabricReference(a),'')
+})
+check('Eixo, fita e bandô dentro de grupos TECIDOS não viram tecidos nem persianas', () => {
+  for (const nome of ['EIXO P/ ROMANA - 7,2MM','FITA DECORATIVA ROMANA - COR 01','BANDÔ PARA ROMANA']) {
+    const p=cloth(5708,'',{nome,cor:null,produto_base:null,familia_tecnica:null,modelo_tecnico:'ROMANA'})
+    assert.equal(fabric.isClearlyAccessory(p),true,nome)
+    assert.equal(fabric.isFabricProduct(p),false,nome)
+    assert.equal(fabric.commercialVariantKey(p),null,nome)
+  }
+})
 check('não mistura fornecedor diferente', () =>
   assert.equal(fabric.groupFabricCollections([white, cloth(105, 'CINZA', { nome_fornecedor: 'FORNECEDOR B' })]).length, 2))
 check('não mistura BK Brisk com Nápoles', () =>
