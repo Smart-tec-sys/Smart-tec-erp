@@ -8,6 +8,7 @@ from app.models.cliente import ClienteDB
 from app.models.empresa import EmpresaDB
 from app.services import pedido_service
 from app.services.fiscal_nfe_cadastros import conferir_cadastros_fiscais
+from app.services.fiscal_nfe_mapa_pre_xml import montar_mapa_pre_xml
 
 _CENT = Decimal("0.01")
 _DIGITS = re.compile(r"\D")
@@ -179,4 +180,14 @@ def preparar_venda_nfe(db, pedido_id: int, tenant):
     resultado["pendencias"].extend(pendencias_fiscais)
     resultado["quantidade_pendencias"] = len(resultado["pendencias"])
     resultado["cadastros_fiscais"] = resumo_cadastros
+    configuracoes = empresa.configuracoes if isinstance(getattr(empresa, "configuracoes", None), dict) else {}
+    fiscal_bruto = configuracoes.get("fiscal_nfe")
+    fiscal_bruto = fiscal_bruto if isinstance(fiscal_bruto, dict) else {}
+    # Mapa de campos somente, sem copiar dados pessoais ou valores para o relatório.
+    resultado["mapa_pre_xml"] = montar_mapa_pre_xml(
+        resultado, pedido,
+        {"nome": getattr(empresa, "nome", None)},
+        cliente,
+        fiscal_bruto,
+    )
     return resultado
