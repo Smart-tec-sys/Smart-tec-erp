@@ -67,6 +67,48 @@ check('preserva SKU distinto na mesma cor', () => {
   assert.equal(groups[0].variants.length, 3)
   assert.equal(groups[0].colors.find(c => c.color === 'BRANCO').variants.length, 2)
 })
+check('BK Nápoles real: cor e largura após hífens', () => {
+  const items = ['BEGE','BRANCO','CINZA','CREME','MARROM'].map((cor, index) =>
+    cloth(1000 + index, cor, { nome: 'BK NAPOLES - ' + cor + ' - 2,60M', largura: 2.6, unidade_venda: 'M²', produto_base: null, familia_tecnica: null }))
+  const groups = fabric.groupFabricCollections(items)
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].colors.length, 5)
+})
+check('BK Brisk real: cor entre parênteses e largura dentro do nome', () => {
+  const colors = ['WHITE', 'BEGE', 'CINZA']
+  const items = colors.map((cor, index) => cloth(1100 + index, cor, {
+    nome: 'TECIDO BK BRISK 1,80M (' + cor + ')',
+    largura: index === 0 ? 1.8 : 0,
+    produto_base: null, familia_tecnica: null, unidade_venda: 'METRO',
+  }))
+  const groups = fabric.groupFabricCollections(items)
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].colors.length, 3)
+})
+check('Romana BK Brisk real: cor entre parênteses e classificação técnica', () => {
+  const items = ['AMENDOA','BLACK','BRANCO'].map((cor, index) => cloth(1200 + index, cor, {
+    nome: 'ROMANA BK BRISK (' + cor + ')',
+    familia_tecnica: 'ROMANA_BK_BRISK',
+    modelo_tecnico: 'ROMANA',
+    produto_base: null, largura: 0, unidade_venda: 'M²',
+  }))
+  const groups = fabric.groupFabricCollections(items)
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].variants.length, 3)
+})
+check('Romana Teto mantém estrutura e não confunde cores inativas com catálogo ativo', () => {
+  const records = [{ id: 1500, nome: 'ROMANA TETO BLACKOUT NAPOLES',
+    familia_tecnica: 'ROMANA_TETO_BLACKOUT_NAPOLES', grupo_tecnico: 'PERSIANA_ROMANA_TETO',
+    modelo_tecnico: 'ROMANA_TETO', unidade_venda: 'M²', status_comercial: 'ATIVO', cor: null },
+  ...['110','BEGE','CINZA'].map((cor,index)=>({
+    id: 1501+index,nome: 'ROMANA TETO BLACKOUT NAPOLES ('+cor+')',
+    familia_tecnica: 'ROMANA_TETO_BLACKOUT_NAPOLES',grupo_tecnico:'PERSIANA_ROMANA_TETO',
+    modelo_tecnico:'ROMANA_TETO',unidade_venda:'M²',status_comercial:'INATIVO',cor
+  }))]
+  const ativos = records.filter(p=>!['INATIVO','INATIVA'].includes(budget.normalizeSearch(p.status_comercial||p.situacao||'ATIVO')))
+  assert.equal(ativos.length,1)
+  assert.equal(ativos[0].cor,null)
+})
 check('não mistura fornecedor diferente', () =>
   assert.equal(fabric.groupFabricCollections([white, cloth(105, 'CINZA', { nome_fornecedor: 'FORNECEDOR B' })]).length, 2))
 check('não mistura BK Brisk com Nápoles', () =>
