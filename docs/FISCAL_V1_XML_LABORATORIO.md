@@ -58,3 +58,16 @@ Uma rejeição por assinatura **não comprova nem substitui assinatura válida**
 - Nenhuma API pública, integração de emissão, assinatura de venda real, armazenamento/rotação de certificados ou transmissão foi criada. O estágio para usar A1 real necessita cofre de segredos por CNPJ, política de acesso, auditoria, validade/revogação ICP-Brasil, idempotência, numeração, revalidação de NTs vigentes e homologação SEFAZ.
 
 **Status:** ensaio criptográfico local exclusivamente fictício; emissão permanece bloqueada.
+
+
+## Certificado A1 — estado seguro por empresa e triagem local
+
+A primeira etapa de gestão de A1 usa o serviço \`app/services/fiscal_certificado_a1.py\` e a consulta somente leitura \`GET /fiscal/cadastros/certificado-a1/status\`:
+
+- O endpoint exige **usuário OWNER ou ADMIN vinculado à empresa ativa**, valida o tenant e retorna exclusivamente \`NAO_CONFIGURADO\`, \`cofre_configurado=false\`, \`certificado_armazenado=false\` e \`emissao_habilitada=false\`. Não aceita upload, certificados, senhas nem altera dados.
+- A aba **Certificado digital** do frontend apresenta o status da empresa ativa aos administradores. O QA visual continua mostrando estado fictício e não consulta API.
+- A função interna \`conferir_pfx_a1_local\` realiza triagem em memória, sem registro no banco e **sem rota pública de importação**. Compara a raiz de oito dígitos do CNPJ do cadastro com o CNPJ presente no \`subjectAlternativeName/otherName\` (OID \`2.16.76.1.3.3\`), exigindo chave privada RSA correspondente, KeyUsage de assinatura, período de validade, CA distinta do sujeito, limites de tamanho e dados ASN.1 reconhecidos. Não confia no CN textual para identificar emitente.
+- Um resultado da triagem **não autentica a cadeia ICP-Brasil**, não consulta revogação CRL/OCSP, não comprova política de certificado ICP/SEFAZ, não valida a situação fiscal do CNPJ e não habilita emissão. Comparar apenas o CNPJ-base não significa que matriz/filial tenha autorização fiscal no estado ou município.
+- Os testes utilizam somente certificados PFX gerados na hora, emitidos por uma CA fictícia, e cobrem senha errada, CNPJ-base diferente, certificado autossinado, vencimento, ausência de identificação OID e papel administrativo.
+
+**Pendente para produção:** desenhar armazenamento encriptado e isolado por empresa em cofre com ACL, KMS e rotação, credenciais por papel, rate-limit de upload, auditoria de acesso, revogação/validade de cadeia ICP-Brasil, estratégia de renovação e isolamento do assinador. Jamais inserir arquivo PFX, senha ou chave em \`empresas.configuracoes\`, variáveis do frontend, logs ou GitHub. Antes desse conjunto estar implementado, a UI **não deve oferecer upload**.
