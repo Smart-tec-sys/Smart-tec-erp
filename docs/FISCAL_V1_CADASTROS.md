@@ -28,3 +28,11 @@ python scripts/fiscal/staging_migrate.py --apply --confirm STAGING_FISCAL_V1
 ```
 
 O conector Render usado nesta revisão permite apenas consultas SQL read-only, não pode efetuar a migração. Não executar em produção, assinantes, banco da Smart-tec Persianas ou na prévia visual pública. Após aplicação no staging, verificar tabela e constraints sem inserir dados comerciais, e só então implantar uma API isolada com autenticação/testes de sessão. A prévia visual QA não usa API nem banco.
+
+## Mapa pré-XML NF-e (fase preparatória, sem emissão)
+
+O diagnóstico autenticado `GET /pedidos/{pedido_id}/fiscal/preparacao-nfe` inclui a chave `mapa_pre_xml`, com grupos `ide`, `emit`, `dest`, `det`, `imposto`, `total`, `transp`, `pag`, `infAdic` e `Signature`. Cada campo é sinalizado como `INFORMADO`, `PENDENTE` ou `INTEGRACAO_PENDENTE`. No detalhe da venda, um painel recolhível apresenta o checklist.
+
+Este mapa **não contém dados de pessoas, CNPJ, CPF, nomes, valores ou documentos em XML**. Não contém as informações comerciais internas (comissão, RT e taxas financeiras). Nenhum número fiscal ou chave de acesso é atribuído, e não se calculam impostos. Mesmo com todas as informações cadastrais presentes, o retorno mantém `NAO_APTO_EMISSAO` e `xml_gerado=false`.
+
+As quantidades são verificadas em até quatro casas decimais, conforme o modelo existente de itens do ERP. Antes de gerar XML fiscal real, é obrigatório conferir o leiaute e as notas técnicas atuais da NF-e junto à SEFAZ, calcular os tributos conforme operação/UF, validar XSD, proteger certificado A1 e homologar assinatura/transmissão. O banco de staging real e a prévia visual no Render não foram alterados nesta etapa.
