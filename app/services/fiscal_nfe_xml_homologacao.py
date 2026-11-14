@@ -54,7 +54,7 @@ def _validar_decimal(value: str, quant: Decimal, *, positive: bool = True) -> De
         raise XmlFiscalNaoHabilitado("Valor inválido para exemplo XML.") from exc
     if not num.is_finite() or (positive and num <= 0) or (not positive and num < 0):
         raise XmlFiscalNaoHabilitado("Valor não finito, negativo ou zerado no exemplo.")
-    if num != num.quantize(quant):
+    if num.as_tuple().exponent < quant.as_tuple().exponent or num != num.quantize(quant):
         raise XmlFiscalNaoHabilitado("Precisão do exemplo excede a escala permitida.")
     return num
 
