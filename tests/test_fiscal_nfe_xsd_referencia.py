@@ -13,6 +13,11 @@ import unittest
 from pathlib import Path
 from lxml import etree
 
+from tests.test_fiscal_nfe_assinatura_laboratorio import criar_certificado_laboratorio
+from app.services.fiscal_nfe_assinatura_laboratorio import (
+    assinar_xml_ficticio_pfx_laboratorio, verificar_xml_assinado_laboratorio,
+)
+
 from app.services.fiscal_nfe_xml_homologacao import (
     gerar_xml_ficticio_nao_assinado,
     NS_DS,
@@ -57,6 +62,13 @@ class ReferenciaXsdTests(unittest.TestCase):
             "Erros adicionais no XSD de referência além da assinatura: " + "\n".join(errors)
         )
         self.assertIn("Signature", errors[0], errors)
+
+    def test_exemplo_assinado_passou_no_xsd_de_referencia(self):
+        pfx, senha = criar_certificado_laboratorio()
+        assinado = assinar_xml_ficticio_pfx_laboratorio(pfx, senha)
+        self.assertTrue(verificar_xml_assinado_laboratorio(assinado))
+        ok, errors = self.erros(assinado)
+        self.assertTrue(ok, "XMLDSig de laboratório falhou no XSD de referência: " + "\\n".join(errors))
 
     def test_validador_captura_elemento_invalido(self):
         xml = gerar_xml_ficticio_nao_assinado()
