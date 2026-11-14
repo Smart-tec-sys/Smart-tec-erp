@@ -92,12 +92,19 @@ class FiscalTests(unittest.TestCase):
         empresa = SimpleNamespace(id=7, documento=CNPJ_OK)
         cliente = SimpleNamespace(**recipient())
         db = Mock()
+        empresa.configuracoes = {"fiscal_nfe": {"crt": "1", "uf": "SP"}}
         db.query.return_value.filter.return_value.first.side_effect = [empresa, cliente]
+        db.query.return_value.filter.return_value.all.side_effect = [
+            [SimpleNamespace(id=1), SimpleNamespace(id=2)], []
+        ]
         result = preparar_venda_nfe(db, 17, SimpleNamespace(empresa_id=7))
         self.assertEqual(result["empresa_id"], 7)
         self.assertEqual(result["pedido_id"], 17)
-        self.assertEqual(db.query.call_count, 2)
-        # Critério do SQLAlchemy fica ligado ao tenant para empresa e cliente.
+        self.assertEqual(db.query.call_count, 4)
+        self.assertEqual(result["cadastros_fiscais"]["total_skus"], 2)
+        self.assertEqual(result["cadastros_fiscais"]["skus_sem_cadastro"], [1, 2])
+        self.assertIn("ITEM_NCM", {p["codigo"] for p in result["pendencias"]})
+        # Cada consulta SQLAlchemy inclui filtro (tenant para empresa, cliente e produto).
         for clause_call in db.query.return_value.filter.call_args_list:
             self.assertTrue(clause_call.args)
 
@@ -111,6 +118,60 @@ class FiscalTests(unittest.TestCase):
         self.assertIn("TOTAIS_INVALIDOS", codes)
         self.assertIn("SUBTOTAL_INVALIDO", codes)
         self.assertEqual(result["estado"], "NAO_APTO_EMISSAO")
+
+    def test_sem_id_valido_nao_consulta_fiscal_produtos(self):
+        from app.services.fiscal_nfe_cadastros import conferir_cadastros_fiscais
+        pedido = sample_pedido()
+        pedido["itens"] = [{"tipo_item": "SERVICO", "produto_id": None}]
+        empresa = SimpleNamespace(configuracoes={"fiscal_nfe": {"crt": "1", "uf": "SP"}})
+        db = Mock()
+        pendencias, resumo = conferir_cadastros_fiscais(db, pedido, empresa, 7)
+        self.assertEqual(resumo["total_skus"], 0)
+        self.assertEqual(resumo["skus_sem_cadastro"], [])
+        db.query.assert_not_called()
+        self.assertIn("REGRAS_TRIBUTARIAS_NAO_VALIDADAS",
+                      {p["codigo"] for p in pendencias})
+
+    def test_registro_fiscal_de_outro_tenant_ignorado(self):
+        from app.services.fiscal_nfe_cadastros import conferir_cadastros_fiscais
+        pedido = sample_pedido()
+        empresa = SimpleNamespace(configuracoes={"fiscal_nfe": {"crt": "3", "uf": "SP"}})
+        db = Mock()
+        db.query.return_value.filter.return_value.all.side_effect = [
+            [SimpleNamespace(id=1), SimpleNamespace(id=2)],
+            [SimpleNamespace(empresa_id=99, produto_id=1), SimpleNamespace(empresa_id=7, produto_id=2,
+                 ncm="63039200", cfop_padrao_saida="5102", cest=None, origem_mercadoria="0",
+                 cst_icms="00", csosn=None, cst_pis="01", cst_cofins="01",
+                 cst_ibs_cbs="000", cclass_trib_ibs_cbs="000001")],
+        ]
+        pendencias, resumo = conferir_cadastros_fiscais(db, pedido, empresa, 7)
+        self.assertEqual(resumo["skus_com_cadastro"], 1)
+        self.assertEqual(resumo["skus_sem_cadastro"], [1])
+        self.assertTrue(any(p["campo"] == "fiscal.produtos[1].ncm" for p in pendencias))
+        self.assertFalse(any(p["campo"] == "fiscal.produtos[2].ncm" for p in pendencias))
+
+    def test_cadastros_completos_ainda_nao_liberam_emissao(self):
+        from app.services.fiscal_nfe_cadastros import conferir_cadastros_fiscais
+        empresa = SimpleNamespace(configuracoes={"fiscal_nfe": {
+            "crt": "3", "inscricao_estadual": "ISENTO", "uf": "SP",
+            "municipio_codigo_ibge": "3550308", "cidade": "São Paulo",
+            "cep": "01001000", "logradouro": "Rua Exemplo", "numero": "10",
+            "bairro": "Centro", "serie_nfe": 1, "ambiente": "HOMOLOGACAO",
+        }})
+        pedido = sample_pedido()
+        db = Mock()
+        db.query.return_value.filter.return_value.all.side_effect = [
+            [SimpleNamespace(id=1), SimpleNamespace(id=2)],
+            [SimpleNamespace(empresa_id=7, produto_id=i,
+                 ncm="63039200", cfop_padrao_saida="5102", cest=None, origem_mercadoria="0",
+                 cst_icms="00", csosn=None, cst_pis="01", cst_cofins="01",
+                 cst_ibs_cbs="000", cclass_trib_ibs_cbs="000001") for i in (1, 2)],
+        ]
+        pendencias, resumo = conferir_cadastros_fiscais(db, pedido, empresa, 7)
+        self.assertEqual(resumo["skus_com_cadastro"], 2)
+        self.assertEqual(resumo["skus_sem_cadastro"], [])
+        self.assertIn("REGRAS_TRIBUTARIAS_NAO_VALIDADAS",
+                      {p["codigo"] for p in pendencias})
 
 
 if __name__ == "__main__":
