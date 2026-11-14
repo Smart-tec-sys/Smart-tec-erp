@@ -8,6 +8,7 @@ export type AppView =
     | 'new-sale'
     | 'accounting'
     | 'finance'
+    | 'fiscal'
     | 'new-budget'
     | 'products'
     | 'cadastro'
