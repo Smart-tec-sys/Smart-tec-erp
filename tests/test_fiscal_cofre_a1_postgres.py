@@ -75,8 +75,8 @@ class PostgresCofreA1(unittest.TestCase):
                 "SELECT empresa_id,conteudo_cifrado FROM fiscal_certificados_cofre WHERE empresa_id=1"
             )).one()
             self.assertEqual(row[0],1)
-            self.assertEqual(row[1],env.conteudo_cifrado)
-            self.assertNotIn(b"PFX-DEMO-FAKE",row[1])
+            self.assertEqual(bytes(row[1]),env.conteudo_cifrado)
+            self.assertNotIn(b"PFX-DEMO-FAKE",bytes(row[1]))
 
     def test_03_fk_bloqueia_empresa_inexistente(self):
         kms=KmsFakeTemporario()
