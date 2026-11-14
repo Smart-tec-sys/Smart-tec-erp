@@ -78,8 +78,9 @@ class FiscalPostgresHomologacao(unittest.TestCase):
         run_sql(cls.engine, fiscal_sql("20261114_fiscal_v1_cadastros_up.sql"), expect_fail=True)
         with cls.engine.connect() as c:
             assert c.execute(text("select to_regclass('public.fiscal_produtos')")).scalar_one() is None
-        with cls.engine.begin() as c:
-            c.execute(text("ALTER TABLE produtos ADD CONSTRAINT uq_produtos_id_empresa UNIQUE (id, empresa_id)"))
+        # Aplicar o pré-requisito do staging (idempotente), não um ALTER manual.
+        run_sql(cls.engine, fiscal_sql("20261114_fiscal_v1_staging_prerequisito_up.sql"))
+        run_sql(cls.engine, fiscal_sql("20261114_fiscal_v1_staging_prerequisito_up.sql"))
         run_sql(cls.engine, fiscal_sql("20261114_fiscal_v1_cadastros_up.sql"))
 
         with cls.engine.begin() as c:
