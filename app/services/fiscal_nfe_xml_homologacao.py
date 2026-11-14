@@ -115,7 +115,7 @@ def gerar_xml_ficticio_nao_assinado(
         ("tpNF", "1"), ("idDest", "1"), ("cMunFG", "3550308"),
         ("tpImp", "1"), ("tpEmis", "1"), ("cDV", dv), ("tpAmb", "2"),
         ("finNFe", "1"), ("indFinal", "1"), ("indPres", "1"),
-        ("procEmi", "0"), ("verProc", "Smarttec-XML-TESTE-0.1"),
+        ("procEmi", "0"), ("verProc", "Smarttec-XML-TESTE"),
     ):
         _e(ide, t, v)
 
