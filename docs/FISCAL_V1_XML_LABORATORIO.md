@@ -71,3 +71,16 @@ A primeira etapa de gestão de A1 usa o serviço \`app/services/fiscal_certifica
 - Os testes utilizam somente certificados PFX gerados na hora, emitidos por uma CA fictícia, e cobrem senha errada, CNPJ-base diferente, certificado autossinado, vencimento, ausência de identificação OID e papel administrativo.
 
 **Pendente para produção:** desenhar armazenamento encriptado e isolado por empresa em cofre com ACL, KMS e rotação, credenciais por papel, rate-limit de upload, auditoria de acesso, revogação/validade de cadeia ICP-Brasil, estratégia de renovação e isolamento do assinador. Jamais inserir arquivo PFX, senha ou chave em \`empresas.configuracoes\`, variáveis do frontend, logs ou GitHub. Antes desse conjunto estar implementado, a UI **não deve oferecer upload**.
+
+
+## Cofre A1 de envelope criptográfico — preparação (14/11/2026)
+
+Implementado o **núcleo interno** `app/services/fiscal_cofre_a1.py` com `AES-256-GCM`, chave de dados aleatória (DEK) nova por criptografia, `nonce` de 12 bytes aleatório e dados associados (AAD) vinculados ao `empresa_id`. O conteúdo claro de PFX e senha é empacotado apenas em memória, e a DEK deve ser envelopada por **KMS/HSM externo** via protocolo `ProvedorKms`. Nenhuma chave-mestra, segredo padrão ou implementação KMS produtiva é fornecida nesta fase. O fluxo deve falhar fechado quando não há provedor externo.
+
+O modelo `app/models/fiscal_certificado_cofre.py` e o SQL `migrations/20261114_fiscal_v1_cofre_a1_up.sql` definem `fiscal_certificados_cofre`, associando um único envelope cifrado a cada empresa por FK e PK `empresa_id`. A tabela guarda apenas identificador de chave, DEK envelopada, `nonce` e ciphertext; **não possui colunas de PFX ou senha em claro**. A migração não foi aplicada ao Render ou a banco real.
+
+O repositório interno `app/services/fiscal_cofre_a1_repository.py` permite guardar/consultar somente envelopes após autorização OWNER/ADMIN e filtro por empresa ativa. Não há upload, download, rota HTTP que abra o envelope ou associação desse processo ao XML fiscal. O endpoint existente de status A1 continua `NAO_CONFIGURADO`, `cofre_configurado=false`, `emissao_habilitada=false` até integração real. A API não anuncia que certificados estão disponíveis.
+
+Testes utilizam um KMS **fictício e efêmero, implementado exclusivamente em `tests/`**, e certificam: cifrar/decifrar sem vazamento em retorno/metadados, AAD e tenant, adulteração de ciphertext/nonce/chave, ausência de KMS, rotação de DEK, autorização administrativa, FK e gravação `BYTEA` em PostgreSQL temporário de CI.
+
+**Ainda não é um cofre de produção:** faltam escolher e integrar KMS externo com IAM/ACL, prova de isolamento entre credenciais, monitoração, trilha de auditoria imutável, backups e recuperação/rotação, limites de chamada, mitigação de cache/memória e validação completa ICP-Brasil. Não enviar certificados nem senhas reais ao chat ou a qualquer tela do ERP até isso estar pronto. Não habilitar emissão.
