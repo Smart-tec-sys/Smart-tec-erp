@@ -34,7 +34,7 @@ export type FiscalProdutoDados = {
 export type FiscalEmpresaResponse = { empresa_id:number; documento:string|null; razao_social:string|null; nome_fantasia:string|null; dados:FiscalEmpresaDados; emissao_habilitada:false }
 export type FiscalProdutoResponse = { empresa_id:number; produto_id:number; dados:FiscalProdutoDados; configurado:boolean; emissao_habilitada:false }
 
-async function fiscalRequest<T>(path:string, method:'GET'|'PATCH'='GET', body?:Record<string,unknown>):Promise<T> {
+async function fiscalRequest<T>(path:string, method:'GET'|'PATCH'|'POST'='GET', body?:Record<string,unknown>):Promise<T> {
   const auth = await getApiAuthHeaders()
   const response = await fetch(apiConfig.baseUrl + path,{
     method, headers:{'Content-Type':'application/json',...auth},
@@ -89,3 +89,19 @@ export type FiscalCertificadoA1Status = {
   integracao_kms?:'INATIVO'|'CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA';
 }
 export const getFiscalCertificadoA1Status = ()=>fiscalRequest<FiscalCertificadoA1Status>('/fiscal/cadastros/certificado-a1/status')
+
+export type FiscalA1Laboratorio = {
+  importacao_lab_habilitada: boolean
+  certificado_lab_armazenado: boolean
+}
+const rotaA1Lab = '/fiscal/cadastros/certificado-a1/laboratorio'
+export const getFiscalA1Laboratorio = () => fiscalRequest<FiscalA1Laboratorio>(rotaA1Lab)
+
+export async function importarFiscalA1Laboratorio(arquivo: File, senha: string) {
+  if (arquivo.size < 1 || arquivo.size > 128 * 1024) {
+    throw new Error('Selecione um PFX de laboratório de até 128 KB.')
+  }
+  const bytes = new Uint8Array(await arquivo.arrayBuffer())
+  const pfx = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
+  return fiscalRequest<{ certificado_armazenado: boolean }>(rotaA1Lab, 'POST', { pfx, senha })
+}

@@ -6,6 +6,7 @@ import { getFiscalEmpresa, getFiscalProduto, getFiscalCertificadoA1Status, patch
 import type { FiscalEmpresaDados, FiscalProdutoDados, FiscalCertificadoA1Status } from '../services/fiscal'
 import './FiscalPage.css'
 import { NfeGestaoClickPreview } from './NfeGestaoClickPreview'
+import { FiscalA1Laboratorio } from './FiscalA1Laboratorio'
 
 type Field = { id:string; label:string; placeholder?:string }
 const companyFields:Field[] = [
@@ -182,7 +183,7 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
         <h2>Certificado digital</h2>
         <p>O GestãoClick apresenta certificados A1 e A3. Nesta primeira versão da Smart-tec, estamos preparando a integração segura do <strong>A1 (arquivo PFX/P12)</strong>.</p>
         <div className="fiscal-v1-company-identification" role="status" style={{padding:14,margin:'12px 0'}}>
-          <strong>Status do A1 da empresa ativa</strong>
+          <strong>Status do A1 para emissão da empresa ativa</strong>
           {certLoading&&<p>Consultando situação do A1...</p>}
           {certError&&<p className="fiscal-v1-error">{certError}</p>}
           {certStatus&&<>
@@ -197,7 +198,8 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
           <article><strong>Certificado A1</strong><p>Arquivo e senha serão tratados em fluxo protegido, com autorização por empresa. Ainda não disponível nesta prévia.</p></article>
           <article><strong>Certificado A3</strong><p>Compatibilidade futura, condicionada a integração com dispositivo ou provedor de assinatura.</p></article>
         </div>
-        <p className="fiscal-v1-warning">Não envie certificados ou senhas nesta tela. Importação e assinatura ainda desativadas.</p>
+        <p className="fiscal-v1-warning">Mantenha certificados reais e suas senhas fora desta tela. A assinatura de NF-e segue desativada.</p>
+        {!modoHomologacao && canEdit && <FiscalA1Laboratorio key={companyId} />}
         <button className="fiscal-v1-add" type="button" onClick={()=>setTab('configuracoes')}>Ver configurações de homologação</button>
       </section>
       : tab==='configuracoes' ? <section className="fiscal-v1-panel">

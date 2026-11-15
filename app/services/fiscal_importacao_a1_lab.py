@@ -1,0 +1,94 @@
+"""Importação de PFX autossinado exclusivamente para o tenant de laboratório."""
+import os
+from base64 import b64decode
+from binascii import Error as Base64Error
+from json import loads
+
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.exceptions import UnsupportedAlgorithm
+from fastapi import HTTPException
+
+from app.services.fiscal_cadastros import _empresa, exigir_admin
+from app.services.fiscal_certificado_a1 import MAX_PFX_BYTES, MAX_SENHA_BYTES
+from app.services.fiscal_cofre_a1 import CofreIndisponivel, proteger_a1
+from app.services.fiscal_cofre_a1_repository import consultar_envelope_interno, guardar_envelope_cifrado
+from app.services.fiscal_kms_aws import AwsKmsProvedor, KEY_ARN, criar_provedor_kms_staging
+from app.services.fiscal_nfe_assinatura_laboratorio import (
+    XmlFiscalNaoHabilitado, _verificar_certificado_laboratorio,
+)
+from app.tenant.context import TenantOrigin
+
+
+EMPRESA_LAB = 999999999
+MAX_CORPO_LAB = 4 * ((MAX_PFX_BYTES + 2) // 3) + 2048
+
+
+def importacao_lab_disponivel(tenant):
+    return (
+        os.getenv("SMARTTEC_ENV") == "staging"
+        and os.getenv("SMARTTEC_AUTH_MODE") == "authenticated"
+        and os.getenv("SMARTTEC_FISCAL_A1_IMPORTACAO_LAB") == "1"
+        and tenant.origem is TenantOrigin.AUTHENTICATION
+        and tenant.empresa_id == EMPRESA_LAB
+    )
+
+
+def _provedor_lab():
+    if os.getenv("SMARTTEC_FISCAL_A1_LAB_IAM_ENABLED") != "1":
+        return criar_provedor_kms_staging()
+
+    import boto3
+    from botocore.config import Config
+
+    arn = os.getenv("SMARTTEC_FISCAL_A1_KMS_KEY_ARN", "")
+    key_id = os.getenv("AWS_ACCESS_KEY_ID")
+    secret = os.getenv("AWS_SECRET_ACCESS_KEY")
+    if not KEY_ARN.fullmatch(arn) or not arn.startswith("arn:aws:kms:us-east-2:") or not key_id or not secret:
+        raise CofreIndisponivel("Credencial KMS de laboratório indisponível.")
+    from botocore.exceptions import BotoCoreError
+
+    try:
+        cliente = boto3.client(
+            "kms", region_name="us-east-2", aws_access_key_id=key_id,
+            aws_secret_access_key=secret,
+            config=Config(connect_timeout=3, read_timeout=5, retries={"total_max_attempts": 2}),
+        )
+    except BotoCoreError:
+        raise CofreIndisponivel("Cliente KMS de laboratório indisponível.") from None
+    return AwsKmsProvedor(key_arn=arn, client=cliente)
+
+
+def importar_envelope_lab(db, tenant, corpo):
+    if not importacao_lab_disponivel(tenant):
+        raise HTTPException(404, "Importação de laboratório indisponível.")
+    exigir_admin(db, tenant)
+    _empresa(db, tenant)
+    try:
+        dados = loads(corpo)
+        pfx = b64decode(dados["pfx"], validate=True)
+        senha = dados["senha"].encode("utf-8")
+        if not 0 < len(pfx) <= MAX_PFX_BYTES or not 0 < len(senha) <= MAX_SENHA_BYTES:
+            raise ValueError
+        chave, cert, cadeia = pkcs12.load_key_and_certificates(pfx, senha)
+        if cert is None or not isinstance(chave, rsa.RSAPrivateKey) or cadeia:
+            raise ValueError
+        if _verificar_certificado_laboratorio(cert).public_numbers() != chave.public_key().public_numbers():
+            raise ValueError
+    except (AttributeError, Base64Error, KeyError, TypeError, ValueError,
+            UnsupportedAlgorithm, XmlFiscalNaoHabilitado):
+        raise HTTPException(422, "Use um PFX autossinado do laboratório e a senha correspondente.") from None
+    try:
+        envelope = proteger_a1(EMPRESA_LAB, pfx, senha, _provedor_lab())
+    except CofreIndisponivel:
+        raise HTTPException(503, "Cofre de laboratório indisponível.") from None
+    guardar_envelope_cifrado(db, tenant, envelope)
+    return {"certificado_armazenado": True, "emissao_habilitada": False}
+
+
+def status_importacao_lab(db, tenant):
+    habilitada = importacao_lab_disponivel(tenant)
+    return {
+        "importacao_lab_habilitada": habilitada,
+        "certificado_lab_armazenado": habilitada and consultar_envelope_interno(db, tenant) is not None,
+    }
