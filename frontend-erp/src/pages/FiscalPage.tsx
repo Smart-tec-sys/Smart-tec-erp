@@ -188,6 +188,9 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
           {certStatus&&<>
             <p><strong>{certStatus.situacao==='NAO_CONFIGURADO'?'Não configurado':certStatus.situacao}</strong> · Cofre: não configurado · Emissão: bloqueada</p>
             <p>{certStatus.aviso}</p>
+            <p>Integração AWS KMS: {certStatus.integracao_kms==='CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA'
+              ? 'Configuração OIDC detectada, conexão não verificada'
+              : 'Inativa'}.</p>
           </>}
         </div>
         <div className="fiscal-v1-cert-types">
