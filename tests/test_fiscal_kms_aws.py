@@ -74,7 +74,7 @@ class AwsKmsA1Tests(unittest.TestCase):
 
     def test_falha_de_kms_retorna_erro_generico(self):
         self.client.fail=True
-        with self.assertRaisesRegex(CofreIndisponivel,"Falha ao proteger"):
+        with self.assertRaisesRegex(CofreIndisponivel,"Falha de cifragem AWS KMS"):
             proteger_a1(1,b"test",b"pass",self.provider)
 
     def test_rejeita_arn_invalido_e_chave_trocada(self):
