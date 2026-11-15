@@ -86,5 +86,6 @@ export const prepararNfeVenda = (pedidoId:number)=>
 export type FiscalCertificadoA1Status = {
   empresa_id:number;tipo:'A1';situacao:'NAO_CONFIGURADO';
   cofre_configurado:false;certificado_armazenado:false;emissao_habilitada:false;aviso:string;
+  integracao_kms?:'INATIVO'|'CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA';
 }
 export const getFiscalCertificadoA1Status = ()=>fiscalRequest<FiscalCertificadoA1Status>('/fiscal/cadastros/certificado-a1/status')
