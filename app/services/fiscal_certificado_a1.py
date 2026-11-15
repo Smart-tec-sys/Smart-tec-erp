@@ -138,10 +138,12 @@ def status_a1_empresa(db, tenant) -> dict:
     empresa_id = require_tenant(tenant)
     if empresa.id != empresa_id:
         raise CertificadoA1Invalido("Identidade da empresa divergente.")
+    from app.services.fiscal_kms_aws import situacao_kms_aws
     return {
         "empresa_id": empresa_id,
         "tipo": "A1",
         "situacao": "NAO_CONFIGURADO",
+        "integracao_kms": situacao_kms_aws(),
         "cofre_configurado": False,
         "certificado_armazenado": False,
         "emissao_habilitada": False,
