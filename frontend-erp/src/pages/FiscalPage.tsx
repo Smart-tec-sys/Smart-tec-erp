@@ -2,16 +2,12 @@ import { useEffect, useState } from 'react'
 import { getAllProducts } from '../services/api'
 import type { ApiProduct } from '../types/budget'
 import { useAuthSession } from '../components/AuthGate'
-import { setEmpresaId } from '../services/auth'
-import { getFiscalEmpresa, getFiscalProduto, getFiscalCertificadoA1Status, patchFiscalEmpresa, patchFiscalProduto } from '../services/fiscal'
-import type { FiscalEmpresaDados, FiscalProdutoDados, FiscalCertificadoA1Status } from '../services/fiscal'
+import { getFiscalEmpresa, getFiscalProduto, patchFiscalEmpresa, patchFiscalProduto } from '../services/fiscal'
+import type { FiscalEmpresaDados, FiscalProdutoDados } from '../services/fiscal'
 import './FiscalPage.css'
 import { NfeGestaoClickPreview } from './NfeGestaoClickPreview'
-import { FiscalA1Laboratorio } from './FiscalA1Laboratorio'
 
-const EMPRESA_LAB_A1 = 999999999
-
-type Secao = 'empresa' | 'produto' | 'nfe' | 'certificado' | 'configuracoes' | 'confirmacao' | 'laboratorio'
+type Secao = 'empresa' | 'produto' | 'nfe' | 'configuracoes' | 'confirmacao'
 
 type Field = { id:string; label:string; placeholder?:string }
 const companyFields:Field[] = [
@@ -50,12 +46,6 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const session = useAuthSession()
   const canEdit = modoHomologacao || session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
   const companyId=modoHomologacao ? 999 : session?.empresa.id
-  const empresaLab = modoHomologacao ? undefined : session?.empresas.find(empresa =>
-    empresa.id === EMPRESA_LAB_A1 &&
-    empresa.slug === 'laboratorio-fiscal-a1' &&
-    (empresa.papel === 'ADMIN' || empresa.papel === 'OWNER')
-  )
-  const laboratorioAtivo = empresaLab?.id === companyId && empresaLab !== undefined
   const [tab,setTab]=useState<Secao>('empresa')
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
   const [emitente,setEmitente]=useState({razao_social:'',nome_fantasia:'',documento:''})
@@ -68,9 +58,6 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const [error,setError]=useState('')
   const [message,setMessage]=useState('')
   const [demoProductsSaved,setDemoProductsSaved]=useState<Record<number,FiscalProdutoDados>>({})
-  const [certStatus,setCertStatus]=useState<FiscalCertificadoA1Status|null>(null)
-  const [certError,setCertError]=useState('')
-  const [certLoading,setCertLoading]=useState(false)
 
   useEffect(()=>{
     let active=true
@@ -90,30 +77,6 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     getFiscalEmpresa().then(r=>{if(active){setCompany(r.dados);setEmitente({razao_social:r.razao_social||'',nome_fantasia:r.nome_fantasia||'',documento:r.documento||''})}}).catch(e=>{if(active)setError(String(e.message||e))}).finally(()=>{if(active)setLoading(false)})
     return()=>{active=false}
   },[companyId,modoHomologacao])
-
-  useEffect(()=>{
-    if(tab!=='certificado')return
-    if(modoHomologacao){
-      setCertStatus({empresa_id:999,tipo:'A1',situacao:'NAO_CONFIGURADO',cofre_configurado:false,
-        certificado_armazenado:false,emissao_habilitada:false,
-        aviso:'Prévia fictícia: armazenamento A1 não configurado.'})
-      setCertError('')
-      return
-    }
-    if(!canEdit){
-      setCertStatus(null)
-      setCertError('Somente proprietário ou administrador pode conferir o certificado.')
-      return
-    }
-    let active=true
-    setCertStatus(null)
-    setCertError('')
-    setCertLoading(true)
-    getFiscalCertificadoA1Status().then(r=>{if(active)setCertStatus(r)})
-      .catch(e=>{if(active)setCertError(e instanceof Error?e.message:'Falha ao consultar A1.')})
-      .finally(()=>{if(active)setCertLoading(false)})
-    return()=>{active=false}
-  },[tab,companyId,modoHomologacao,canEdit])
 
   useEffect(()=>{
     if(tab!=='produto'||catalog.length)return
@@ -167,7 +130,6 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const secoes = [
     ['empresa', 'Dados da empresa'],
     ['produto', 'Tributação dos produtos'],
-    ['certificado', 'Certificado digital'],
     ['nfe', 'Emissão de NF-e'],
   ] as const
   const secaoAtiva = tab === 'configuracoes' || tab === 'confirmacao' ? 'nfe' : tab
@@ -183,8 +145,6 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
           {label}
         </button>
       )}
-      {laboratorioAtivo && <button type="button" aria-pressed={tab==='laboratorio'}
-        onClick={()=>abrirSecao('laboratorio')}>Laboratório</button>}
     </nav>
     {error&&<p className="fiscal-v1-error" role="alert">{error}</p>}
     {message&&<p className="fiscal-v1-success" role="status">{message}</p>}
@@ -195,29 +155,11 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
         <button className="fiscal-v1-add" type="button"
           onClick={()=>abrirSecao('configuracoes')}>Configurações de homologação</button>
       </section>
-      {(modoHomologacao || laboratorioAtivo) && <details className="fiscal-v1-setup">
+      {modoHomologacao && <details className="fiscal-v1-setup">
         <summary>Prévia dos campos da NF-e</summary>
         <NfeGestaoClickPreview />
       </details>}
     </>
-      : tab==='certificado' ? <section className="fiscal-v1-panel">
-        <h2>Certificado digital A1</h2>
-        {certLoading&&<p role="status">Consultando certificado…</p>}
-        {certError&&<p className="fiscal-v1-error" role="alert">{certError}</p>}
-        {certStatus&&<>
-          <p role="status"><strong>{certStatus.situacao==='NAO_CONFIGURADO'?'Não configurado':certStatus.situacao}</strong></p>
-          <p>{certStatus.aviso}</p>
-        </>}
-        {empresaLab && !laboratorioAtivo && <button className="fiscal-v1-add" type="button" onClick={() => {
-          setEmpresaId(empresaLab.id)
-          window.location.reload()
-        }}>Abrir {empresaLab.nome}</button>}
-      </section>
-      : tab==='laboratorio' ? (laboratorioAtivo && <section className="fiscal-v1-panel">
-        <h2>Laboratório de NF-e</h2>
-        <p>Use apenas certificados fictícios.</p>
-        <FiscalA1Laboratorio key={companyId} />
-      </section>)
       : tab==='configuracoes' ? <section className="fiscal-v1-panel">
         <h2>Configurações de NF-e</h2>
         <div className="fiscal-v1-grid">
@@ -251,7 +193,6 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
           <li>{company.crt?'✓':'○'} CRT confirmado pela contabilidade</li>
           <li>{company.cep&&company.logradouro&&company.numero&&company.bairro&&company.cidade&&company.uf?'✓':'○'} Endereço completo</li>
           <li>{company.serie_nfe?'✓':'○'} Série de homologação</li>
-          <li>○ Certificado A1 ainda não integrado</li>
           <li>○ XML, regras tributárias e autorização SEFAZ ainda pendentes</li>
         </ul>
         <button type="button" className="fiscal-v1-add" onClick={()=>abrirSecao('empresa')}>Revisar dados da empresa</button>

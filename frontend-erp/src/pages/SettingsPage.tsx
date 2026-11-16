@@ -174,7 +174,10 @@ export function SettingsPage() {
 
       <div className="settings-card">
         <div className="settings-card-header"><div><h2 className="commercial-title">Opções auxiliares</h2><p>Cadastros gerais reutilizáveis do ERP.</p></div></div>
-        <button type="button" className="profile-secondary-button" onClick={() => setShowGrades(true)}>Grades/Variações</button>
+        <div className="settings-logo-actions">
+          <a className="profile-secondary-button" href="#/configuracoes/certificado-digital">Certificado digital</a>
+          <button type="button" className="profile-secondary-button" onClick={() => setShowGrades(true)}>Grades/Variações</button>
+        </div>
       </div>
       <div className="settings-card">
         <div className="settings-card-header">

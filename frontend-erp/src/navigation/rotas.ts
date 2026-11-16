@@ -14,6 +14,7 @@ export type AppView =
     | 'cadastro'
     | 'profile'
     | 'settings'
+    | 'certificate'
     | 'agenda'
     | 'admin'
 
@@ -47,6 +48,7 @@ const ROTAS: Record<string, { view: AppView; activePage: string }> = {
     'agenda': { view: 'agenda', activePage: 'Agenda' },
     'perfil': { view: 'profile', activePage: 'Meus dados' },
     'configuracoes': { view: 'settings', activePage: 'Configurações' },
+    'configuracoes/certificado-digital': { view: 'certificate', activePage: 'Configurações' },
     'admin': { view: 'admin', activePage: 'Administração Smart-tec' },
 }
 
@@ -98,6 +100,7 @@ export function hashDaNavegacao(
         case 'agenda': return '#/agenda'
         case 'profile': return '#/perfil'
         case 'settings': return '#/configuracoes'
+        case 'certificate': return '#/configuracoes/certificado-digital'
         case 'admin': return '#/admin'
         case 'cadastro': return cadastro ? `#/cadastros/${cadastro}` : '#/cadastros/clientes'
     }

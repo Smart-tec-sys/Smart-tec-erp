@@ -39,6 +39,7 @@ import { SaleDetailPage } from './pages/SaleDetailPage'
 import { AccountingPage } from './pages/AccountingPage'
 import { FinancePage, type FinanceFocus } from './pages/FinancePage'
 import { FiscalPage } from './pages/FiscalPage'
+import { CertificadoDigitalPage } from './pages/CertificadoDigitalPage'
 import { NewBudgetPage } from './pages/NewBudgetPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { CadastrosPage, type CadastroEntity } from './pages/CadastrosPage'
@@ -560,6 +561,7 @@ function App() {
                     {view === 'cadastro' && <CadastrosPage entity={cadastroEntity} />}
                     {view === 'profile' && <MyProfilePage />}
             {view === 'settings' && <SettingsPage />}
+            {view === 'certificate' && <CertificadoDigitalPage key={authSession?.empresa.id} />}
             {view === 'admin' && (
                 <AdminDashboardPage
                     onBack={() => {
