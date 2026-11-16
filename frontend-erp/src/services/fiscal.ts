@@ -105,7 +105,7 @@ export const conferirXmlVendaFiscalLaboratorio = () =>
     '/fiscal/cadastros/nfe/laboratorio/conferir-venda', 'POST',
   )
 export const assinarXmlVendaFiscalLaboratorio = () =>
-  fiscalRequest<{ campos_conferidos: number; total: string; assinado: true; assinatura_lab_verificada: true; transmitido: false }>(
+  fiscalRequest<{ campos_conferidos: number; total: string; assinado: true; assinatura_lab_verificada: true; xsd_validado: string; transmitido: false }>(
     '/fiscal/cadastros/nfe/laboratorio/assinar-venda', 'POST',
   )
 

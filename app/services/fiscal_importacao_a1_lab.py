@@ -4,7 +4,10 @@ from base64 import b64decode
 from binascii import Error as Base64Error
 from json import loads
 from logging import getLogger
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from xml.etree import ElementTree
+from zipfile import BadZipFile, ZipFile
 
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -25,6 +28,7 @@ from app.services.fiscal_nfe_assinatura_laboratorio import (
 from app.services.fiscal_nfe_preparacao import analisar_venda_nfe
 from app.services.fiscal_nfe_xml_homologacao import (
     EXEMPLO_CNPJ, EXEMPLO_CPF, NS_NFE, gerar_xml_ficticio_nao_assinado,
+    validar_xsd_documento_assinado,
 )
 from app.tenant.context import TenantOrigin
 
@@ -32,6 +36,7 @@ from app.tenant.context import TenantOrigin
 EMPRESA_LAB = 999999999
 MAX_CORPO_LAB = 4 * ((MAX_PFX_BYTES + 2) // 3) + 2048
 logger = getLogger(__name__)
+PACOTE_XSD_LAB = "PL_010h_v1.03"
 
 
 def importacao_lab_disponivel(tenant):
@@ -131,12 +136,32 @@ def verificar_envelope_lab(db, tenant, *, testar_assinatura=False, xml_venda=Non
                    else _assinar_xml_gerado_no_laboratorio(xml_venda, pfx, senha))
             if not verificar_xml_assinado_laboratorio(xml):
                 raise XmlFiscalNaoHabilitado("Assinatura fictícia inválida.")
-            return {"assinatura_lab_verificada": True}
+            resultado = {"assinatura_lab_verificada": True}
+            if xml_venda is not None:
+                _validar_xsd_venda_lab(xml)
+                resultado["xsd_validado"] = PACOTE_XSD_LAB
+            return resultado
         _validar_pfx_lab(pfx, senha)
     except (CofreIndisponivel, ValueError, UnsupportedAlgorithm, XmlFiscalNaoHabilitado):
         logger.warning("A1 laboratório: falha ao verificar o PFX cifrado.")
         raise HTTPException(503, "O cofre não conseguiu verificar o PFX fictício.") from None
     return {"certificado_lab_verificado": True}
+
+
+def _validar_xsd_venda_lab(xml):
+    pacote = Path(__file__).with_name("schemas") / f"{PACOTE_XSD_LAB}.zip"
+    arquivos = (
+        "nfe_v4.00.xsd", "leiauteNFe_v4.00.xsd", "tiposBasico_v4.00.xsd",
+        "DFeTiposBasicos_v1.00.xsd", "xmldsig-core-schema_v1.01.xsd",
+    )
+    try:
+        with ZipFile(pacote) as zip_xsd, TemporaryDirectory() as pasta:
+            for nome in arquivos:
+                Path(pasta, nome).write_bytes(zip_xsd.read(f"{PACOTE_XSD_LAB}/NFe/{nome}"))
+            validar_xsd_documento_assinado(xml, Path(pasta, "nfe_v4.00.xsd"))
+    except (BadZipFile, KeyError, OSError, XmlFiscalNaoHabilitado) as exc:
+        logger.warning("NF-e laboratório: teste XSD %s falhou (%s).", PACOTE_XSD_LAB, type(exc).__name__)
+        raise HTTPException(503, "O XML da venda fictícia não passou na validação XSD.") from None
 
 
 def status_importacao_lab(db, tenant):

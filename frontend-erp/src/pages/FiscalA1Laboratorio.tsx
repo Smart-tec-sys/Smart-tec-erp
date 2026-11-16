@@ -54,9 +54,9 @@ export function FiscalA1Laboratorio() {
     try {
       if (teste === 'venda-assinada') {
         const resultado = await assinarXmlVendaFiscalLaboratorio()
-        if (!resultado.assinado || !resultado.assinatura_lab_verificada) throw new Error()
+        if (!resultado.assinado || !resultado.assinatura_lab_verificada || !resultado.xsd_validado) throw new Error()
         const valor = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(resultado.total))
-        setResultadoTeste(`XML da venda fictícia assinado e verificado. ${resultado.campos_conferidos} campos conferidos, total de ${valor}. Sem transmissão.`)
+        setResultadoTeste(`XML da venda fictícia assinado e validado no XSD ${resultado.xsd_validado}. ${resultado.campos_conferidos} campos conferidos, total de ${valor}. Sem transmissão.`)
       } else if (teste === 'venda') {
         const { campos_conferidos, total } = await conferirXmlVendaFiscalLaboratorio()
         const valor = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(total))
@@ -71,7 +71,7 @@ export function FiscalA1Laboratorio() {
         setResultadoTeste('PFX fictício decifrado e validado no servidor.')
       }
     } catch {
-      setErro(teste === 'venda-assinada' ? 'Não foi possível assinar e verificar o XML da venda fictícia.' :
+      setErro(teste === 'venda-assinada' ? 'Não foi possível confirmar a assinatura e a validação XSD da venda fictícia.' :
         teste === 'venda' ? 'Não foi possível conferir o XML da venda fictícia.' :
         teste === 'assinatura' ? 'Não foi possível verificar a assinatura do XML fictício.' :
         'Não foi possível verificar o PFX armazenado no cofre.')
