@@ -64,3 +64,10 @@ async def importar_certificado_lab(request: Request, db: Session = Depends(get_d
             raise HTTPException(413, "Arquivo PFX acima do limite de laboratório.")
         corpo.extend(parte)
     return await run_in_threadpool(importar_envelope_lab, db, tenant, corpo)
+
+
+@router.post("/certificado-a1/laboratorio/verificar")
+def verificar_certificado_lab(db: Session = Depends(get_db),
+                              tenant: TenantContext = Depends(get_current_tenant)):
+    from app.services.fiscal_importacao_a1_lab import verificar_envelope_lab
+    return verificar_envelope_lab(db, tenant)

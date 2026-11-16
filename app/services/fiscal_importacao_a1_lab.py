@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from app.services.fiscal_cadastros import _empresa, exigir_admin
 from app.services.fiscal_certificado_a1 import MAX_PFX_BYTES, MAX_SENHA_BYTES
-from app.services.fiscal_cofre_a1 import CofreIndisponivel, proteger_a1
+from app.services.fiscal_cofre_a1 import CofreIndisponivel, abrir_a1_interno, proteger_a1
 from app.services.fiscal_cofre_a1_repository import consultar_envelope_interno, guardar_envelope_cifrado
 from app.services.fiscal_kms_aws import AwsKmsProvedor, KEY_ARN, criar_provedor_kms_staging
 from app.services.fiscal_nfe_assinatura_laboratorio import (
@@ -63,22 +63,30 @@ def _provedor_lab():
     return AwsKmsProvedor(key_arn=arn, client=cliente)
 
 
-def importar_envelope_lab(db, tenant, corpo):
+def _exigir_laboratorio(tenant):
     if not importacao_lab_disponivel(tenant):
         raise HTTPException(404, "Importação de laboratório indisponível.")
+
+
+def _validar_pfx_lab(pfx, senha):
+    if not 0 < len(pfx) <= MAX_PFX_BYTES or not 0 < len(senha) <= MAX_SENHA_BYTES:
+        raise ValueError
+    chave, cert, cadeia = pkcs12.load_key_and_certificates(pfx, senha)
+    if cert is None or not isinstance(chave, rsa.RSAPrivateKey) or cadeia:
+        raise ValueError
+    if _verificar_certificado_laboratorio(cert).public_numbers() != chave.public_key().public_numbers():
+        raise ValueError
+
+
+def importar_envelope_lab(db, tenant, corpo):
+    _exigir_laboratorio(tenant)
     exigir_admin(db, tenant)
     _empresa(db, tenant)
     try:
         dados = loads(corpo)
         pfx = b64decode(dados["pfx"], validate=True)
         senha = dados["senha"].encode("utf-8")
-        if not 0 < len(pfx) <= MAX_PFX_BYTES or not 0 < len(senha) <= MAX_SENHA_BYTES:
-            raise ValueError
-        chave, cert, cadeia = pkcs12.load_key_and_certificates(pfx, senha)
-        if cert is None or not isinstance(chave, rsa.RSAPrivateKey) or cadeia:
-            raise ValueError
-        if _verificar_certificado_laboratorio(cert).public_numbers() != chave.public_key().public_numbers():
-            raise ValueError
+        _validar_pfx_lab(pfx, senha)
     except (AttributeError, Base64Error, KeyError, TypeError, ValueError,
             UnsupportedAlgorithm, XmlFiscalNaoHabilitado):
         raise HTTPException(422, "Use um PFX autossinado do laboratório e a senha correspondente.") from None
@@ -102,6 +110,20 @@ def importar_envelope_lab(db, tenant, corpo):
             logger.warning("A1 laboratório: KMS concluiu a cifragem, mas o banco recusou a gravação.")
         raise
     return {"certificado_armazenado": True, "emissao_habilitada": False}
+
+
+def verificar_envelope_lab(db, tenant):
+    _exigir_laboratorio(tenant)
+    try:
+        envelope = consultar_envelope_interno(db, tenant)
+        if envelope is None:
+            raise HTTPException(404, "PFX fictício ausente no cofre.")
+        pfx, senha = abrir_a1_interno(EMPRESA_LAB, envelope, _provedor_lab())
+        _validar_pfx_lab(pfx, senha)
+    except (CofreIndisponivel, ValueError, UnsupportedAlgorithm, XmlFiscalNaoHabilitado):
+        logger.warning("A1 laboratório: falha ao verificar o PFX cifrado.")
+        raise HTTPException(503, "O cofre não conseguiu verificar o PFX fictício.") from None
+    return {"certificado_lab_verificado": True}
 
 
 def status_importacao_lab(db, tenant):
