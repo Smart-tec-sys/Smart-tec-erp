@@ -14,6 +14,7 @@ export type AppView =
     | 'cadastro'
     | 'profile'
     | 'settings'
+    | 'certificate'
     | 'agenda'
     | 'admin'
 
@@ -42,11 +43,14 @@ const ROTAS: Record<string, { view: AppView; activePage: string }> = {
     'vendas/nova': { view: 'new-sale', activePage: 'Vendas' },
     'financeiro': { view: 'finance', activePage: 'Financeiro' },
     'fiscal': { view: 'fiscal', activePage: 'Fiscal' },
+    'fiscal/nfe': { view: 'fiscal', activePage: 'Fiscal' },
+    'fiscal/certificado-digital': { view: 'certificate', activePage: 'Fiscal' },
     'contabilidade': { view: 'accounting', activePage: 'Contabilidade' },
     'produtos': { view: 'products', activePage: 'Produtos' },
     'agenda': { view: 'agenda', activePage: 'Agenda' },
     'perfil': { view: 'profile', activePage: 'Meus dados' },
     'configuracoes': { view: 'settings', activePage: 'Configurações' },
+    'configuracoes/certificado-digital': { view: 'certificate', activePage: 'Fiscal' },
     'admin': { view: 'admin', activePage: 'Administração Smart-tec' },
 }
 
@@ -92,12 +96,13 @@ export function hashDaNavegacao(
         case 'sale-detail': return '#/vendas'
         case 'new-sale': return '#/vendas/nova'
         case 'finance': return '#/financeiro'
-        case 'fiscal': return '#/fiscal'
+        case 'fiscal': return '#/fiscal/nfe'
         case 'accounting': return '#/contabilidade'
         case 'products': return '#/produtos'
         case 'agenda': return '#/agenda'
         case 'profile': return '#/perfil'
         case 'settings': return '#/configuracoes'
+        case 'certificate': return '#/fiscal/certificado-digital'
         case 'admin': return '#/admin'
         case 'cadastro': return cadastro ? `#/cadastros/${cadastro}` : '#/cadastros/clientes'
     }
