@@ -27,17 +27,18 @@ BEGIN
     ORDER BY ordinal_position
   LOOP
     expression := CASE col.column_name
-      WHEN 'nome' THEN '''ROLÔ PICASSO BK 2,50 (' || ''' || v.cor || '')''' 
+      WHEN 'nome' THEN '(''ROLÔ PICASSO BK 2,50 ('' || v.cor || '')'')' 
       WHEN 'cor' THEN 'v.cor'
       WHEN 'variacao_cor' THEN 'v.cor'
       WHEN 'tipo_produto' THEN '''Produto fabricado'''
       WHEN 'material_tecido' THEN '''BLACKOUT'''
       WHEN 'codigo_interno' THEN '''ST-ROLO-PICASSO-BK-'' || v.slug'
       WHEN 'codigo' THEN '''ST-ROLO-PICASSO-BK-'' || v.slug'
+      WHEN 'codigo_barras' THEN 'NULL'
       WHEN 'valor_custo' THEN '(COALESCE(p.valor_custo,89.90) + 33.824 - 19.72)'
       WHEN 'custo_final' THEN '(COALESCE(p.custo_final,89.90) + 33.824 - 19.72)'
       WHEN 'valor_venda' THEN 'ROUND(((COALESCE(p.custo_final,89.90) + 33.824 - 19.72) * 2.5)::numeric,2)'
-      WHEN 'observacoes' THEN '''Tecido Picasso BK: produto ID '' || v.tecido_id || ''; validar composição e cálculo técnico.'''
+      WHEN 'observacoes' THEN '(''Tecido Picasso BK: produto ID '' || v.tecido_id || ''; validar composição e cálculo técnico.'')'
       ELSE 'p.' || quote_ident(col.column_name)
     END;
     columns_sql := concat_ws(', ',columns_sql,quote_ident(col.column_name));
