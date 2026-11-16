@@ -3,7 +3,9 @@ import os
 from base64 import b64decode
 from binascii import Error as Base64Error
 from json import loads
+from logging import getLogger
 
+from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.exceptions import UnsupportedAlgorithm
@@ -22,6 +24,7 @@ from app.tenant.context import TenantOrigin
 
 EMPRESA_LAB = 999999999
 MAX_CORPO_LAB = 4 * ((MAX_PFX_BYTES + 2) // 3) + 2048
+logger = getLogger(__name__)
 
 
 def importacao_lab_disponivel(tenant):
@@ -45,6 +48,7 @@ def _provedor_lab():
     key_id = os.getenv("AWS_ACCESS_KEY_ID")
     secret = os.getenv("AWS_SECRET_ACCESS_KEY")
     if not KEY_ARN.fullmatch(arn) or not arn.startswith("arn:aws:kms:us-east-2:") or not key_id or not secret:
+        logger.warning("A1 laboratório: configuração IAM ou ARN KMS incompleto ou inválido.")
         raise CofreIndisponivel("Credencial KMS de laboratório indisponível.")
     from botocore.exceptions import BotoCoreError
 
@@ -54,8 +58,8 @@ def _provedor_lab():
             aws_secret_access_key=secret,
             config=Config(connect_timeout=3, read_timeout=5, retries={"total_max_attempts": 2}),
         )
-    except BotoCoreError:
-        raise CofreIndisponivel("Cliente KMS de laboratório indisponível.") from None
+    except BotoCoreError as exc:
+        raise CofreIndisponivel("Cliente KMS de laboratório indisponível.") from exc
     return AwsKmsProvedor(key_arn=arn, client=cliente)
 
 
@@ -80,9 +84,23 @@ def importar_envelope_lab(db, tenant, corpo):
         raise HTTPException(422, "Use um PFX autossinado do laboratório e a senha correspondente.") from None
     try:
         envelope = proteger_a1(EMPRESA_LAB, pfx, senha, _provedor_lab())
-    except CofreIndisponivel:
+    except CofreIndisponivel as exc:
+        causa = exc.__cause__
+        codigo = causa.response.get("Error", {}).get("Code") if isinstance(causa, ClientError) else None
+        if codigo not in (
+            "AccessDenied", "AccessDeniedException", "DisabledException", "ExpiredTokenException",
+            "InvalidClientTokenId", "InvalidSignatureException", "KMSInvalidStateException",
+            "NotFoundException", "SignatureDoesNotMatch", "UnrecognizedClientException",
+        ):
+            codigo = type(causa).__name__ if causa is not None else "configuração ou resposta KMS inválida"
+        logger.warning("A1 laboratório: falha no KMS (%s).", codigo)
         raise HTTPException(503, "Cofre de laboratório indisponível.") from None
-    guardar_envelope_cifrado(db, tenant, envelope)
+    try:
+        guardar_envelope_cifrado(db, tenant, envelope)
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            logger.warning("A1 laboratório: KMS concluiu a cifragem, mas o banco recusou a gravação.")
+        raise
     return {"certificado_armazenado": True, "emissao_habilitada": False}
 
 
