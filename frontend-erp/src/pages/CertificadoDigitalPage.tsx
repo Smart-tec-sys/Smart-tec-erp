@@ -35,9 +35,6 @@ export function CertificadoDigitalPage() {
   }, [empresaId, podeGerenciar])
 
   return <main className="fiscal-v1">
-    <nav className="fiscal-v1-tabs" aria-label="Configurações">
-      <a href="#/configuracoes">Voltar às configurações</a>
-    </nav>
     <header className="fiscal-v1-head">
       <h1>Certificado digital</h1>
     </header>

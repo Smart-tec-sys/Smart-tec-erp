@@ -166,6 +166,9 @@ function App() {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [cadastrosOpen, setCadastrosOpen] = useState(true)
     const [navegacaoInicial] = useState(() => navegacaoDoHash(window.location.hash))
+    const [fiscalOpen, setFiscalOpen] = useState(() =>
+        navegacaoInicial.view === 'fiscal' || navegacaoInicial.view === 'certificate'
+    )
     const [activePage, setActivePage] = useState(navegacaoInicial.activePage)
     const [view, setView] = useState<AppView>(navegacaoInicial.view)
     const [searchOpen, setSearchOpen] = useState(false)
@@ -209,6 +212,7 @@ function App() {
             const destino = navegacaoDoHash(window.location.hash)
             if (destino.cadastro) setCadastroEntity(destino.cadastro)
             if (destino.view === 'new-budget') setBudgetId(null)
+            if (destino.view === 'fiscal' || destino.view === 'certificate') setFiscalOpen(true)
             setActivePage(destino.activePage)
             setView(destino.view)
             setMobileOpen(false)
@@ -323,6 +327,13 @@ function App() {
         setMobileOpen(false)
     }
 
+    const openFiscal = (destino: 'fiscal' | 'certificate') => {
+        setFiscalOpen(true)
+        setActivePage('Fiscal')
+        setView(destino)
+        setMobileOpen(false)
+    }
+
     const openSale = (id: number) => {
         if (!Number.isSafeInteger(id) || id <= 0) return
         setSelectedSaleId(id)
@@ -375,18 +386,34 @@ function App() {
                             {!collapsed && <div className="nav-label">{group.title}</div>}
                             {group.items.map((item) => {
                                 const Icon = iconMap[item.icon as keyof typeof iconMap]
-                                const isActive = activePage === item.label
+                                const isFiscal = item.label === 'Fiscal'
+                                const isActive = isFiscal ? view === 'fiscal' || view === 'certificate' : activePage === item.label
                                 return (
                                     <div key={item.label}>
                                         <button
                                             className={`nav-item ${isActive ? 'active' : ''}`}
-                                            onClick={() => navigate(item.label)}
+                                            onClick={() => {
+                                                if (!isFiscal) {
+                                                    navigate(item.label)
+                                                } else if (collapsed) {
+                                                    setCollapsed(false)
+                                                    setFiscalOpen(true)
+                                                } else {
+                                                    setFiscalOpen(value => !value)
+                                                }
+                                            }}
+                                            aria-expanded={isFiscal ? fiscalOpen && !collapsed : undefined}
                                             title={collapsed ? item.label : undefined}
                                         >
                                             <Icon size={18} strokeWidth={1.8} />
                                             {!collapsed && <span>{item.label}</span>}
                                             {item.label === 'Orçamentos' && !collapsed && <span className="nav-badge">8</span>}
 
+                                            {isFiscal && !collapsed && <ChevronRight
+                                                aria-hidden="true"
+                                                size={14}
+                                                style={{ marginLeft: 'auto', transform: fiscalOpen ? 'rotate(90deg)' : 'none' }}
+                                            />}
                                             {item.label === 'Cadastros' && !collapsed && (
                                                 <ChevronRight
                                                     size={14}
@@ -398,6 +425,18 @@ function App() {
                                             )}
                                         </button>
 
+                                        {isFiscal && fiscalOpen && !collapsed && (
+                                            <div className="nav-submenu" role="group" aria-label="Fiscal">
+                                                <button type="button" className={`nav-subitem ${view === 'fiscal' ? 'active' : ''}`}
+                                                    aria-current={view === 'fiscal' ? 'page' : undefined}
+                                                    onClick={() => openFiscal('fiscal')}>NF-e</button>
+                                                <button type="button" className="nav-subitem" disabled>NFS-e <small> · Em breve</small></button>
+                                                <button type="button" className="nav-subitem" disabled>NFC-e <small> · Em breve</small></button>
+                                                <button type="button" className={`nav-subitem ${view === 'certificate' ? 'active' : ''}`}
+                                                    aria-current={view === 'certificate' ? 'page' : undefined}
+                                                    onClick={() => openFiscal('certificate')}>Certificado digital</button>
+                                            </div>
+                                        )}
                                         {item.label === 'Cadastros' && cadastrosOpen && !collapsed && (
                                             <div className="nav-submenu">
                                                 {[
@@ -555,7 +594,7 @@ function App() {
                     {view === 'new-sale' && <NewSalePage onBack={() => navigate('Vendas')} onSaved={() => { navigate('Vendas'); setBudgetSavedToast({ message: 'Venda salva com sucesso.' }) }} />}
                     {view === 'accounting' && <AccountingPage />}
                     {view === 'finance' && <FinancePage focus={financeFocus} onClearFocus={() => setFinanceFocus(null)} />}
-                    {view === 'fiscal' && <FiscalPage />}
+                    {view === 'fiscal' && <FiscalPage secaoInicial="nfe" />}
                     {view === 'new-budget' && <NewBudgetPage budgetId={budgetId} onBack={() => navigate('Orçamentos')} onSaved={(id, mode) => { setBudgetId(id); setBudgetRefresh((value) => value + 1); navigate('Orçamentos'); setBudgetSavedToast({ message: mode === 'created' ? 'Orçamento salvo com sucesso.' : 'Orçamento atualizado com sucesso.' }) }} onConverted={() => navigate('Vendas')} />}
                     {view === 'products' && <ProductsPage />}
                     {view === 'cadastro' && <CadastrosPage entity={cadastroEntity} />}

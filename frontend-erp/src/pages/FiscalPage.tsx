@@ -42,11 +42,16 @@ const emptyProduct: FiscalProdutoDados = {
   cst_pis:null,cst_cofins:null,cst_ibs_cbs:null,cclass_trib_ibs_cbs:null,
 }
 
-export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: boolean } = {}) {
+type FiscalPageProps = {
+  modoHomologacao?: boolean
+  secaoInicial?: 'empresa' | 'nfe'
+}
+
+export function FiscalPage({ modoHomologacao = false, secaoInicial = 'empresa' }: FiscalPageProps = {}) {
   const session = useAuthSession()
   const canEdit = modoHomologacao || session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
   const companyId=modoHomologacao ? 999 : session?.empresa.id
-  const [tab,setTab]=useState<Secao>('empresa')
+  const [tab,setTab]=useState<Secao>(secaoInicial)
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
   const [emitente,setEmitente]=useState({razao_social:'',nome_fantasia:'',documento:''})
   const [product,setProduct]=useState<FiscalProdutoDados>(emptyProduct)
