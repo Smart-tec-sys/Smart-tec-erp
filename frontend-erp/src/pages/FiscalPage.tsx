@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react'
 import { getAllProducts } from '../services/api'
 import type { ApiProduct } from '../types/budget'
 import { useAuthSession } from '../components/AuthGate'
+import { setEmpresaId } from '../services/auth'
 import { getFiscalEmpresa, getFiscalProduto, getFiscalCertificadoA1Status, patchFiscalEmpresa, patchFiscalProduto } from '../services/fiscal'
 import type { FiscalEmpresaDados, FiscalProdutoDados, FiscalCertificadoA1Status } from '../services/fiscal'
 import './FiscalPage.css'
 import { NfeGestaoClickPreview } from './NfeGestaoClickPreview'
 import { FiscalA1Laboratorio } from './FiscalA1Laboratorio'
+
+const EMPRESA_LAB_A1 = 999999999
 
 type Field = { id:string; label:string; placeholder?:string }
 const companyFields:Field[] = [
@@ -45,7 +48,15 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
   const session = useAuthSession()
   const canEdit = modoHomologacao || session?.empresa.papel === 'OWNER' || session?.empresa.papel === 'ADMIN'
   const companyId=modoHomologacao ? 999 : session?.empresa.id
-  const [tab,setTab]=useState<'empresa'|'produto'|'nfe'|'certificado'|'configuracoes'|'confirmacao'>('empresa')
+  const empresaLab = modoHomologacao ? undefined : session?.empresas.find(empresa =>
+    empresa.id === EMPRESA_LAB_A1 &&
+    empresa.slug === 'laboratorio-fiscal-a1' &&
+    (empresa.papel === 'ADMIN' || empresa.papel === 'OWNER')
+  )
+  const laboratorioAtivo = empresaLab?.id === companyId && empresaLab !== undefined
+  const [tab,setTab]=useState<'empresa'|'produto'|'nfe'|'certificado'|'configuracoes'|'confirmacao'>(() =>
+    laboratorioAtivo ? 'certificado' : 'empresa'
+  )
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
   const [emitente,setEmitente]=useState({razao_social:'',nome_fantasia:'',documento:''})
   const [product,setProduct]=useState<FiscalProdutoDados>(emptyProduct)
@@ -153,6 +164,13 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
       <p>Preparação de NF-e sem emissão ou transmissão. Confira todos os códigos com a contabilidade.</p>
     </header>
     <div className="fiscal-v1-warning" role="status">{modoHomologacao ? 'PRÉVIA VISUAL — dados fictícios e não persistidos. Sem API, sem banco, sem SEFAZ.' : 'Ambiente: homologação de cadastro · NF-e e SEFAZ desabilitadas'}</div>
+    {empresaLab && <p>
+      {laboratorioAtivo ? <strong>Empresa ativa — {empresaLab.nome}</strong> :
+        <button className="fiscal-v1-add" type="button" onClick={() => {
+          setEmpresaId(empresaLab.id)
+          window.location.reload()
+        }}>Abrir {empresaLab.nome}</button>}
+    </p>}
     <section className="fiscal-v1-setup" aria-label="Etapas da configuração de NF-e">
       <h2>Configurar emissão de NF-e</h2>
       <p>Fluxo de preparação inspirado na referência enviada. Nenhuma etapa habilita emissão nesta versão.</p>
