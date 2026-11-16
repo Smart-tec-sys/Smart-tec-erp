@@ -11,6 +11,8 @@ import { FiscalA1Laboratorio } from './FiscalA1Laboratorio'
 
 const EMPRESA_LAB_A1 = 999999999
 
+type Secao = 'empresa' | 'produto' | 'nfe' | 'certificado' | 'configuracoes' | 'confirmacao' | 'laboratorio'
+
 type Field = { id:string; label:string; placeholder?:string }
 const companyFields:Field[] = [
   {id:'inscricao_estadual',label:'Inscrição Estadual (IE)'},
@@ -54,9 +56,7 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     (empresa.papel === 'ADMIN' || empresa.papel === 'OWNER')
   )
   const laboratorioAtivo = empresaLab?.id === companyId && empresaLab !== undefined
-  const [tab,setTab]=useState<'empresa'|'produto'|'nfe'|'certificado'|'configuracoes'|'confirmacao'>(() =>
-    laboratorioAtivo ? 'certificado' : 'empresa'
-  )
+  const [tab,setTab]=useState<Secao>('empresa')
   const [company,setCompany]=useState<FiscalEmpresaDados>(emptyCompany)
   const [emitente,setEmitente]=useState({razao_social:'',nome_fantasia:'',documento:''})
   const [product,setProduct]=useState<FiscalProdutoDados>(emptyProduct)
@@ -131,6 +131,12 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     return()=>{active=false}
   },[tab,companyId,catalog.length,modoHomologacao])
 
+  function abrirSecao(secao: Secao) {
+    setTab(secao)
+    setError('')
+    setMessage('')
+  }
+
   async function selectProduct(id:number){
     setError('');setMessage('');setSelectedId(id);setLoading(true)
     if(modoHomologacao){setProduct(demoProductsSaved[id]??emptyProduct);setLoading(false);return}
@@ -158,71 +164,62 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
     (p.nome+' '+(p.codigo_interno||'')+' '+p.id).toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))
   ).slice(0,20) : []
 
+  const secoes = [
+    ['empresa', 'Dados da empresa'],
+    ['produto', 'Tributação dos produtos'],
+    ['certificado', 'Certificado digital'],
+    ['nfe', 'Emissão de NF-e'],
+  ] as const
+  const secaoAtiva = tab === 'configuracoes' || tab === 'confirmacao' ? 'nfe' : tab
+
   return <main className="fiscal-v1">
     <header className="fiscal-v1-head">
-      <h1>Fiscal · Cadastros V1</h1>
-      <p>Preparação de NF-e sem emissão ou transmissão. Confira todos os códigos com a contabilidade.</p>
+      <h1>Fiscal</h1>
     </header>
-    <div className="fiscal-v1-warning" role="status">{modoHomologacao ? 'PRÉVIA VISUAL — dados fictícios e não persistidos. Sem API, sem banco, sem SEFAZ.' : 'Ambiente: homologação de cadastro · NF-e e SEFAZ desabilitadas'}</div>
-    {empresaLab && <p>
-      {laboratorioAtivo ? <strong>Empresa ativa — {empresaLab.nome}</strong> :
-        <button className="fiscal-v1-add" type="button" onClick={() => {
+    {modoHomologacao && <p className="fiscal-v1-warning" role="status">Prévia com dados fictícios.</p>}
+    <nav className="fiscal-v1-tabs" aria-label="Seções do Fiscal">
+      {secoes.map(([value, label]) =>
+        <button key={value} type="button" aria-pressed={secaoAtiva===value} onClick={()=>abrirSecao(value)}>
+          {label}
+        </button>
+      )}
+      {laboratorioAtivo && <button type="button" aria-pressed={tab==='laboratorio'}
+        onClick={()=>abrirSecao('laboratorio')}>Laboratório</button>}
+    </nav>
+    {error&&<p className="fiscal-v1-error" role="alert">{error}</p>}
+    {message&&<p className="fiscal-v1-success" role="status">{message}</p>}
+    {tab==='nfe' ? <>
+      <section className="fiscal-v1-panel">
+        <h2>Emissão de NF-e</h2>
+        <p>Emissão pelo ERP em preparação.</p>
+        <button className="fiscal-v1-add" type="button"
+          onClick={()=>abrirSecao('configuracoes')}>Configurações de homologação</button>
+      </section>
+      {(modoHomologacao || laboratorioAtivo) && <details className="fiscal-v1-setup">
+        <summary>Prévia dos campos da NF-e</summary>
+        <NfeGestaoClickPreview />
+      </details>}
+    </>
+      : tab==='certificado' ? <section className="fiscal-v1-panel">
+        <h2>Certificado digital A1</h2>
+        {certLoading&&<p role="status">Consultando certificado…</p>}
+        {certError&&<p className="fiscal-v1-error" role="alert">{certError}</p>}
+        {certStatus&&<>
+          <p role="status"><strong>{certStatus.situacao==='NAO_CONFIGURADO'?'Não configurado':certStatus.situacao}</strong></p>
+          <p>{certStatus.aviso}</p>
+        </>}
+        {empresaLab && !laboratorioAtivo && <button className="fiscal-v1-add" type="button" onClick={() => {
           setEmpresaId(empresaLab.id)
           window.location.reload()
         }}>Abrir {empresaLab.nome}</button>}
-    </p>}
-    <section className="fiscal-v1-setup" aria-label="Etapas da configuração de NF-e">
-      <h2>Configurar emissão de NF-e</h2>
-      <p>Fluxo de preparação inspirado na referência enviada. Nenhuma etapa habilita emissão nesta versão.</p>
-      <nav className="fiscal-v1-steps" aria-label="Etapas da NF-e">
-        {([
-          ['empresa','1','Dados da empresa'],
-          ['certificado','2','Certificado digital'],
-          ['configuracoes','3','Configurações'],
-          ['confirmacao','4','Confirmação'],
-        ] as const).map(([value,n,label])=>
-          <button key={value} type="button" aria-current={tab===value?'step':undefined}
-            onClick={()=>{setTab(value);setError('');setMessage('')}}>
-            <span className="fiscal-v1-step-num">{n}</span><span>{label}</span>
-          </button>
-        )}
-      </nav>
-    </section>
-    <div className="fiscal-v1-tabs">
-      <button type="button" aria-pressed={tab==='empresa'} onClick={()=>{setTab('empresa');setError('');setMessage('')}}>Dados da empresa</button>
-      <button type="button" aria-pressed={tab==='produto'} onClick={()=>{setTab('produto');setError('');setMessage('')}}>Tributação dos produtos</button>
-      <button type="button" aria-pressed={tab==='nfe'} onClick={()=>{setTab('nfe');setError('');setMessage('')}}>NF-e · Referência GestãoClick</button>
-    </div>
-    {error&&<p className="fiscal-v1-error" role="alert">{error}</p>}
-    {message&&<p className="fiscal-v1-success" role="status">{message}</p>}
-    {!canEdit&&<p className="fiscal-v1-muted">Apenas proprietários e administradores podem alterar estes cadastros.</p>}
-    {tab==='nfe' ? <NfeGestaoClickPreview />
-      : tab==='certificado' ? <section className="fiscal-v1-panel">
-        <h2>Certificado digital</h2>
-        <p>O GestãoClick apresenta certificados A1 e A3. Nesta primeira versão da Smart-tec, estamos preparando a integração segura do <strong>A1 (arquivo PFX/P12)</strong>.</p>
-        <div className="fiscal-v1-company-identification" role="status" style={{padding:14,margin:'12px 0'}}>
-          <strong>Status do A1 para emissão da empresa ativa</strong>
-          {certLoading&&<p>Consultando situação do A1...</p>}
-          {certError&&<p className="fiscal-v1-error">{certError}</p>}
-          {certStatus&&<>
-            <p><strong>{certStatus.situacao==='NAO_CONFIGURADO'?'Não configurado':certStatus.situacao}</strong> · Cofre: não configurado · Emissão: bloqueada</p>
-            <p>{certStatus.aviso}</p>
-            <p>Integração AWS KMS: {certStatus.integracao_kms==='CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA'
-              ? 'Configuração OIDC detectada, conexão não verificada'
-              : 'Inativa'}.</p>
-          </>}
-        </div>
-        <div className="fiscal-v1-cert-types">
-          <article><strong>Certificado A1</strong><p>Arquivo e senha serão tratados em fluxo protegido, com autorização por empresa. Ainda não disponível nesta prévia.</p></article>
-          <article><strong>Certificado A3</strong><p>Compatibilidade futura, condicionada a integração com dispositivo ou provedor de assinatura.</p></article>
-        </div>
-        <p className="fiscal-v1-warning">Mantenha certificados reais e suas senhas fora desta tela. A assinatura de NF-e segue desativada.</p>
-        {!modoHomologacao && canEdit && <FiscalA1Laboratorio key={companyId} />}
-        <button className="fiscal-v1-add" type="button" onClick={()=>setTab('configuracoes')}>Ver configurações de homologação</button>
       </section>
+      : tab==='laboratorio' ? (laboratorioAtivo && <section className="fiscal-v1-panel">
+        <h2>Laboratório de NF-e</h2>
+        <p>Use apenas certificados fictícios.</p>
+        <FiscalA1Laboratorio key={companyId} />
+      </section>)
       : tab==='configuracoes' ? <section className="fiscal-v1-panel">
         <h2>Configurações de NF-e</h2>
-        <p>Separe as opções da NF-e de produtos da NFC-e, NFS-e e notas de entrada.</p>
         <div className="fiscal-v1-grid">
           <label><span>Ambiente</span><input readOnly value="Homologação (sem valor fiscal)" /></label>
           <label><span>Série de NF-e — homologação</span><input
@@ -237,7 +234,11 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
             onChange={e=>setCompany(v=>({...v,informacoes_complementares:e.target.value||null}))}
             placeholder="Texto padrão, sujeito à revisão fiscal"/></label>
         <p className="fiscal-v1-muted">Dados salvos apenas como cadastro preparatório. Não reservam número nem calculam tributos.</p>
-        <button type="button" className="fiscal-v1-save" disabled={loading||saving||!canEdit} onClick={saveCompany}>{saving?'Salvando...':'Salvar configurações'}</button>
+        <div className="fiscal-v1-tabs">
+          <button type="button" className="fiscal-v1-save" disabled={loading||saving||!canEdit}
+            onClick={saveCompany}>{saving?'Salvando...':'Salvar configurações'}</button>
+          <button type="button" onClick={()=>abrirSecao('confirmacao')}>Conferir pendências</button>
+        </div>
       </section>
       : tab==='confirmacao' ? <section className="fiscal-v1-panel">
         <h2>Confirmação e pendências</h2>
@@ -253,7 +254,7 @@ export function FiscalPage({ modoHomologacao = false }: { modoHomologacao?: bool
           <li>○ Certificado A1 ainda não integrado</li>
           <li>○ XML, regras tributárias e autorização SEFAZ ainda pendentes</li>
         </ul>
-        <button type="button" className="fiscal-v1-add" onClick={()=>setTab('empresa')}>Revisar dados da empresa</button>
+        <button type="button" className="fiscal-v1-add" onClick={()=>abrirSecao('empresa')}>Revisar dados da empresa</button>
       </section>
       : tab==='empresa'?<section className="fiscal-v1-panel">
       <h2>Emitente</h2><p>Os dados são específicos da empresa ativa, sem alterar outras empresas.</p>
