@@ -40,6 +40,32 @@ def certificado_a1_status(db: Session = Depends(get_db),
     return status_a1_empresa(db, tenant)
 
 
+@router.post("/certificado-a1/importar")
+async def importar_certificado_a1_empresa(
+    request: Request, db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant),
+):
+    from app.services.fiscal_importacao_a1_empresa import (
+        MAX_CORPO, exigir_importacao_disponivel, importar_certificado_empresa,
+    )
+
+    exigir_importacao_disponivel(tenant)
+    await run_in_threadpool(fiscal_cadastros.exigir_admin, db, tenant)
+    tipo = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if tipo != "application/json":
+        raise HTTPException(415, "Use o formulário de importação do certificado.")
+
+    corpo = bytearray()
+    try:
+        async for parte in request.stream():
+            if len(corpo) + len(parte) > MAX_CORPO:
+                raise HTTPException(413, "Arquivo de certificado acima do limite.")
+            corpo.extend(parte)
+        return await run_in_threadpool(importar_certificado_empresa, db, tenant, corpo)
+    finally:
+        corpo.clear()
+
+
 @router.get("/certificado-a1/laboratorio")
 def certificado_lab_status(db: Session = Depends(get_db),
                            tenant: TenantContext = Depends(get_current_tenant)):
