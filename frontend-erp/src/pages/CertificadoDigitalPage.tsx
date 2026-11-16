@@ -21,7 +21,7 @@ export function CertificadoDigitalPage() {
   const [erro, setErro] = useState('')
 
   useEffect(() => {
-    if (!podeGerenciar || empresaId === undefined) return
+    if (!podeGerenciar || laboratorioAtivo || empresaId === undefined) return
     let ativo = true
     getFiscalCertificadoA1Status()
       .then(resultado => {
@@ -32,7 +32,7 @@ export function CertificadoDigitalPage() {
         if (ativo) setErro('Não foi possível consultar o certificado da empresa.')
       })
     return () => { ativo = false }
-  }, [empresaId, podeGerenciar])
+  }, [empresaId, laboratorioAtivo, podeGerenciar])
 
   return <main className="fiscal-v1">
     <header className="fiscal-v1-head">
@@ -40,25 +40,19 @@ export function CertificadoDigitalPage() {
     </header>
     <section className="fiscal-v1-panel">
       <h2>Certificado A1</h2>
-      {!podeGerenciar && <p>O proprietário ou administrador da empresa pode gerenciar o certificado.</p>}
-      {podeGerenciar && !status && !erro && <p role="status">Consultando certificado…</p>}
-      {podeGerenciar && erro && <p className="fiscal-v1-error" role="alert">{erro}</p>}
-      {podeGerenciar && status && <>
-        <p role="status"><strong>{status.situacao === 'NAO_CONFIGURADO' ? 'Não configurado' : status.situacao}</strong></p>
-        <p>{status.aviso}</p>
+      {laboratorioAtivo ? <FiscalA1Laboratorio /> : <>
+        {!podeGerenciar && <p>O proprietário ou administrador da empresa pode gerenciar o certificado.</p>}
+        {podeGerenciar && !status && !erro && <p role="status">Consultando certificado…</p>}
+        {podeGerenciar && erro && <p className="fiscal-v1-error" role="alert">{erro}</p>}
+        {podeGerenciar && status && <>
+          <p role="status"><strong>{status.situacao === 'NAO_CONFIGURADO' ? 'Não configurado' : status.situacao}</strong></p>
+          {!status.certificado_armazenado && <p>A importação do certificado da empresa ainda não está disponível.</p>}
+        </>}
+        {laboratorio && <button className="fiscal-v1-add" type="button" onClick={() => {
+          setEmpresaId(laboratorio.id)
+          window.location.reload()
+        }}>Abrir empresa de teste</button>}
       </>}
     </section>
-    {laboratorioAtivo && <details className="fiscal-v1-setup">
-      <summary>Laboratório</summary>
-      <p>Use apenas certificados fictícios.</p>
-      <FiscalA1Laboratorio />
-    </details>}
-    {laboratorio && !laboratorioAtivo && <details className="fiscal-v1-setup">
-      <summary>Laboratório</summary>
-      <button className="fiscal-v1-add" type="button" onClick={() => {
-        setEmpresaId(laboratorio.id)
-        window.location.reload()
-      }}>Abrir {laboratorio.nome}</button>
-    </details>}
   </main>
 }
