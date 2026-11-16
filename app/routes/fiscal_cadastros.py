@@ -85,3 +85,10 @@ def conferir_venda_ficticia(db: Session = Depends(get_db),
                             tenant: TenantContext = Depends(get_current_tenant)):
     from app.services.fiscal_importacao_a1_lab import conferir_xml_venda_lab
     return conferir_xml_venda_lab(db, tenant)
+
+
+@router.post("/nfe/laboratorio/assinar-venda")
+def assinar_venda_ficticia(db: Session = Depends(get_db),
+                          tenant: TenantContext = Depends(get_current_tenant)):
+    from app.services.fiscal_importacao_a1_lab import conferir_xml_venda_lab
+    return conferir_xml_venda_lab(db, tenant, assinar=True)

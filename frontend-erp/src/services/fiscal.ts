@@ -104,6 +104,10 @@ export const conferirXmlVendaFiscalLaboratorio = () =>
   fiscalRequest<{ campos_conferidos: number; total: string; assinado: false; transmitido: false }>(
     '/fiscal/cadastros/nfe/laboratorio/conferir-venda', 'POST',
   )
+export const assinarXmlVendaFiscalLaboratorio = () =>
+  fiscalRequest<{ campos_conferidos: number; total: string; assinado: true; assinatura_lab_verificada: true; transmitido: false }>(
+    '/fiscal/cadastros/nfe/laboratorio/assinar-venda', 'POST',
+  )
 
 export async function importarFiscalA1Laboratorio(arquivo: File, senha: string) {
   if (arquivo.size < 1 || arquivo.size > 128 * 1024) {

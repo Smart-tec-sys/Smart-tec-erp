@@ -19,6 +19,7 @@ from app.services.fiscal_cofre_a1_repository import consultar_envelope_interno, 
 from app.services.fiscal_kms_aws import AwsKmsProvedor, KEY_ARN, criar_provedor_kms_staging
 from app.services.fiscal_nfe_assinatura_laboratorio import (
     XmlFiscalNaoHabilitado, _verificar_certificado_laboratorio,
+    _assinar_xml_gerado_no_laboratorio,
     assinar_xml_ficticio_pfx_laboratorio, verificar_xml_assinado_laboratorio,
 )
 from app.services.fiscal_nfe_preparacao import analisar_venda_nfe
@@ -118,15 +119,16 @@ def importar_envelope_lab(db, tenant, corpo):
     return {"certificado_armazenado": True, "emissao_habilitada": False}
 
 
-def verificar_envelope_lab(db, tenant, *, testar_assinatura=False):
+def verificar_envelope_lab(db, tenant, *, testar_assinatura=False, xml_venda=None):
     _exigir_laboratorio(tenant)
     try:
         envelope = consultar_envelope_interno(db, tenant)
         if envelope is None:
             raise HTTPException(404, "PFX fictício ausente no cofre.")
         pfx, senha = abrir_a1_interno(EMPRESA_LAB, envelope, _provedor_lab())
-        if testar_assinatura:
-            xml = assinar_xml_ficticio_pfx_laboratorio(pfx, senha)
+        if testar_assinatura or xml_venda is not None:
+            xml = (assinar_xml_ficticio_pfx_laboratorio(pfx, senha) if xml_venda is None
+                   else _assinar_xml_gerado_no_laboratorio(xml_venda, pfx, senha))
             if not verificar_xml_assinado_laboratorio(xml):
                 raise XmlFiscalNaoHabilitado("Assinatura fictícia inválida.")
             return {"assinatura_lab_verificada": True}
@@ -145,7 +147,7 @@ def status_importacao_lab(db, tenant):
     }
 
 
-def conferir_xml_venda_lab(db, tenant):
+def conferir_xml_venda_lab(db, tenant, *, assinar=False):
     _exigir_laboratorio(tenant)
     exigir_admin(db, tenant)
     _empresa(db, tenant)
@@ -185,5 +187,8 @@ def conferir_xml_venda_lab(db, tenant):
     if inf is None or any(inf.findtext(campo, namespaces={"": NS_NFE}) != valor
                           for campo, valor in campos_esperados.items()):
         raise HTTPException(503, "O XML diverge da venda ou da classificação fictícia.")
-    return {"campos_conferidos": len(campos_esperados), "total": venda["total_final"],
-            "assinado": False, "transmitido": False}
+    resultado = {"campos_conferidos": len(campos_esperados), "total": venda["total_final"],
+                 "assinado": False, "transmitido": False}
+    if assinar:
+        resultado.update(verificar_envelope_lab(db, tenant, xml_venda=xml), assinado=True)
+    return resultado

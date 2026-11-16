@@ -97,6 +97,11 @@ def assinar_xml_ficticio_pfx_laboratorio(pfx: bytes, senha: bytes) -> bytes:
     Os bytes de PFX são recebidos apenas em memória, não são armazenados.
     Exige o CN de laboratório + certificado autossinado, não ICP-Brasil.
     """
+    return _assinar_xml_gerado_no_laboratorio(gerar_xml_ficticio_nao_assinado(), pfx, senha)
+
+
+def _assinar_xml_gerado_no_laboratorio(xml: bytes, pfx: bytes, senha: bytes) -> bytes:
+    """Uso interno com XML sintético gerado pelo servidor."""
     if not isinstance(pfx, bytes) or not (0 < len(pfx) <= MAX_PFX):
         raise XmlFiscalNaoHabilitado("PFX de laboratório inválido.")
     if not isinstance(senha, bytes) or not (0 < len(senha) <= 128):
@@ -111,7 +116,7 @@ def assinar_xml_ficticio_pfx_laboratorio(pfx: bytes, senha: bytes) -> bytes:
     if pubkey.public_numbers() != key.public_key().public_numbers():
         raise XmlFiscalNaoHabilitado("Chave privada não corresponde ao certificado.")
 
-    root = _parse(gerar_xml_ficticio_nao_assinado())
+    root = _parse(xml)
     inf = root.find(f"{{{NS_NFE}}}infNFe")
     if inf is None:
         raise XmlFiscalNaoHabilitado("infNFe do laboratório ausente.")
