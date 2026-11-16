@@ -71,3 +71,10 @@ def verificar_certificado_lab(db: Session = Depends(get_db),
                               tenant: TenantContext = Depends(get_current_tenant)):
     from app.services.fiscal_importacao_a1_lab import verificar_envelope_lab
     return verificar_envelope_lab(db, tenant)
+
+
+@router.post("/certificado-a1/laboratorio/testar-assinatura")
+def testar_assinatura_certificado_lab(db: Session = Depends(get_db),
+                                     tenant: TenantContext = Depends(get_current_tenant)):
+    from app.services.fiscal_importacao_a1_lab import verificar_envelope_lab
+    return verificar_envelope_lab(db, tenant, testar_assinatura=True)

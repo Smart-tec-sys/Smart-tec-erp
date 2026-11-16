@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { getFiscalA1Laboratorio, importarFiscalA1Laboratorio, verificarFiscalA1Laboratorio } from '../services/fiscal'
+import { getFiscalA1Laboratorio, importarFiscalA1Laboratorio, testarAssinaturaFiscalA1Laboratorio, verificarFiscalA1Laboratorio } from '../services/fiscal'
 import type { FiscalA1Laboratorio as Status } from '../services/fiscal'
 
 export function FiscalA1Laboratorio() {
   const [status, setStatus] = useState<Status>()
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
-  const [verificando, setVerificando] = useState(false)
-  const [verificado, setVerificado] = useState(false)
+  const [verificando, setVerificando] = useState<'cofre' | 'assinatura' | null>(null)
+  const [resultadoTeste, setResultadoTeste] = useState('')
   const enviando = useRef(false)
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function FiscalA1Laboratorio() {
     enviando.current = true
     setSalvando(true)
     setErro('')
-    setVerificado(false)
+    setResultadoTeste('')
     try {
       const resultado = await importarFiscalA1Laboratorio(arquivo, senha)
       setStatus({ importacao_lab_habilitada: true, certificado_lab_armazenado: resultado.certificado_armazenado })
@@ -43,20 +43,27 @@ export function FiscalA1Laboratorio() {
     }
   }
 
-  async function verificar() {
+  async function verificar(teste: 'cofre' | 'assinatura') {
     if (enviando.current) return
     enviando.current = true
-    setVerificando(true)
-    setVerificado(false)
+    setVerificando(teste)
+    setResultadoTeste('')
     setErro('')
     try {
-      const resultado = await verificarFiscalA1Laboratorio()
-      setVerificado(resultado.certificado_lab_verificado)
+      if (teste === 'assinatura') {
+        const resultado = await testarAssinaturaFiscalA1Laboratorio()
+        if (!resultado.assinatura_lab_verificada) throw new Error()
+        setResultadoTeste('XML fictício assinado e assinatura verificada no servidor.')
+      } else {
+        const resultado = await verificarFiscalA1Laboratorio()
+        if (!resultado.certificado_lab_verificado) throw new Error()
+        setResultadoTeste('PFX fictício decifrado e validado no servidor.')
+      }
     } catch {
-      setErro('Não foi possível verificar o PFX armazenado no cofre.')
+      setErro(teste === 'assinatura' ? 'Não foi possível verificar a assinatura do XML fictício.' : 'Não foi possível verificar o PFX armazenado no cofre.')
     } finally {
       enviando.current = false
-      setVerificando(false)
+      setVerificando(null)
     }
   }
 
@@ -66,12 +73,16 @@ export function FiscalA1Laboratorio() {
     <p role="status">{status.certificado_lab_armazenado ? 'PFX fictício armazenado no cofre.' : 'Somente PFX fictício de laboratório.'}</p>
     <label>Arquivo PFX fictício<input name="arquivo" type="file" accept=".pfx,.p12" required disabled={salvando} /></label>
     <label>Senha do PFX fictício<input name="senha" type="password" autoComplete="off" required maxLength={256} disabled={salvando} /></label>
-    <button className="fiscal-v1-save" disabled={salvando || verificando}>{salvando ? 'Importando...' : 'Importar PFX de laboratório'}</button>
-    {status.certificado_lab_armazenado &&
-      <button className="fiscal-v1-add" type="button" onClick={verificar} disabled={salvando || verificando}>
-        {verificando ? 'Verificando...' : 'Verificar PFX no cofre'}
-      </button>}
-    {verificado && <p role="status">PFX fictício decifrado e validado no servidor.</p>}
+    <button className="fiscal-v1-save" disabled={salvando || verificando !== null}>{salvando ? 'Importando...' : 'Importar PFX de laboratório'}</button>
+    {status.certificado_lab_armazenado && <>
+      <button className="fiscal-v1-add" type="button" onClick={() => verificar('cofre')} disabled={salvando || verificando !== null}>
+        {verificando === 'cofre' ? 'Verificando...' : 'Verificar PFX no cofre'}
+      </button>
+      <button className="fiscal-v1-add" type="button" onClick={() => verificar('assinatura')} disabled={salvando || verificando !== null}>
+        {verificando === 'assinatura' ? 'Verificando...' : 'Testar assinatura de XML fictício'}
+      </button>
+    </>}
+    {resultadoTeste && <p role="status">{resultadoTeste}</p>}
     {erro && <p role="alert">{erro}</p>}
   </form>
 }

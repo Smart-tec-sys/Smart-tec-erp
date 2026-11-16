@@ -18,6 +18,7 @@ from app.services.fiscal_cofre_a1_repository import consultar_envelope_interno, 
 from app.services.fiscal_kms_aws import AwsKmsProvedor, KEY_ARN, criar_provedor_kms_staging
 from app.services.fiscal_nfe_assinatura_laboratorio import (
     XmlFiscalNaoHabilitado, _verificar_certificado_laboratorio,
+    assinar_xml_ficticio_pfx_laboratorio, verificar_xml_assinado_laboratorio,
 )
 from app.tenant.context import TenantOrigin
 
@@ -112,13 +113,18 @@ def importar_envelope_lab(db, tenant, corpo):
     return {"certificado_armazenado": True, "emissao_habilitada": False}
 
 
-def verificar_envelope_lab(db, tenant):
+def verificar_envelope_lab(db, tenant, *, testar_assinatura=False):
     _exigir_laboratorio(tenant)
     try:
         envelope = consultar_envelope_interno(db, tenant)
         if envelope is None:
             raise HTTPException(404, "PFX fictício ausente no cofre.")
         pfx, senha = abrir_a1_interno(EMPRESA_LAB, envelope, _provedor_lab())
+        if testar_assinatura:
+            xml = assinar_xml_ficticio_pfx_laboratorio(pfx, senha)
+            if not verificar_xml_assinado_laboratorio(xml):
+                raise XmlFiscalNaoHabilitado("Assinatura fictícia inválida.")
+            return {"assinatura_lab_verificada": True}
         _validar_pfx_lab(pfx, senha)
     except (CofreIndisponivel, ValueError, UnsupportedAlgorithm, XmlFiscalNaoHabilitado):
         logger.warning("A1 laboratório: falha ao verificar o PFX cifrado.")

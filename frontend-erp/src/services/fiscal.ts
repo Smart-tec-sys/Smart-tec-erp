@@ -98,6 +98,8 @@ const rotaA1Lab = '/fiscal/cadastros/certificado-a1/laboratorio'
 export const getFiscalA1Laboratorio = () => fiscalRequest<FiscalA1Laboratorio>(rotaA1Lab)
 export const verificarFiscalA1Laboratorio = () =>
   fiscalRequest<{ certificado_lab_verificado: boolean }>(rotaA1Lab + '/verificar', 'POST')
+export const testarAssinaturaFiscalA1Laboratorio = () =>
+  fiscalRequest<{ assinatura_lab_verificada: boolean }>(rotaA1Lab + '/testar-assinatura', 'POST')
 
 export async function importarFiscalA1Laboratorio(arquivo: File, senha: string) {
   if (arquivo.size < 1 || arquivo.size > 128 * 1024) {
