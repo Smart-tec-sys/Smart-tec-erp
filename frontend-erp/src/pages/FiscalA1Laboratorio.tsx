@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { getFiscalA1Laboratorio, importarFiscalA1Laboratorio, testarAssinaturaFiscalA1Laboratorio, verificarFiscalA1Laboratorio } from '../services/fiscal'
+import { conferirXmlVendaFiscalLaboratorio, getFiscalA1Laboratorio, importarFiscalA1Laboratorio, testarAssinaturaFiscalA1Laboratorio, verificarFiscalA1Laboratorio } from '../services/fiscal'
 import type { FiscalA1Laboratorio as Status } from '../services/fiscal'
 
 export function FiscalA1Laboratorio() {
   const [status, setStatus] = useState<Status>()
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
-  const [verificando, setVerificando] = useState<'cofre' | 'assinatura' | null>(null)
+  const [verificando, setVerificando] = useState<'cofre' | 'assinatura' | 'venda' | null>(null)
   const [resultadoTeste, setResultadoTeste] = useState('')
   const enviando = useRef(false)
 
@@ -43,14 +43,18 @@ export function FiscalA1Laboratorio() {
     }
   }
 
-  async function verificar(teste: 'cofre' | 'assinatura') {
+  async function verificar(teste: 'cofre' | 'assinatura' | 'venda') {
     if (enviando.current) return
     enviando.current = true
     setVerificando(teste)
     setResultadoTeste('')
     setErro('')
     try {
-      if (teste === 'assinatura') {
+      if (teste === 'venda') {
+        const { campos_conferidos, total } = await conferirXmlVendaFiscalLaboratorio()
+        const valor = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(total))
+        setResultadoTeste(`XML da venda fictícia conferido. ${campos_conferidos} campos validados, total de ${valor}. Sem assinatura ou transmissão.`)
+      } else if (teste === 'assinatura') {
         const resultado = await testarAssinaturaFiscalA1Laboratorio()
         if (!resultado.assinatura_lab_verificada) throw new Error()
         setResultadoTeste('XML fictício assinado e assinatura verificada no servidor.')
@@ -60,7 +64,9 @@ export function FiscalA1Laboratorio() {
         setResultadoTeste('PFX fictício decifrado e validado no servidor.')
       }
     } catch {
-      setErro(teste === 'assinatura' ? 'Não foi possível verificar a assinatura do XML fictício.' : 'Não foi possível verificar o PFX armazenado no cofre.')
+      setErro(teste === 'venda' ? 'Não foi possível conferir o XML da venda fictícia.' :
+        teste === 'assinatura' ? 'Não foi possível verificar a assinatura do XML fictício.' :
+        'Não foi possível verificar o PFX armazenado no cofre.')
     } finally {
       enviando.current = false
       setVerificando(null)
@@ -82,6 +88,9 @@ export function FiscalA1Laboratorio() {
         {verificando === 'assinatura' ? 'Verificando...' : 'Testar assinatura de XML fictício'}
       </button>
     </>}
+    <button className="fiscal-v1-add" type="button" onClick={() => verificar('venda')} disabled={salvando || verificando !== null}>
+      {verificando === 'venda' ? 'Conferindo...' : 'Conferir XML da venda fictícia'}
+    </button>
     {resultadoTeste && <p role="status">{resultadoTeste}</p>}
     {erro && <p role="alert">{erro}</p>}
   </form>

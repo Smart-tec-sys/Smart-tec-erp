@@ -4,6 +4,7 @@ from base64 import b64decode
 from binascii import Error as Base64Error
 from json import loads
 from logging import getLogger
+from xml.etree import ElementTree
 
 from botocore.exceptions import ClientError
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -19,6 +20,10 @@ from app.services.fiscal_kms_aws import AwsKmsProvedor, KEY_ARN, criar_provedor_
 from app.services.fiscal_nfe_assinatura_laboratorio import (
     XmlFiscalNaoHabilitado, _verificar_certificado_laboratorio,
     assinar_xml_ficticio_pfx_laboratorio, verificar_xml_assinado_laboratorio,
+)
+from app.services.fiscal_nfe_preparacao import analisar_venda_nfe
+from app.services.fiscal_nfe_xml_homologacao import (
+    EXEMPLO_CNPJ, EXEMPLO_CPF, NS_NFE, gerar_xml_ficticio_nao_assinado,
 )
 from app.tenant.context import TenantOrigin
 
@@ -138,3 +143,47 @@ def status_importacao_lab(db, tenant):
         "importacao_lab_habilitada": habilitada,
         "certificado_lab_armazenado": habilitada and consultar_envelope_interno(db, tenant) is not None,
     }
+
+
+def conferir_xml_venda_lab(db, tenant):
+    _exigir_laboratorio(tenant)
+    exigir_admin(db, tenant)
+    _empresa(db, tenant)
+    item = {
+        "produto_id": 1, "descricao": "Produto fictício", "tipo_item": "PRODUTO",
+        "quantidade": "3.0000", "preco_unitario": "42.5000", "subtotal": "127.50",
+    }
+    venda = {"itens": [item], "total": "127.50", "desconto": "0.00", "total_final": "127.50"}
+    cliente = {
+        "nome": "Cliente fictício", "documento": EXEMPLO_CPF, "cep": "01001000",
+        "logradouro": "Rua Teste", "numero": "20", "bairro": "Centro",
+        "cidade": "São Paulo", "estado": "SP",
+    }
+    diagnostico = analisar_venda_nfe(venda, {"documento": EXEMPLO_CNPJ}, cliente)
+    pendencias_fiscais = {
+        "CONFIGURACAO_TRIBUTARIA", "EMITENTE_ENDERECO_FISCAL", "SEFAZ_NAO_INTEGRADA",
+    }
+    if any(p["codigo"] not in pendencias_fiscais for p in diagnostico["pendencias"]):
+        raise HTTPException(422, "A venda fictícia contém pendências de cadastro ou totais.")
+
+    xml = gerar_xml_ficticio_nao_assinado(
+        quantidade=item["quantidade"], preco_unitario=item["preco_unitario"],
+        subtotal=diagnostico["resumo"]["total_final"],
+    )
+    inf = ElementTree.fromstring(xml).find("infNFe", {"": NS_NFE})
+    campos_esperados = {
+        "ide/tpAmb": "2",
+        "emit/CNPJ": EXEMPLO_CNPJ,
+        "dest/CPF": EXEMPLO_CPF,
+        "det/prod/NCM": "63039200",
+        "det/prod/CFOP": "5102",
+        "det/prod/qCom": item["quantidade"],
+        "det/prod/vUnCom": item["preco_unitario"],
+        "det/prod/vProd": item["subtotal"],
+        "total/ICMSTot/vNF": venda["total_final"],
+    }
+    if inf is None or any(inf.findtext(campo, namespaces={"": NS_NFE}) != valor
+                          for campo, valor in campos_esperados.items()):
+        raise HTTPException(503, "O XML diverge da venda ou da classificação fictícia.")
+    return {"campos_conferidos": len(campos_esperados), "total": venda["total_final"],
+            "assinado": False, "transmitido": False}

@@ -78,3 +78,10 @@ def testar_assinatura_certificado_lab(db: Session = Depends(get_db),
                                      tenant: TenantContext = Depends(get_current_tenant)):
     from app.services.fiscal_importacao_a1_lab import verificar_envelope_lab
     return verificar_envelope_lab(db, tenant, testar_assinatura=True)
+
+
+@router.post("/nfe/laboratorio/conferir-venda")
+def conferir_venda_ficticia(db: Session = Depends(get_db),
+                            tenant: TenantContext = Depends(get_current_tenant)):
+    from app.services.fiscal_importacao_a1_lab import conferir_xml_venda_lab
+    return conferir_xml_venda_lab(db, tenant)
