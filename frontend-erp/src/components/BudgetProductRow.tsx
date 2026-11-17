@@ -2,7 +2,7 @@ import { commercialDisplayText } from '../utils/commercialDisplay'
 import { CurtainColorField } from './CurtainColorField'
 import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
 import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
-import { fabricDisplay, fabricVariantKey, groupFabricSuggestions } from '../utils/fabricDisplay'
+import { commercialVariantKey, fabricColor, fabricReference, fabricDisplay, fabricVariantKey, groupFabricCollections, isFabricProduct, isClearlyAccessory } from '../utils/fabricDisplay'
 import { rankProductSuggestions } from '../utils/productSuggestionRank'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
@@ -52,7 +52,7 @@ type Props = {
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
 
 const isFinishedProduct = (p: ApiProduct) =>
-  Boolean(romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p))
+  !isFabricProduct(p) && !isClearlyAccessory(p) && Boolean(romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p))
 
 const isCurtainCatalogItem = (p: ApiProduct) =>
   normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' ||
@@ -89,41 +89,55 @@ export function BudgetProductRow({
       .filter(active)
       .filter((p) => {
         const hay = normalizeSearch(
-          `${fabricDisplay(p).name} ${p.nome} ${p.produto_base || ''} ${p.codigo_interno || ''} ${p.codigo || ''} ${p.codigo_barras || ''} ${p.grupo_produto || ''} ${p.grupo_tecnico || ''} ${p.familia_tecnica || ''} ${p.modelo_tecnico || ''} ${p.modelo || ''} ${productColor(p)}`
+          `${fabricDisplay(p).name} ${p.nome} ${p.produto_base || ''} ${p.codigo_interno || ''} ${p.codigo || ''} ${p.codigo_barras || ''} ${p.grupo_produto || ''} ${p.grupo_tecnico || ''} ${p.familia_tecnica || ''} ${p.modelo_tecnico || ''} ${p.modelo || ''} ${productColor(p)} ${fabricColor(p)}`
         )
         return terms.every((t) => hay.includes(t))
       })
 
   }, [catalog, query])
   useEffect(() => { setQuery(selectedDisplay) }, [selectedDisplay])
-  const variants = useMemo(
-    () => (selected && fabricDisplay(selected).fabric && productColor(selected) ? catalog.filter(p => active(p) && fabricVariantKey(p) === fabricVariantKey(selected)) : selected?.familia_tecnica ? catalog.filter((p) => active(p) && p.familia_tecnica === selected.familia_tecnica) : selected ? [selected] : []),
-    [catalog, selected]
-  )
+  const variants = useMemo(() => {
+    if (!selected) return []
+    const commercialKey = isFinishedProduct(selected) ? commercialVariantKey(selected) : null
+    if (commercialKey) return catalog.filter(p => active(p) && isFinishedProduct(p) && commercialVariantKey(p) === commercialKey)
+    if (fabricDisplay(selected).fabric) {
+      if (!(fabricColor(selected) || fabricReference(selected) || selected.produto_base?.trim())) return [selected]
+      return catalog.filter(p => active(p) && fabricDisplay(p).fabric && fabricVariantKey(p) === fabricVariantKey(selected))
+    }
+    return selected.familia_tecnica ? catalog.filter(p => active(p) && p.familia_tecnica === selected.familia_tecnica) : [selected]
+  }, [catalog, selected])
   const curtainVirtualMatches = useMemo(() => curtainSuggestions(catalog, query), [catalog, query])
   const rankedMatches = useMemo(() => {
     const q = normalizeSearch(query.trim())
-    if (q.includes('CORTINA')) {
-      return []
-    }
-    // Relevância antes do limite: tecidos e componentes não podem esconder produtos acabados.
-    return rankProductSuggestions(groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p))), query, isFinishedProduct)
+    if (q.includes('CORTINA')) return []
+    const collections = groupFabricCollections(matches.filter((p) => !isCurtainCatalogItem(p)))
+    const byRepresentative = new Map(collections.map(group => [group.representative.id, group]))
+    return rankProductSuggestions(collections.map(group => group.representative), query, isFinishedProduct)
       .slice(0, 12)
+      .map(p => ({ product: p, collection: byRepresentative.get(p.id) }))
   }, [matches, query])
 
-  // Both sources reach exactly the same rendered dropdown array.
   const dropdownMatches = [
-    ...rankedMatches.map(p => ({ key: String(p.id), product: p, suggestion: undefined as CurtainSuggestion | undefined })),
-    ...curtainVirtualMatches.map(suggestion => ({ key: suggestion.key, product: undefined, suggestion })),
+    ...rankedMatches.map(({ product: p, collection }) => ({
+      key: collection?.key ?? String(p.id), product: p, collection,
+      suggestion: undefined as CurtainSuggestion | undefined,
+    })),
+    ...curtainVirtualMatches.map(suggestion => ({ key: suggestion.key, product: undefined, collection: undefined, suggestion })),
   ]
 
-  const colors = useMemo(() => {
-    const grouped = new Map<string, ApiProduct[]>()
-    variants.filter((p) => !isCurtainCatalogItem(p)).forEach((p) => {
-      const c = productColor(p)
-      if (c) grouped.set(c, [...(grouped.get(c) || []), p])
+  const colorOptions = useMemo(() => {
+    const items = variants.filter((p) => !isCurtainCatalogItem(p) && (fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p)))
+    const counts = new Map<string, number>()
+    items.forEach(p => {
+      const color = fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p)
+      const key = normalizeSearch(color)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
     })
-    return [...grouped.entries()]
+    return items.map(p => {
+      const color = fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p)
+      const duplicate = (counts.get(normalizeSearch(color)) ?? 0) > 1
+      return { product: p, label: duplicate ? color + ' (' + (p.codigo_interno || p.codigo || 'ID ' + p.id) + ')' : color }
+    })
   }, [variants])
 
   const fixedFamilyColors =
@@ -150,10 +164,11 @@ export function BudgetProductRow({
 
   const choose = (p: ApiProduct) => {
     if (!confirmPriceReset()) return
-    const rKind = romanaKind(p)
-    const rtKind = romanaTetoKind(p)
-    const rlKind = roloKind(p)
-    const dvKind = doubleVisionKind(p)
+    const isSupply = isFabricProduct(p) || isClearlyAccessory(p)
+    const rKind = isSupply ? null : romanaKind(p)
+    const rtKind = isSupply ? null : romanaTetoKind(p)
+    const rlKind = isSupply ? null : roloKind(p)
+    const dvKind = isSupply ? null : doubleVisionKind(p)
     setQuery(fabricDisplay(p).name)
     onChange({
       ...product,
@@ -164,7 +179,7 @@ export function BudgetProductRow({
       groupTechnical: p.grupo_tecnico || '',
       modelTechnical: p.modelo_tecnico || '',
       unit: p.unidade_venda || p.unidade || '',
-      color: productColor(p),
+      color: fabricDisplay(p).fabric ? (fabricColor(p) || (fabricReference(p) ? 'Ref. ' + fabricReference(p) : '')) : productColor(p),
       price: rKind ? 0 : rlKind ? 0 : dvKind ? 0 : rtKind ? 0 : commercialPrice(p, commercialType),
       priceManual:false,
       suggestedPrice:rKind || rlKind || dvKind || rtKind ? undefined : commercialPrice(p,commercialType),
@@ -231,6 +246,7 @@ export function BudgetProductRow({
                   <button type="button" key={match.key}
                     onClick={() => { if (match.suggestion) chooseCurtain(match.suggestion); else if (match.product) choose(match.product) }}>
                     <strong>{commercialDisplayText(match.suggestion?.label ?? fabricDisplay(match.product!).name, [match.product?.codigo_interno || '', match.product?.codigo || '', match.product?.codigo_barras || ''])}</strong>
+                    {!match.suggestion && match.collection && match.collection.colors.filter(c => c.color).length > 1 && <small>{match.collection.colors.filter(c => c.color).length} cores cadastradas</small>}
                     {!match.suggestion && match.product && fabricDisplay(match.product).width && <small>Largura de fornecimento: {fabricDisplay(match.product).width}</small>}
                   </button>
                 ))
@@ -242,27 +258,24 @@ export function BudgetProductRow({
           <span>Cor</span>
           {isCurtain ? (
             <CurtainColorField product={product} catalog={catalog} onChange={onChange} />
-          ) : fixedFamilyColors.length > 0 ? (
-            <select value={product.color} onChange={(e) => handleColorChange(e.target.value)} disabled={fixedFamilyColors.length === 0}>
+          ) : colorOptions.length > 0 ? (
+            <select value={colorOptions.some(option => option.product.id === product.productId) ? String(product.productId) : ''}
+              onChange={(e) => {
+                const selectedVariant = colorOptions.find(option => String(option.product.id) === e.target.value)?.product
+                if (selectedVariant) choose(selectedVariant)
+              }}>
               <option value="">Selecione a cor</option>
-              {fixedFamilyColors.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+              {colorOptions.map(({ product: variant, label }) => (
+                <option key={variant.id} value={String(variant.id)}>{label}</option>
               ))}
+            </select>
+          ) : fixedFamilyColors.length > 0 ? (
+            <select value={product.color} onChange={(e) => handleColorChange(e.target.value)}>
+              <option value="">Selecione a cor</option>
+              {fixedFamilyColors.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           ) : (
-            <select value={product.color} disabled={!colors.length} onChange={(e) => {
-              const options = colors.find(([c]) => c === e.target.value)?.[1] || []
-              if (options.length === 1) choose(options[0])
-            }}>
-              <option value="">Sem variaÃƒÂ§ÃƒÂ£o</option>
-              {colors.map(([c, items]) => (
-                <option key={c} value={c} disabled={items.length !== 1}>
-                  {c}{items.length !== 1 ? ' (ambÃƒÂ­gua)' : ''}
-                </option>
-              ))}
-            </select>
+            <select value="" disabled><option value="">Sem variação cadastrada</option></select>
           )}
         </label>
         <label className="field product-field-wide">
