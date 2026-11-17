@@ -2,7 +2,7 @@
 Usa a regra central de seleção de tubo (app.technical.rules.rolo) e o motor
 existente de cálculo de produção (app.services.motor_calculo_produtos)."""
 from dataclasses import asdict
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, conint
@@ -164,7 +164,59 @@ def _extrair_componentes_rolo(resultado: ResultadoCalculoProduto, tubo_diametro:
     }
 
 
-def simular_rolo(produto, entrada: RoloSimulacaoInput) -> dict:
+def _catalogo_da_receita(receita: dict, diametro: TuboRoloDiametro) -> dict:
+    """Usa exclusivamente os insumos da receita vinculada à empresa ativa."""
+    bitola = diametro.value
+    componentes = receita.get("componentes") or {}
+    referencias = {
+        "tecido": receita.get("tecido"),
+        "tubo": (receita.get("tubos") or {}).get(bitola),
+        "comando": (receita.get("comandos") or {}).get(bitola),
+        **{nome: componentes.get(nome) for nome in (
+            "base", "fita_tubo", "fita_base", "espaguete_base",
+            "corrente", "emenda_corrente", "tampa_base",
+        )},
+    }
+    catalogo = {}
+    for nome, item in referencias.items():
+        if not isinstance(item, dict):
+            raise ValueError(f"Receita técnica incompleta: falta {nome} para tubo {bitola}.")
+        preco = Decimal(str(item.get("preco_compra") or 0))
+        embalagem = Decimal(str(item.get("unidades_por_compra") or 0))
+        if preco <= 0 or embalagem <= 0:
+            raise ValueError(f"Componente {nome} sem custo ou unidade de compra válida na receita.")
+        ipi = Decimal(str(item.get("ipi_percentual") or 0))
+        unitario = preco * (Decimal("1") + ipi / Decimal("100")) / embalagem
+        catalogo[nome] = {
+            "codigo": str(item.get("codigo_interno") or ""),
+            "nome": nome.replace("_", " ").title(),
+            "unidade": item.get("unidade_tecnica") or "UN",
+            "custo_unitario": float(unitario),
+        }
+    # O motor de produção consome a chave genérica 'tubo' e 'comando'.
+    return catalogo
+
+
+def _custo_picasso(fabricacao: ResultadoCalculoProduto, receita: dict, altura: float, quantidade: int) -> Decimal:
+    """Tecido Picasso por faixa integral ML; demais componentes pelas quantidades da receita."""
+    if receita.get("custeio_tecido") != "FAIXA_INTEGRAL_ML":
+        return Decimal(str(fabricacao.custo_total))
+    tecido = receita["tecido"]
+    preco_ml = Decimal(str(tecido["preco_compra"]))
+    ipi = Decimal(str(tecido.get("ipi_percentual") or 0))
+    # A receita usa largura de bobina de 2,50m: cada peça consome faixa inteira.
+    largura_bobina = Decimal(str(receita.get("largura_bobina_m") or 0))
+    if largura_bobina <= 0:
+        raise ValueError("Receita sem largura da bobina para custeio de faixa integral.")
+    if Decimal(str(fabricacao.largura)) > largura_bobina:
+        raise ValueError("Largura da peça excede a bobina; exige validação técnica de emenda.")
+    faixa_ml = (Decimal(str(altura)) + Decimal("0.15")) * Decimal("1.05") * Decimal(quantidade)
+    custo_tecido = faixa_ml * preco_ml * (Decimal("1") + ipi / Decimal("100"))
+    outros = sum((Decimal(str(c.custo_total)) for c in fabricacao.componentes if c.categoria != "Tecido"), Decimal("0"))
+    return custo_tecido + outros
+
+
+def simular_rolo(produto, entrada: RoloSimulacaoInput, receita: Optional[dict] = None) -> dict:
     """Executa a simulação técnica do Rolô.
 
     Retorna erro 422 (ValueError) para combinação técnica inválida (ex.: manual >3,20m).
@@ -186,7 +238,7 @@ def simular_rolo(produto, entrada: RoloSimulacaoInput) -> dict:
         raise ValueError(str(exc)) from exc
 
     # Motor de cálculo de produção (custo técnico)
-    catalogo = _montar_catalogo_rolo(selecao.diametro)
+    catalogo = _catalogo_da_receita(receita, selecao.diametro) if receita else _montar_catalogo_rolo(selecao.diametro)
     opcoes = {
         "perda_tecido_percentual": 5.0,
         "desconto_largura_tubo_base": 0.025,
@@ -208,6 +260,17 @@ def simular_rolo(produto, entrada: RoloSimulacaoInput) -> dict:
     # Preço comercial (usa regra atual do backend via orcamento_service)
     from app.services.orcamento_service import _preco_produto, _dinheiro
     preco = _preco_produto(produto, entrada.perfil_comercial)
+    custo_receita = None
+    if receita:
+        from app.services.composicao_comercial import MULTIPLICADORES
+        custo_total_receita = _custo_picasso(fabricacao, receita, entrada.altura, entrada.quantidade)
+        custo_receita = (custo_total_receita / Decimal(entrada.quantidade))
+        # O preço unitário é por m² faturável, não por peça.
+        area = calcular_area_faturavel(largura=entrada.largura, altura=entrada.altura,
+                                      quantidade=entrada.quantidade, unidade_venda=getattr(produto, 'unidade_venda', None))
+        if area.area_faturavel_m2 <= 0:
+            raise ValueError("Área faturável inválida.")
+        preco = (custo_total_receita * MULTIPLICADORES[entrada.perfil_comercial] / area.area_faturavel_m2).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     custo = next((Decimal(str(getattr(produto, campo, 0) or 0))
                   for campo in ('custo_final', 'valor_custo')
                   if Decimal(str(getattr(produto, campo, 0) or 0)) > 0), None)
@@ -223,7 +286,7 @@ def simular_rolo(produto, entrada: RoloSimulacaoInput) -> dict:
     subtotal = _dinheiro(max(Decimal('0'), area_faturavel.area_faturavel_m2 * preco - Decimal(str(entrada.desconto))))
 
     avisos = list(fabricacao.alertas)
-    if custo is None:
+    if custo is None and not receita:
         avisos.append('Sem custo cadastrado: preço comercial segue regra do backend sem novo acréscimo.')
     if preco <= 0:
         avisos.append('Preço indisponível: cadastro sem custo ou valor de venda positivo. Revise antes de salvar.')
@@ -249,12 +312,12 @@ def simular_rolo(produto, entrada: RoloSimulacaoInput) -> dict:
         observacao_tecnica=selecao.observacao,
         fabricacao_por_peca=asdict(fabricacao),
         componentes_tecnicos=componentes_tecnicos,
-        custo_tecnico=round(float(fabricacao.custo_total), 4) if fabricacao.custo_total > 0 else None,
-        custo_cadastrado=float(custo) if custo is not None else None,
+        custo_tecnico=round(float(custo_total_receita), 4) if receita else (round(float(fabricacao.custo_total), 4) if fabricacao.custo_total > 0 else None),
+        custo_cadastrado=float(custo_receita) if custo_receita is not None else (float(custo) if custo is not None else None),
         preco_unitario=preco,
         subtotal=subtotal,
         preco_disponivel=preco > 0,
         alertas=avisos,
-        origem_preco='CUSTO_CADASTRADO' if custo is not None else 'VALOR_VENDA_CADASTRADO',
+        origem_preco='RECEITA_TECNICA_EMPRESA' if receita else ('CUSTO_CADASTRADO' if custo is not None else 'VALOR_VENDA_CADASTRADO'),
         aviso='Simulação técnica recalculada por peça; não representa histórico nem composição integral precificada. Custo técnico só disponível quando componentes/equivalências válidas existirem no catálogo.',
     )
