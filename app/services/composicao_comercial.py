@@ -228,7 +228,7 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 empresa = db.query(EmpresaDB).filter(EmpresaDB.id == tenant_id).first()
                 receitas = ((empresa.configuracoes or {}).get('receitas_rolo_v1') or {}) if empresa else {}
                 eh_picasso = str(produto.codigo_interno or '').startswith('ST-ROLO-PICASSO-')
-                receita = receitas.get(str(produto.id)) if eh_picasso else None
+                receita = receitas.get(str(produto.id))
                 if eh_picasso and not receita:
                     raise ValueError('Receita técnica Picasso ausente nesta empresa; orçamento não pode ser salvo.')
                 simulacao = simular_rolo(produto, RoloSimulacaoInput(
