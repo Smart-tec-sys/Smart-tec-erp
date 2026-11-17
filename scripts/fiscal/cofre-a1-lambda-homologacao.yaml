@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cofre A1 da homologacao do Fiscal Smart-tec via AWS Lambda privado
+Parameters:
+  ExistingKmsKeyId:
+    Type: String
+    AllowedPattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+  EmpresaId:
+    Type: String
+    AllowedPattern: '[1-9][0-9]{0,17}'
+Resources:
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-cofre'
+      RetentionInDays: 14
+  Execucao:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CofreA1Homologacao
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Encrypt, kms:Decrypt]
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+                Condition:
+                  StringEquals:
+                    'kms:EncryptionContext:smarttec:purpose': smarttec-fiscal-a1-envelope-v1
+                    'kms:EncryptionContext:smarttec:empresa_id': !Ref EmpresaId
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt Logs.Arn
+  Cofre:
+    Type: AWS::Lambda::Function
+    DependsOn: Logs
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-cofre'
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 8
+      Role: !GetAtt Execucao.Arn
+      Environment:
+        Variables:
+          EMPRESA_ID: !Ref EmpresaId
+          KMS_KEY_ARN: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+      Code:
+        ZipFile: |
+          from base64 import b64decode, b64encode
+          import os
+
+          import boto3
+
+          if os.environ.get("AWS_REGION") != "us-east-2":
+              raise RuntimeError("Regiao indisponivel para o cofre.")
+          kms = boto3.client("kms")
+          empresa = os.environ["EMPRESA_ID"]
+          chave = os.environ["KMS_KEY_ARN"]
+          contexto = {"smarttec:purpose": "smarttec-fiscal-a1-envelope-v1", "smarttec:empresa_id": empresa}
+
+          def handler(event, context):
+              try:
+                  if not isinstance(event, dict) or set(event) != {"empresa_id", "operacao", "conteudo"}:
+                      raise ValueError
+                  if event["empresa_id"] != empresa or not isinstance(event["conteudo"], str) or len(event["conteudo"]) > 5464:
+                      raise ValueError
+                  dados = b64decode(event["conteudo"], validate=True)
+                  if event["operacao"] == "encrypt" and len(dados) == 32:
+                      saida = kms.encrypt(KeyId=chave, Plaintext=dados, EncryptionContext=contexto)
+                      resultado = saida["CiphertextBlob"]
+                  elif event["operacao"] == "decrypt" and 32 <= len(dados) <= 4096:
+                      saida = kms.decrypt(KeyId=chave, CiphertextBlob=dados, EncryptionContext=contexto)
+                      resultado = saida["Plaintext"]
+                      if len(resultado) != 32:
+                          raise ValueError
+                  else:
+                      raise ValueError
+                  if saida["KeyId"] != chave:
+                      raise ValueError
+                  return {"key_id": chave, "conteudo": b64encode(resultado).decode("ascii")}
+              except Exception:
+                  raise RuntimeError("Operacao do cofre recusada ou indisponivel.") from None
+  PoliticaRender:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !GetAtt Cofre.Arn
+Outputs:
+  FuncaoArn:
+    Value: !GetAtt Cofre.Arn
+  PoliticaRenderArn:
+    Value: !Ref PoliticaRender
