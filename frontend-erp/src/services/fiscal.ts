@@ -34,8 +34,11 @@ export type FiscalProdutoDados = {
 export type FiscalEmpresaResponse = { empresa_id:number; documento:string|null; razao_social:string|null; nome_fantasia:string|null; dados:FiscalEmpresaDados; emissao_habilitada:false }
 export type FiscalProdutoResponse = { empresa_id:number; produto_id:number; dados:FiscalProdutoDados; configurado:boolean; emissao_habilitada:false }
 
-async function fiscalRequest<T>(path:string, method:'GET'|'PATCH'|'POST'='GET', body?:Record<string,unknown>):Promise<T> {
+async function fiscalRequest<T>(path:string, method:'GET'|'PATCH'|'POST'='GET', body?:Record<string,unknown>, empresaEsperada?:number):Promise<T> {
   const auth = await getApiAuthHeaders()
+  if (empresaEsperada !== undefined && Number(auth['X-Empresa-ID']) !== empresaEsperada) {
+    throw new Error('A empresa ativa mudou. Reabra a página do certificado.')
+  }
   const response = await fetch(apiConfig.baseUrl + path,{
     method, headers:{'Content-Type':'application/json',...auth},
     ...(body ? {body: JSON.stringify(body)} : {}),
@@ -84,8 +87,9 @@ export const prepararNfeVenda = (pedidoId:number)=>
   fiscalRequest<PreparacaoNfeResponse>('/pedidos/'+pedidoId+'/fiscal/preparacao-nfe')
 
 export type FiscalCertificadoA1Status = {
-  empresa_id:number;tipo:'A1';situacao:'NAO_CONFIGURADO';
-  cofre_configurado:false;certificado_armazenado:false;emissao_habilitada:false;aviso:string;
+  empresa_id:number;tipo:'A1';situacao:'NAO_CONFIGURADO'|'CADASTRADO';
+  cofre_configurado:boolean;certificado_armazenado:boolean;emissao_habilitada:false;aviso:string;
+  importacao_habilitada?:boolean;
   integracao_kms?:'INATIVO'|'CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA';
 }
 export const getFiscalCertificadoA1Status = ()=>fiscalRequest<FiscalCertificadoA1Status>('/fiscal/cadastros/certificado-a1/status')
@@ -109,11 +113,17 @@ export const assinarXmlVendaFiscalLaboratorio = () =>
     '/fiscal/cadastros/nfe/laboratorio/assinar-venda', 'POST',
   )
 
-export async function importarFiscalA1Laboratorio(arquivo: File, senha: string) {
+async function importarCertificadoA1(rota: string, arquivo: File, senha: string, empresaEsperada?: number) {
   if (arquivo.size < 1 || arquivo.size > 128 * 1024) {
-    throw new Error('Selecione um PFX de laboratório de até 128 KB.')
+    throw new Error('Selecione um arquivo de certificado de até 128 KB.')
   }
   const bytes = new Uint8Array(await arquivo.arrayBuffer())
   const pfx = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
-  return fiscalRequest<{ certificado_armazenado: boolean }>(rotaA1Lab, 'POST', { pfx, senha })
+  return fiscalRequest<{ certificado_armazenado: boolean }>(rota, 'POST', { pfx, senha }, empresaEsperada)
 }
+
+export const importarFiscalA1Laboratorio = (arquivo: File, senha: string) =>
+  importarCertificadoA1(rotaA1Lab, arquivo, senha)
+
+export const importarFiscalA1Empresa = (arquivo: File, senha: string, empresaId: number) =>
+  importarCertificadoA1('/fiscal/cadastros/certificado-a1/importar', arquivo, senha, empresaId)

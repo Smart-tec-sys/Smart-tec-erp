@@ -97,3 +97,31 @@ def test_cofre_indisponivel_nao_substitui_o_certificado(dependencias):
         cadastro.importar_certificado_empresa(object(), TENANT, corpo())
     assert erro.value.status_code == 503
     dependencias["guardar_envelope_cifrado"].assert_not_called()
+
+
+def test_status_expõe_importacao_e_a_existencia_do_certificado(monkeypatch, dependencias):
+    status_base = {"empresa_id": 42, "situacao": "NAO_CONFIGURADO", "emissao_habilitada": False}
+    monkeypatch.setattr(cadastro, "status_a1_empresa", Mock(return_value=status_base.copy()))
+    consultar = Mock(return_value=True)
+    monkeypatch.setattr(cadastro, "certificado_armazenado", consultar)
+    db = object()
+
+    status = cadastro.status_importacao_empresa(db, TENANT)
+
+    consultar.assert_called_once_with(db, TENANT)
+    assert status["importacao_habilitada"] is True
+    assert status["certificado_armazenado"] is True
+    assert status["situacao"] == "CADASTRADO"
+    assert status["emissao_habilitada"] is False
+
+
+def test_status_com_cofre_inativo_nao_oferece_importacao(monkeypatch, dependencias):
+    dependencias["situacao_kms_aws"].return_value = "INATIVO"
+    monkeypatch.setattr(cadastro, "status_a1_empresa", Mock(return_value={"empresa_id": 42}))
+    consultar = Mock()
+    monkeypatch.setattr(cadastro, "certificado_armazenado", consultar)
+
+    status = cadastro.status_importacao_empresa(object(), TENANT)
+
+    consultar.assert_not_called()
+    assert status["importacao_habilitada"] is False

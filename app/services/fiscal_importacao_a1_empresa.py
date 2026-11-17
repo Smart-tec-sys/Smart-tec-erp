@@ -14,9 +14,10 @@ from app.services.fiscal_certificado_a1 import (
     MAX_SENHA_BYTES,
     CertificadoA1Invalido,
     conferir_pfx_a1_local,
+    status_a1_empresa,
 )
 from app.services.fiscal_cofre_a1 import CofreIndisponivel, proteger_a1
-from app.services.fiscal_cofre_a1_repository import guardar_envelope_cifrado
+from app.services.fiscal_cofre_a1_repository import certificado_armazenado, guardar_envelope_cifrado
 from app.services.fiscal_importacao_a1_lab import EMPRESA_LAB
 from app.services.fiscal_kms_aws import criar_provedor_kms_staging, situacao_kms_aws
 from app.tenant.context import TenantOrigin
@@ -34,6 +35,19 @@ def importacao_empresa_disponivel(tenant) -> bool:
         and tenant.empresa_id != EMPRESA_LAB
         and situacao_kms_aws() == "CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA"
     )
+
+
+def status_importacao_empresa(db, tenant) -> dict:
+    status = status_a1_empresa(db, tenant)
+    disponivel = importacao_empresa_disponivel(tenant)
+    status["importacao_habilitada"] = disponivel
+    if disponivel:
+        armazenado = certificado_armazenado(db, tenant)
+        status["situacao"] = "CADASTRADO" if armazenado else "NAO_CONFIGURADO"
+        status["cofre_configurado"] = True
+        status["certificado_armazenado"] = armazenado
+        status["aviso"] = "Emissão de NF-e ainda indisponível."
+    return status
 
 
 def exigir_importacao_disponivel(tenant) -> None:

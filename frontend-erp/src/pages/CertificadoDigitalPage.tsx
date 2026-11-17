@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useAuthSession } from '../components/AuthGate'
 import { setEmpresaId } from '../services/auth'
-import { getFiscalCertificadoA1Status, type FiscalCertificadoA1Status } from '../services/fiscal'
-import { FiscalA1Laboratorio } from './FiscalA1Laboratorio'
+import { getFiscalCertificadoA1Status, importarFiscalA1Empresa, type FiscalCertificadoA1Status } from '../services/fiscal'
+import { FiscalA1Laboratorio, FormularioCertificadoA1 } from './FiscalA1Laboratorio'
 import './FiscalPage.css'
 
 const EMPRESA_LAB_A1 = 999999999
@@ -44,10 +44,12 @@ export function CertificadoDigitalPage() {
         {!podeGerenciar && <p>O proprietário ou administrador da empresa pode gerenciar o certificado.</p>}
         {podeGerenciar && !status && !erro && <p role="status">Consultando certificado…</p>}
         {podeGerenciar && erro && <p className="fiscal-v1-error" role="alert">{erro}</p>}
-        {podeGerenciar && status && <>
-          <p role="status"><strong>{status.situacao === 'NAO_CONFIGURADO' ? 'Não configurado' : status.situacao}</strong></p>
-          {!status.certificado_armazenado && <p>A importação do certificado da empresa ainda não está disponível.</p>}
-        </>}
+        {podeGerenciar && status && (status.importacao_habilitada === true
+          ? <FormularioCertificadoA1
+              armazenado={status.certificado_armazenado}
+              importarArquivo={(arquivo, senha) => importarFiscalA1Empresa(arquivo, senha, status.empresa_id)}
+            />
+          : <p>A importação do certificado da empresa ainda não está disponível.</p>)}
         {laboratorio && <button className="fiscal-v1-add" type="button" onClick={() => {
           setEmpresaId(laboratorio.id)
           window.location.reload()

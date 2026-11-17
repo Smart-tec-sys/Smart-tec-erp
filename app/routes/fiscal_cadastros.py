@@ -35,9 +35,9 @@ def salvar_produto_fiscal(dados: FiscalProdutoPatch, produto_id: int = Path(gt=0
 @router.get("/certificado-a1/status")
 def certificado_a1_status(db: Session = Depends(get_db),
                           tenant: TenantContext = Depends(get_current_tenant)):
-    """Status administrativo por empresa, sem PFX/senha, cofre ou emissão."""
-    from app.services.fiscal_certificado_a1 import status_a1_empresa
-    return status_a1_empresa(db, tenant)
+    """Status administrativo da importação, sem retornar arquivo ou senha."""
+    from app.services.fiscal_importacao_a1_empresa import status_importacao_empresa
+    return status_importacao_empresa(db, tenant)
 
 
 @router.post("/certificado-a1/importar")
