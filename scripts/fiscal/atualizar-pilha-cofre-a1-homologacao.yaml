@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Smart-tec Fiscal V1 - prova Lambda/KMS existente e cofre privado de homologacao.
+Parameters:
+  ExistingKmsKeyId:
+    Type: String
+    Description: ID (sem ARN) da chave KMS simetrica existente na mesma conta e regiao.
+    AllowedPattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+  EmpresaId:
+    Type: String
+    AllowedPattern: '[1-9][0-9]{0,17}'
+Resources:
+  ProbeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-probe'
+      RetentionInDays: 7
+  ProbeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: A1KmsProbeOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Encrypt, kms:Decrypt]
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+                Condition:
+                  StringEquals:
+                    'kms:EncryptionContext:smarttec:purpose': smarttec-fiscal-a1-lambda-probe-v1
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt ProbeLogs.Arn
+  Probe:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-probe'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ProbeRole.Arn
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          KMS_KEY_ARN: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+      Code:
+        ZipFile: |
+          import hmac
+          import os
+          import secrets
+
+          import boto3
+          from botocore.config import Config
+          from botocore.exceptions import BotoCoreError, ClientError
+
+
+          def handler(event, context):
+              if event != {}:
+                  raise ValueError("Este teste só aceita um evento vazio.")
+              key_arn = os.environ["KMS_KEY_ARN"]
+              purpose = {"smarttec:purpose": "smarttec-fiscal-a1-lambda-probe-v1"}
+              sample = secrets.token_bytes(32)
+              client = boto3.client(
+                  "kms", config=Config(
+                      connect_timeout=2, read_timeout=3,
+                      retries={"mode": "standard", "total_max_attempts": 1},
+                  ),
+              )
+              try:
+                  encrypted = client.encrypt(
+                      KeyId=key_arn, Plaintext=sample, EncryptionContext=purpose,
+                      EncryptionAlgorithm="SYMMETRIC_DEFAULT",
+                  )
+                  decrypted = client.decrypt(
+                      KeyId=key_arn, CiphertextBlob=encrypted["CiphertextBlob"],
+                      EncryptionContext=purpose, EncryptionAlgorithm="SYMMETRIC_DEFAULT",
+                  )
+              except ClientError as exc:
+                  code = exc.response.get("Error", {}).get("Code")
+                  if code not in {
+                      "AccessDenied", "AccessDeniedException", "DisabledException",
+                      "InvalidCiphertextException", "KMSInvalidStateException", "NotFoundException",
+                  }:
+                      code = "FALHA_KMS"
+                  raise RuntimeError(f"Teste Lambda/KMS falhou: {code}") from None
+              except BotoCoreError:
+                  raise RuntimeError("Teste Lambda/KMS falhou: FALHA_SDK") from None
+              if (encrypted["KeyId"] != key_arn or decrypted["KeyId"] != key_arn
+                      or not hmac.compare_digest(sample, decrypted["Plaintext"])):
+                  raise RuntimeError("A chave ou o dado recuperado não conferem.")
+              return {"resultado": "KMS_VALIDADO"}
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-cofre'
+      RetentionInDays: 14
+  Execucao:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CofreA1Homologacao
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Encrypt, kms:Decrypt]
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+                Condition:
+                  StringEquals:
+                    'kms:EncryptionContext:smarttec:purpose': smarttec-fiscal-a1-envelope-v1
+                    'kms:EncryptionContext:smarttec:empresa_id': !Ref EmpresaId
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt Logs.Arn
+  Cofre:
+    Type: AWS::Lambda::Function
+    DependsOn: Logs
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-cofre'
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 8
+      Role: !GetAtt Execucao.Arn
+      Environment:
+        Variables:
+          EMPRESA_ID: !Ref EmpresaId
+          KMS_KEY_ARN: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+      Code:
+        ZipFile: |
+          from base64 import b64decode, b64encode
+          import os
+
+          import boto3
+
+          if os.environ.get("AWS_REGION") != "us-east-2":
+              raise RuntimeError("Regiao indisponivel para o cofre.")
+          kms = boto3.client("kms")
+          empresa = os.environ["EMPRESA_ID"]
+          chave = os.environ["KMS_KEY_ARN"]
+          contexto = {"smarttec:purpose": "smarttec-fiscal-a1-envelope-v1", "smarttec:empresa_id": empresa}
+
+          def handler(event, context):
+              try:
+                  if not isinstance(event, dict) or set(event) != {"empresa_id", "operacao", "conteudo"}:
+                      raise ValueError
+                  if event["empresa_id"] != empresa or not isinstance(event["conteudo"], str) or len(event["conteudo"]) > 5464:
+                      raise ValueError
+                  dados = b64decode(event["conteudo"], validate=True)
+                  if event["operacao"] == "encrypt" and len(dados) == 32:
+                      saida = kms.encrypt(KeyId=chave, Plaintext=dados, EncryptionContext=contexto)
+                      resultado = saida["CiphertextBlob"]
+                  elif event["operacao"] == "decrypt" and 32 <= len(dados) <= 4096:
+                      saida = kms.decrypt(KeyId=chave, CiphertextBlob=dados, EncryptionContext=contexto)
+                      resultado = saida["Plaintext"]
+                      if len(resultado) != 32:
+                          raise ValueError
+                  else:
+                      raise ValueError
+                  if saida["KeyId"] != chave:
+                      raise ValueError
+                  return {"key_id": chave, "conteudo": b64encode(resultado).decode("ascii")}
+              except Exception:
+                  raise RuntimeError("Operacao do cofre recusada ou indisponivel.") from None
+  PoliticaRender:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: lambda:InvokeFunction
+            Resource: !GetAtt Cofre.Arn
+Outputs:
+  FunctionName:
+    Value: !Ref Probe
+  FuncaoArn:
+    Value: !GetAtt Cofre.Arn
+  PoliticaRenderArn:
+    Value: !Ref PoliticaRender
