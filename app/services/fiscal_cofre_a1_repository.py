@@ -1,4 +1,4 @@
-"""Guarda envelopes cifrados por tenant; API HTTP não expõe importação/decriptação."""
+"""Persiste envelopes cifrados e consulta a situação do certificado por empresa."""
 from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
@@ -51,3 +51,12 @@ def consultar_envelope_interno(db: Session, tenant) -> EnvelopeA1 | None:
     )
     _validar_envelope(env)
     return env
+
+
+def certificado_armazenado(db: Session, tenant) -> bool:
+    """Consulta a presença do certificado sem ler o conteúdo cifrado."""
+    exigir_admin(db, tenant)
+    empresa = _empresa(db, tenant)
+    return (db.query(FiscalCertificadoCofreDB.empresa_id)
+            .filter(FiscalCertificadoCofreDB.empresa_id == empresa.id)
+            .first() is not None)

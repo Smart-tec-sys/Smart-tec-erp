@@ -1,5 +1,7 @@
 """Triagem segura A1: testes fictícios e acesso administrativo por empresa."""
 import unittest
+from base64 import b64encode
+from json import dumps
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -130,6 +132,67 @@ class CertificadoA1Tests(unittest.TestCase):
             find_empresa.return_value = SimpleNamespace(id=1)
             with self.assertRaises(CertificadoA1Invalido):
                 status_a1_empresa(db, TenantContext(empresa_id=2, user_id=9))
+
+
+class CadastroA1EmpresaTests(unittest.TestCase):
+    def setUp(self):
+        from app.services import fiscal_importacao_a1_empresa as cadastro
+        self.cadastro = cadastro
+        self.db = Mock()
+        self.tenant = TenantContext(empresa_id=42, user_id=7)
+
+    def test_importa_pfx_e_persiste_apenas_envelope_da_empresa(self):
+        from tests.test_fiscal_cofre_a1 import KmsFakeTemporario
+        from app.services.fiscal_cofre_a1 import abrir_a1_interno, CofreIndisponivel
+
+        kms = KmsFakeTemporario()
+        pfx, senha = pfx_teste()
+        corpo = bytearray(dumps({"pfx": b64encode(pfx).decode("ascii"), "senha": senha.decode()}), "utf-8")
+        empresa = SimpleNamespace(id=42, documento=TEST_CNPJ)
+        with patch.dict("os.environ", {"SMARTTEC_FISCAL_A1_IMPORTACAO_EMPRESA": "1"}), \
+             patch.object(self.cadastro, "situacao_kms_aws", return_value="CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA"), \
+             patch.object(self.cadastro, "exigir_admin") as admin, \
+             patch.object(self.cadastro, "_empresa", return_value=empresa), \
+             patch.object(self.cadastro, "criar_provedor_kms_staging", return_value=kms), \
+             patch.object(self.cadastro, "guardar_envelope_cifrado") as guardar:
+            resultado = self.cadastro.importar_certificado_empresa(self.db, self.tenant, corpo)
+            admin.assert_called_once_with(self.db, self.tenant)
+            guardar.assert_called_once()
+            db, tenant, envelope = guardar.call_args.args
+            self.assertIs(db, self.db)
+            self.assertEqual(tenant, self.tenant)
+            self.assertEqual(envelope.empresa_id, 42)
+            self.assertEqual(abrir_a1_interno(42, envelope, kms), (pfx, senha))
+            with self.assertRaises(CofreIndisponivel):
+                abrir_a1_interno(43, envelope, kms)
+            self.assertNotIn(pfx, envelope.conteudo_cifrado)
+            self.assertNotIn(senha, envelope.conteudo_cifrado)
+            self.assertTrue(resultado["certificado_armazenado"])
+            self.assertFalse(resultado["emissao_habilitada"])
+
+    def test_rejeita_cnpj_de_outra_empresa_antes_do_cofre(self):
+        pfx, senha = pfx_teste("99999999000191")
+        corpo = bytearray(dumps({"pfx": b64encode(pfx).decode("ascii"), "senha": senha.decode()}), "utf-8")
+        with patch.dict("os.environ", {"SMARTTEC_FISCAL_A1_IMPORTACAO_EMPRESA": "1"}), \
+             patch.object(self.cadastro, "situacao_kms_aws", return_value="CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA"), \
+             patch.object(self.cadastro, "exigir_admin"), \
+             patch.object(self.cadastro, "_empresa", return_value=SimpleNamespace(id=42, documento=TEST_CNPJ)), \
+             patch.object(self.cadastro, "criar_provedor_kms_staging") as provedor:
+            with self.assertRaises(HTTPException) as erro:
+                self.cadastro.importar_certificado_empresa(self.db, self.tenant, corpo)
+            self.assertEqual(erro.exception.status_code, 422)
+            provedor.assert_not_called()
+
+    def test_sem_oidc_esconde_importacao_e_recusa_envio(self):
+        with patch.dict("os.environ", {"SMARTTEC_FISCAL_A1_IMPORTACAO_EMPRESA": "1"}), \
+             patch.object(self.cadastro, "situacao_kms_aws", return_value="INATIVO"), \
+             patch.object(self.cadastro, "status_a1_empresa", return_value={"empresa_id": 42}), \
+             patch.object(self.cadastro, "certificado_armazenado") as consultar:
+            self.assertFalse(self.cadastro.status_importacao_empresa(self.db, self.tenant)["importacao_habilitada"])
+            consultar.assert_not_called()
+            with self.assertRaises(HTTPException) as erro:
+                self.cadastro.importar_certificado_empresa(self.db, self.tenant, bytearray())
+            self.assertEqual(erro.exception.status_code, 404)
 
 
 if __name__ == "__main__":
