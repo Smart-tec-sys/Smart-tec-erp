@@ -118,3 +118,10 @@ def assinar_venda_ficticia(db: Session = Depends(get_db),
                           tenant: TenantContext = Depends(get_current_tenant)):
     from app.services.fiscal_importacao_a1_lab import conferir_xml_venda_lab
     return conferir_xml_venda_lab(db, tenant, assinar=True)
+
+
+@router.post("/nfe/homologacao/sp/status-servico")
+def status_servico_sefaz_sp(db: Session = Depends(get_db),
+                            tenant: TenantContext = Depends(get_current_tenant)):
+    from app.services.fiscal_sefaz_status_sp import consultar_status_sefaz_sp
+    return consultar_status_sefaz_sp(db, tenant)
