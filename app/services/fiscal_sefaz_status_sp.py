@@ -14,8 +14,9 @@ from app.services.fiscal_cadastros import _empresa, exigir_admin
 from app.services.fiscal_certificado_a1 import CertificadoA1Invalido, conferir_pfx_a1_local
 from app.services.fiscal_cofre_a1 import CofreIndisponivel, abrir_a1_interno
 from app.services.fiscal_cofre_a1_repository import consultar_envelope_interno
-from app.services.fiscal_importacao_a1_empresa import importacao_empresa_disponivel
-from app.services.fiscal_kms_aws import criar_provedor_kms_staging
+from app.services.fiscal_importacao_a1_empresa import (
+    criar_provedor_kms_empresa, importacao_empresa_disponivel,
+)
 
 URL = "https://homologacao.nfe.fazenda.sp.gov.br/ws/nfestatusservico4.asmx"
 NFE = "http://www.portalfiscal.inf.br/nfe"
@@ -97,7 +98,7 @@ def consultar_status_sefaz_sp(db, tenant) -> dict:
         envelope = consultar_envelope_interno(db, tenant)
         if envelope is None:
             raise HTTPException(409, "Cadastre o certificado A1 da empresa antes de consultar a SEFAZ.")
-        pfx, senha = abrir_a1_interno(empresa.id, envelope, criar_provedor_kms_staging())
+        pfx, senha = abrir_a1_interno(empresa.id, envelope, criar_provedor_kms_empresa(empresa.id))
         conferir_pfx_a1_local(pfx, senha, cnpj_emitente=empresa.documento)
         contexto = _contexto_tls(pfx, senha)
     except CofreIndisponivel:
