@@ -43,7 +43,10 @@ def simular_rolo_item(data: RoloSimulacaoInput,
     configuracoes = (empresa.configuracoes or {}) if empresa else {}
     receitas = configuracoes.get("receitas_rolo_v1") or {}
     # Nunca buscar receita de outra empresa, nem por nome de fornecedor.
-    receita = receitas.get(str(produto.id)) if str(produto.codigo_interno or "").startswith("ST-ROLO-PICASSO-") else None
+    eh_picasso = str(produto.codigo_interno or "").startswith("ST-ROLO-PICASSO-")
+    receita = receitas.get(str(produto.id)) if eh_picasso else None
+    if eh_picasso and not receita:
+        raise HTTPException(422, "Receita técnica Picasso não encontrada para esta empresa; preço não pode ser calculado.")
     try:
         return simular_rolo(produto, data, receita=receita)
     except ValueError as exc:
