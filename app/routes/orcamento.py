@@ -38,8 +38,14 @@ def simular_rolo_item(data: RoloSimulacaoInput,
     produto = db.query(ProdutoDB).filter(ProdutoDB.id == data.produto_id, ProdutoDB.empresa_id == require_tenant(tenant)).first()
     if produto is None:
         raise HTTPException(404, 'Produto não encontrado para a empresa ativa')
+    from app.models.empresa import EmpresaDB
+    empresa = db.query(EmpresaDB).filter(EmpresaDB.id == require_tenant(tenant)).first()
+    configuracoes = (empresa.configuracoes or {}) if empresa else {}
+    receitas = configuracoes.get("receitas_rolo_v1") or {}
+    # Nunca buscar receita de outra empresa, nem por nome de fornecedor.
+    receita = receitas.get(str(produto.id)) if str(produto.codigo_interno or "").startswith("ST-ROLO-PICASSO-") else None
     try:
-        return simular_rolo(produto, data)
+        return simular_rolo(produto, data, receita=receita)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
