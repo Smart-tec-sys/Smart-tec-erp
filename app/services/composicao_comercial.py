@@ -224,11 +224,18 @@ def calcular_itens(db, o, data, tenant_id, item_model):
             if rolo == 'MOTORIZADA':
                 raise ValueError('Rolô motorizada: cálculo técnico não liberado.')
             if rolo == 'MANUAL':
+                from app.models.empresa import EmpresaDB
+                empresa = db.query(EmpresaDB).filter(EmpresaDB.id == tenant_id).first()
+                receitas = ((empresa.configuracoes or {}).get('receitas_rolo_v1') or {}) if empresa else {}
+                eh_picasso = str(produto.codigo_interno or '').startswith('ST-ROLO-PICASSO-')
+                receita = receitas.get(str(produto.id)) if eh_picasso else None
+                if eh_picasso and not receita:
+                    raise ValueError('Receita técnica Picasso ausente nesta empresa; orçamento não pode ser salvo.')
                 simulacao = simular_rolo(produto, RoloSimulacaoInput(
                     produto_id=item.produto_id, largura=item.largura, altura=item.altura,
                     quantidade=int(item.quantidade), perfil_comercial=data.perfil_comercial,
                     desconto=item.desconto, cor=item.cor, acionamento=item.acionamento or 'manual',
-                    lado_comando=item.lado_comando))
+                    lado_comando=item.lado_comando), receita=receita)
             elif modelo_tecnico in {'ROMANA TETO', 'ROMANA DE TETO'}:
                 config = (item.dados_tecnicos or {}).get('romana_teto', {})
                 simulacao = simular_romana_teto(produto, RomanaTetoSimulacaoInput(
