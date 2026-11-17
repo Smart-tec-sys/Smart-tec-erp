@@ -15,6 +15,8 @@ const path=require('node:path')
  const esperado={
   '#/inicio':['dashboard','Início'],'#/orcamentos':['budgets','Orçamentos'],'#/orcamentos/novo':['new-budget','Novo orçamento'],
   '#/vendas':['sales','Vendas'],'#/vendas/nova':['new-sale','Vendas'],'#/financeiro':['finance','Financeiro'],
+  '#/fiscal':['fiscal','Fiscal'],'#/fiscal/nfe':['fiscal','Fiscal'],
+  '#/fiscal/certificado-digital':['certificate','Fiscal'],'#/configuracoes/certificado-digital':['certificate','Fiscal'],
   '#/contabilidade':['accounting','Contabilidade'],'#/produtos':['products','Produtos'],'#/agenda':['agenda','Agenda'],
   '#/perfil':['profile','Meus dados'],'#/configuracoes':['settings','Configurações'],'#/admin':['admin','Administração Smart-tec'],
  }
@@ -26,10 +28,12 @@ const path=require('node:path')
  assert.equal(navegacaoDoHash('#/vendas?x=1').view,'sales')
 
  // Ida e volta: toda tela gera um hash que reabre a mesma tela (detalhes voltam à lista).
- for(const view of ['budgets','sales','new-sale','finance','accounting','products','agenda','profile','settings','admin','new-budget'])
+ for(const view of ['budgets','sales','new-sale','finance','accounting','products','agenda','profile','settings','fiscal','certificate','admin','new-budget'])
   assert.equal(navegacaoDoHash(hashDaNavegacao(view,null)).view,view,view)
  for(const cadastro of Object.keys(ROTULOS_CADASTRO)) assert.deepEqual(navegacaoDoHash(hashDaNavegacao('cadastro',cadastro)).cadastro,cadastro)
  assert.equal(hashDaNavegacao('dashboard',null),'')
+ assert.equal(hashDaNavegacao('fiscal',null),'#/fiscal/nfe')
+ assert.equal(hashDaNavegacao('certificate',null),'#/fiscal/certificado-digital')
  assert.equal(hashDaNavegacao('sale-detail',null),'#/vendas')
  assert.equal(hashDaNavegacao('new-budget',null,{orcamentoExistente:true}),'#/orcamentos')
  assert.equal(hashDaNavegacao('new-budget',null,{orcamentoExistente:false}),'#/orcamentos/novo')

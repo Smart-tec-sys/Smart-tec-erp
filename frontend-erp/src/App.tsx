@@ -38,6 +38,8 @@ import { SalesPage } from './pages/SalesPage'
 import { SaleDetailPage } from './pages/SaleDetailPage'
 import { AccountingPage } from './pages/AccountingPage'
 import { FinancePage, type FinanceFocus } from './pages/FinancePage'
+import { FiscalPage } from './pages/FiscalPage'
+import { CertificadoDigitalPage } from './pages/CertificadoDigitalPage'
 import { NewBudgetPage } from './pages/NewBudgetPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { CadastrosPage, type CadastroEntity } from './pages/CadastrosPage'
@@ -164,6 +166,9 @@ function App() {
     const [mobileOpen, setMobileOpen] = useState(false)
     const [cadastrosOpen, setCadastrosOpen] = useState(true)
     const [navegacaoInicial] = useState(() => navegacaoDoHash(window.location.hash))
+    const [fiscalOpen, setFiscalOpen] = useState(() =>
+        navegacaoInicial.view === 'fiscal' || navegacaoInicial.view === 'certificate'
+    )
     const [activePage, setActivePage] = useState(navegacaoInicial.activePage)
     const [view, setView] = useState<AppView>(navegacaoInicial.view)
     const [searchOpen, setSearchOpen] = useState(false)
@@ -207,6 +212,7 @@ function App() {
             const destino = navegacaoDoHash(window.location.hash)
             if (destino.cadastro) setCadastroEntity(destino.cadastro)
             if (destino.view === 'new-budget') setBudgetId(null)
+            if (destino.view === 'fiscal' || destino.view === 'certificate') setFiscalOpen(true)
             setActivePage(destino.activePage)
             setView(destino.view)
             setMobileOpen(false)
@@ -305,7 +311,7 @@ function App() {
             return
         }
 
-        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Produtos' && label !== 'Configurações') return
+        if (label !== 'Início' && label !== 'Orçamentos' && label !== 'Vendas' && label !== 'Contabilidade' && label !== 'Financeiro' && label !== 'Fiscal' && label !== 'Produtos' && label !== 'Configurações') return
 
         setActivePage(label)
 
@@ -313,10 +319,18 @@ function App() {
         else if (label === 'Vendas') setView('sales')
         else if (label === 'Contabilidade') setView('accounting')
         else if (label === 'Financeiro') setView('finance')
+        else if (label === 'Fiscal') setView('fiscal')
         else if (label === 'Produtos') setView('products')
         else if (label === 'Configurações') setView('settings')
         else setView('dashboard')
 
+        setMobileOpen(false)
+    }
+
+    const openFiscal = (destino: 'fiscal' | 'certificate') => {
+        setFiscalOpen(true)
+        setActivePage('Fiscal')
+        setView(destino)
         setMobileOpen(false)
     }
 
@@ -372,18 +386,34 @@ function App() {
                             {!collapsed && <div className="nav-label">{group.title}</div>}
                             {group.items.map((item) => {
                                 const Icon = iconMap[item.icon as keyof typeof iconMap]
-                                const isActive = activePage === item.label
+                                const isFiscal = item.label === 'Fiscal'
+                                const isActive = isFiscal ? view === 'fiscal' || view === 'certificate' : activePage === item.label
                                 return (
                                     <div key={item.label}>
                                         <button
                                             className={`nav-item ${isActive ? 'active' : ''}`}
-                                            onClick={() => navigate(item.label)}
+                                            onClick={() => {
+                                                if (!isFiscal) {
+                                                    navigate(item.label)
+                                                } else if (collapsed) {
+                                                    setCollapsed(false)
+                                                    setFiscalOpen(true)
+                                                } else {
+                                                    setFiscalOpen(value => !value)
+                                                }
+                                            }}
+                                            aria-expanded={isFiscal ? fiscalOpen && !collapsed : undefined}
                                             title={collapsed ? item.label : undefined}
                                         >
                                             <Icon size={18} strokeWidth={1.8} />
                                             {!collapsed && <span>{item.label}</span>}
                                             {item.label === 'Orçamentos' && !collapsed && <span className="nav-badge">8</span>}
 
+                                            {isFiscal && !collapsed && <ChevronRight
+                                                aria-hidden="true"
+                                                size={14}
+                                                style={{ marginLeft: 'auto', transform: fiscalOpen ? 'rotate(90deg)' : 'none' }}
+                                            />}
                                             {item.label === 'Cadastros' && !collapsed && (
                                                 <ChevronRight
                                                     size={14}
@@ -395,6 +425,18 @@ function App() {
                                             )}
                                         </button>
 
+                                        {isFiscal && fiscalOpen && !collapsed && (
+                                            <div className="nav-submenu" role="group" aria-label="Fiscal">
+                                                <button type="button" className={`nav-subitem ${view === 'fiscal' ? 'active' : ''}`}
+                                                    aria-current={view === 'fiscal' ? 'page' : undefined}
+                                                    onClick={() => openFiscal('fiscal')}>NF-e</button>
+                                                <button type="button" className="nav-subitem" disabled>NFS-e <small> · Em breve</small></button>
+                                                <button type="button" className="nav-subitem" disabled>NFC-e <small> · Em breve</small></button>
+                                                <button type="button" className={`nav-subitem ${view === 'certificate' ? 'active' : ''}`}
+                                                    aria-current={view === 'certificate' ? 'page' : undefined}
+                                                    onClick={() => openFiscal('certificate')}>Certificado digital</button>
+                                            </div>
+                                        )}
                                         {item.label === 'Cadastros' && cadastrosOpen && !collapsed && (
                                             <div className="nav-submenu">
                                                 {[
@@ -552,11 +594,13 @@ function App() {
                     {view === 'new-sale' && <NewSalePage onBack={() => navigate('Vendas')} onSaved={() => { navigate('Vendas'); setBudgetSavedToast({ message: 'Venda salva com sucesso.' }) }} />}
                     {view === 'accounting' && <AccountingPage />}
                     {view === 'finance' && <FinancePage focus={financeFocus} onClearFocus={() => setFinanceFocus(null)} />}
+                    {view === 'fiscal' && <FiscalPage secaoInicial="nfe" />}
                     {view === 'new-budget' && <NewBudgetPage budgetId={budgetId} onBack={() => navigate('Orçamentos')} onSaved={(id, mode) => { setBudgetId(id); setBudgetRefresh((value) => value + 1); navigate('Orçamentos'); setBudgetSavedToast({ message: mode === 'created' ? 'Orçamento salvo com sucesso.' : 'Orçamento atualizado com sucesso.' }) }} onConverted={() => navigate('Vendas')} />}
                     {view === 'products' && <ProductsPage />}
                     {view === 'cadastro' && <CadastrosPage entity={cadastroEntity} />}
                     {view === 'profile' && <MyProfilePage />}
             {view === 'settings' && <SettingsPage />}
+            {view === 'certificate' && <CertificadoDigitalPage key={authSession?.empresa.id} />}
             {view === 'admin' && (
                 <AdminDashboardPage
                     onBack={() => {
