@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Smart-tec Fiscal V1 - teste interno de ida e volta Lambda/KMS com dados sinteticos.
+Parameters:
+  ExistingKmsKeyId:
+    Type: String
+    Description: ID (sem ARN) da chave KMS simetrica existente na mesma conta e regiao.
+    AllowedPattern: '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+Resources:
+  ProbeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-probe'
+      RetentionInDays: 7
+  ProbeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: A1KmsProbeOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [kms:Encrypt, kms:Decrypt]
+                Resource: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+                Condition:
+                  StringEquals:
+                    'kms:EncryptionContext:smarttec:purpose': smarttec-fiscal-a1-lambda-probe-v1
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt ProbeLogs.Arn
+  Probe:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-probe'
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ProbeRole.Arn
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          KMS_KEY_ARN: !Sub 'arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/${ExistingKmsKeyId}'
+      Code:
+        ZipFile: |
+          import hmac
+          import os
+          import secrets
+
+          import boto3
+          from botocore.config import Config
+          from botocore.exceptions import BotoCoreError, ClientError
+
+
+          def handler(event, context):
+              if event != {}:
+                  raise ValueError("Este teste só aceita um evento vazio.")
+              key_arn = os.environ["KMS_KEY_ARN"]
+              purpose = {"smarttec:purpose": "smarttec-fiscal-a1-lambda-probe-v1"}
+              sample = secrets.token_bytes(32)
+              client = boto3.client(
+                  "kms", config=Config(
+                      connect_timeout=2, read_timeout=3,
+                      retries={"mode": "standard", "total_max_attempts": 1},
+                  ),
+              )
+              try:
+                  encrypted = client.encrypt(
+                      KeyId=key_arn, Plaintext=sample, EncryptionContext=purpose,
+                      EncryptionAlgorithm="SYMMETRIC_DEFAULT",
+                  )
+                  decrypted = client.decrypt(
+                      KeyId=key_arn, CiphertextBlob=encrypted["CiphertextBlob"],
+                      EncryptionContext=purpose, EncryptionAlgorithm="SYMMETRIC_DEFAULT",
+                  )
+              except ClientError as exc:
+                  code = exc.response.get("Error", {}).get("Code")
+                  if code not in {
+                      "AccessDenied", "AccessDeniedException", "DisabledException",
+                      "InvalidCiphertextException", "KMSInvalidStateException", "NotFoundException",
+                  }:
+                      code = "FALHA_KMS"
+                  raise RuntimeError(f"Teste Lambda/KMS falhou: {code}") from None
+              except BotoCoreError:
+                  raise RuntimeError("Teste Lambda/KMS falhou: FALHA_SDK") from None
+              if (encrypted["KeyId"] != key_arn or decrypted["KeyId"] != key_arn
+                      or not hmac.compare_digest(sample, decrypted["Plaintext"])):
+                  raise RuntimeError("A chave ou o dado recuperado não conferem.")
+              return {"resultado": "KMS_VALIDADO"}
+Outputs:
+  FunctionName:
+    Value: !Ref Probe
