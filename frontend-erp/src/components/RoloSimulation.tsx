@@ -53,7 +53,7 @@ export function RoloSimulation({ product, profile, onResult }: Props) {
   return (
     <section className="api-message" aria-live="polite">
       <strong>Rolô — simulação técnica</strong>
-      <p>Custo técnico: indisponível nesta fase. Resultado recalculado; não é histórico de fabricação.</p>
+      <p>Custo técnico: {r?.custo_tecnico == null ? 'indisponível' : formatCurrency(Number(r.custo_tecnico))}. Resultado recalculado; não é histórico de fabricação.</p>
       {!current && <p>Calculando… Totais ainda não confirmados; aguarde antes de salvar.</p>}
       {current && state?.error && (
         <p role="alert">Não foi possível simular. Revise as medidas ou a conexão. Dados preservados; salvamento bloqueado. {state.error}</p>
@@ -64,6 +64,9 @@ export function RoloSimulation({ product, profile, onResult }: Props) {
           <p>Bitola selecionada: <strong>{r.bitola_tecnica}</strong> · Acionamento: {r.acionamento_permitido}{r.requer_confirmacao_vendedor ? ' ⚠ Requer confirmação do vendedor' : ''}</p>
           <p>Custo cadastrado do produto: {r.custo_cadastrado === null ? 'indisponível' : formatCurrency(Number(r.custo_cadastrado))}. Preço comercial unitário: {r.preco_disponivel ? formatCurrency(Number(r.preco_unitario)) : 'indisponível'} · Subtotal: {formatCurrency(Number(r.subtotal))}</p>
           <p>Origem do preço: {r.origem_preco}. {r.aviso}</p>
+          {r.componentes_tecnicos.tecido && typeof r.componentes_tecnicos.tecido === 'object' && 'quantidade_compra_ml' in r.componentes_tecnicos.tecido && (
+            <p>Tecido: compra de {showNested(r.componentes_tecnicos, 'tecido.quantidade_compra_ml')} ML de bobina com {showNested(r.componentes_tecnicos, 'tecido.largura_bobina_m')} m de largura. Faixa integral por peça, incluindo altura +15 cm e perda de 5%; sem crédito de sobras laterais.</p>
+          )}
           <dl>
             <dt>Componentes técnicos</dt>
             <dd>

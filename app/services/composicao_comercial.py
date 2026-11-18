@@ -211,7 +211,7 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 total += Decimal(str(valores['subtotal']))
                 o.itens.append(item_model(**valores))
                 continue
-            from app.services.rolo_simulacao import _tipo_rolo, simular_rolo, RoloSimulacaoInput
+            from app.services.rolo_simulacao import _tipo_rolo, RoloSimulacaoInput
             from app.services.romana_teto_simulacao import simular_romana_teto
             from app.schemas.orcamento import RomanaTetoSimulacaoInput
             from app.services.cortina_simulacao import _produto_cortina_fabricada, simular_cortina, CortinaSimulacaoInput
@@ -224,11 +224,20 @@ def calcular_itens(db, o, data, tenant_id, item_model):
             if rolo == 'MOTORIZADA':
                 raise ValueError('Rolô motorizada: cálculo técnico não liberado.')
             if rolo == 'MANUAL':
-                simulacao = simular_rolo(produto, RoloSimulacaoInput(
+                from app.services.rolo_receita import simular_rolo_catalogo
+                simulacao = simular_rolo_catalogo(db, produto, RoloSimulacaoInput(
                     produto_id=item.produto_id, largura=item.largura, altura=item.altura,
                     quantidade=int(item.quantidade), perfil_comercial=data.perfil_comercial,
                     desconto=item.desconto, cor=item.cor, acionamento=item.acionamento or 'manual',
-                    lado_comando=item.lado_comando))
+                    lado_comando=item.lado_comando), tenant_id)
+                if "receita" in simulacao:
+                    valores["dados_tecnicos"] = {
+                        **(valores.get("dados_tecnicos") or {}),
+                        "rolo": {
+                            "bitola": simulacao["bitola_tecnica"], "receita": simulacao["receita"],
+                            "fabricacao": simulacao["fabricacao_por_peca"],
+                        },
+                    }
             elif modelo_tecnico in {'ROMANA TETO', 'ROMANA DE TETO'}:
                 config = (item.dados_tecnicos or {}).get('romana_teto', {})
                 simulacao = simular_romana_teto(produto, RomanaTetoSimulacaoInput(

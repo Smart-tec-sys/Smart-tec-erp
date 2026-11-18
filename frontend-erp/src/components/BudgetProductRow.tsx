@@ -2,7 +2,7 @@ import { commercialDisplayText } from '../utils/commercialDisplay'
 import { CurtainColorField } from './CurtainColorField'
 import { DEFAULT_CURTAIN, curtainSuggestions, applyCurtainSuggestion, type CurtainSuggestion } from '../utils/curtainFabricCatalog'
 import { ZeroNumberInput, zeroInputValue } from './ZeroNumberInput'
-import { fabricDisplay, fabricVariantKey, groupFabricSuggestions } from '../utils/fabricDisplay'
+import { fabricDisplay } from '../utils/fabricDisplay'
 import { rankProductSuggestions } from '../utils/productSuggestionRank'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { Minus, Plus, Trash2, PackagePlus } from 'lucide-react'
@@ -21,15 +21,93 @@ import { romanaTetoKind, type RomanaTetoState } from '../types/romana_teto'
 import { roloKind, normalizeRoloDrive, type RoloState } from '../types/rolo'
 import { doubleVisionKind, type DoubleVisionState } from '../types/double_vision'
 
-const FAMILY_COLOR_OPTIONS: Record<string, readonly string[]> = {
-  ROLO_BK_NAPOLES: ['BEGE', 'BRANCO', 'CINZA', 'CREME'] as const,
-  ROLO_BK_DENVER: ['BEGE', 'BRANCO', 'CINZA'] as const,
-  ROMANA_TETO_BLACKOUT_PIMPOINT: ['BEGE', 'BRANCO', 'CINZA'] as const,
-  ROMANA_TETO_BLACKOUT_NAPOLES: ['BEGE', 'BRANCO', 'CINZA', 'CREME', 'MARROM'] as const,
-  ROMANA_TETO_BLACKOUT_ROMA: ['BRANCO', 'LINHO', 'TINTO BEGE', 'TINTO PALHA', 'TINTO PRATA'] as const,
-  ROMANA_TETO_SCREEN_1_ECO_IMPORTADA: ['BEGE', 'BRANCO', 'CINZA'] as const,
-  ROMANA_TETO_SCREEN_1_ONE: ['51', '52', '53', '73', '75', 'BEGE', 'BRANCO', 'CINZA'] as const,
-  ROMANA_TETO_SCREEN_3_JP_IMPORTADA: ['BEGE', 'BRANCO', 'CINZA', 'PRETO'] as const,
+// Cada cor continua com ID, referência e custo próprios; o agrupamento é apenas visual.
+// NUNCA combinar registros de fornecedores diferentes.
+type CatalogWithSupplier = ApiProduct & {
+  nome_fornecedor?: string | null
+  fornecedor_id?: number | null
+  codigo_fornecedor?: string | null
+  linha?: string | null
+  colecao?: string | null
+}
+
+// Cores legadas escritas no nome: «MODELO (COR) 38MM» e «MODELO – COR».
+// A bitola é mantida como variante técnica, nunca presumida equivalente.
+const legacyVariant = (p: ApiProduct) => {
+  const name = String(p.nome || '').trim()
+  const explicitColor = productColor(p).trim()
+  const diameter = /\s+(\d{2,3})\s*MM\s*$/i
+  const normalizeBitola = (value: string) => value.replace(/\s+/g, '').toUpperCase()
+  const paren = name.match(/^(.*?)\s*\(([^()]+)\)\s*(\d{2,3}\s*MM)?$/i)
+  if (paren && !/\d/.test(paren[2]) && /^[\p{L}\s-]+$/u.test(paren[2])) {
+    return { model: paren[1].trim(), color: explicitColor || paren[2].trim(),
+      bitola: normalizeBitola(paren[3] || '') }
+  }
+  const suffix = name.match(/^(.*?)\s+[–—-]\s+(.+)$/)
+  if (suffix && explicitColor && normalizeSearch(suffix[2]) === normalizeSearch(explicitColor)) {
+    return { model: suffix[1].trim(), color: explicitColor, bitola: '' }
+  }
+  // Retira cor/bitola do nome de apresentação, mas mantém a referência real intacta.
+  const bitolaMatch = name.match(diameter)
+  const bitola = normalizeBitola(bitolaMatch?.[1] ? `${bitolaMatch[1]}MM` : '')
+  let model = bitolaMatch ? name.slice(0, bitolaMatch.index).trim() : name
+  if (explicitColor) {
+    const normalizedName = normalizeSearch(model)
+    const normalizedColor = normalizeSearch(explicitColor)
+    if (normalizedName.endsWith(` ${normalizedColor}`)) {
+      model = model.slice(0, model.length - explicitColor.length).trim()
+    }
+  }
+  const trailingColor = model.match(/^(.*?)\s*\(([^()]+)\)$/)
+  if (trailingColor && !/\d/.test(trailingColor[2])) {
+    return { model: trailingColor[1].trim(), color: explicitColor || trailingColor[2].trim(), bitola }
+  }
+  return { model, color: explicitColor, bitola }
+}
+
+const catalogModelName = (p: ApiProduct) => {
+  const base = String(p.produto_base || '').trim()
+  const legacy = legacyVariant(p).model
+  // "ROLÔ" genérico não substitui o nome completo da coleção.
+  return base && normalizeSearch(base).split(/\s+/).length >= 3 ? base : legacy
+}
+const catalogColor = (p: ApiProduct) => legacyVariant(p).color
+const catalogBitola = (p: ApiProduct) => legacyVariant(p).bitola
+
+const isFabricCatalogItem = (p: ApiProduct) => {
+  if (isFinishedProduct(p) || isCurtainCatalogItem(p)) return false
+  const technical = normalizeSearch(
+    [p.grupo_tecnico, p.grupo_produto, p.familia_tecnica].filter(Boolean).join(' ')
+  )
+  return Boolean(fabricDisplay(p).fabric) ||
+    /(?:^|\\s)TECIDOS?(?:\\s|$)/.test(technical)
+}
+
+const displayModel = (p: ApiProduct) => {
+  if (isFinishedProduct(p)) return catalogModelName(p)
+  if (isFabricCatalogItem(p)) {
+    const name = fabricDisplay(p).name || p.nome
+    const candidate = catalogModelName({ ...p, nome: name })
+    return candidate || name
+  }
+  return fabricDisplay(p).name
+}
+
+const catalogGroupKey = (p: ApiProduct) => {
+  if (!isFinishedProduct(p) && !isFabricCatalogItem(p)) return `id:${p.id}`
+  const extra = p as CatalogWithSupplier
+  // Código de fornecedor pode ser SKU individual; não serve como identidade do fornecedor.
+  const supplier = extra.fornecedor_id != null
+    ? `id:${extra.fornecedor_id}`
+    : extra.nome_fornecedor?.trim()
+      ? `nome:${normalizeSearch(extra.nome_fornecedor)}`
+      : 'fornecedor:nao-identificado'
+  const model = normalizeSearch(displayModel(p))
+  const collection = normalizeSearch(String(extra.colecao || extra.linha || '').trim())
+  // Evita dividir a mesma coleção quando a informação já está no nome principal.
+  const distinctCollection = collection && !model.includes(collection) ? collection : ''
+  const kind = isFinishedProduct(p) ? 'ACABADO' : 'TECIDO'
+  return `${kind}|${supplier}|${model}|${distinctCollection}`
 }
 
 type Props = {
@@ -51,8 +129,13 @@ type Props = {
 
 const active = (p: ApiProduct) => !['INATIVO', 'INATIVA'].includes(normalizeSearch(p.status_comercial || p.situacao || 'ATIVO'))
 
-const isFinishedProduct = (p: ApiProduct) =>
-  Boolean(romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p))
+const isFinishedProduct = (p: ApiProduct) => {
+  if (romanaKind(p) || romanaTetoKind(p) || roloKind(p) || doubleVisionKind(p)) return true
+  const classification = normalizeSearch(
+    [p.modelo_tecnico, p.familia_tecnica, p.grupo_tecnico, p.grupo_produto].filter(Boolean).join(' ')
+  )
+  return /(?:^|\s)(?:PAINEL|SHANGRILA|SHANGRILA|SHANGRI LA)(?:$|\s)/.test(classification)
+}
 
 const isCurtainCatalogItem = (p: ApiProduct) =>
   normalizeSearch(p.modelo_tecnico ?? '') === 'CORTINA' ||
@@ -79,7 +162,7 @@ export function BudgetProductRow({
   const selected = catalog.find((p) => p.id === product.productId)
   const selectedDisplay = isCurtain
     ? 'Cortina de tecido'
-    : fabricDisplay(selected ?? { id: product.productId ?? 0, nome: product.product }).name
+    : selected ? displayModel(selected) : fabricDisplay({ id: product.productId ?? 0, nome: product.product }).name
   const [query, setQuery] = useState(fabricDisplay({ id: product.productId ?? 0, nome: product.product }).name)
   const update = <K extends keyof BudgetProduct>(key: K, value: BudgetProduct[K]) => onChange({ ...product, [key]: value })
   const matches = useMemo(() => {
@@ -96,19 +179,26 @@ export function BudgetProductRow({
 
   }, [catalog, query])
   useEffect(() => { setQuery(selectedDisplay) }, [selectedDisplay])
-  const variants = useMemo(
-    () => (selected && fabricDisplay(selected).fabric && productColor(selected) ? catalog.filter(p => active(p) && fabricVariantKey(p) === fabricVariantKey(selected)) : selected?.familia_tecnica ? catalog.filter((p) => active(p) && p.familia_tecnica === selected.familia_tecnica) : selected ? [selected] : []),
-    [catalog, selected]
-  )
+  const variants = useMemo(() => {
+    if (!selected) return []
+    if (isFinishedProduct(selected) || isFabricCatalogItem(selected)) {
+      const key = catalogGroupKey(selected)
+      return catalog.filter(p => active(p) && catalogGroupKey(p) === key)
+    }
+    return [selected]
+  }, [catalog, selected])
   const curtainVirtualMatches = useMemo(() => curtainSuggestions(catalog, query), [catalog, query])
   const rankedMatches = useMemo(() => {
     const q = normalizeSearch(query.trim())
-    if (q.includes('CORTINA')) {
-      return []
-    }
-    // Relevância antes do limite: tecidos e componentes não podem esconder produtos acabados.
-    return rankProductSuggestions(groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p))), query, isFinishedProduct)
-      .slice(0, 12)
+    if (q.includes('CORTINA')) return []
+    const ranked = rankProductSuggestions(matches.filter((p) => !isCurtainCatalogItem(p)), query, isFinishedProduct)
+    const seen = new Set<string>()
+    return ranked.filter(p => {
+      const key = catalogGroupKey(p)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }).slice(0, 12)
   }, [matches, query])
 
   // Both sources reach exactly the same rendered dropdown array.
@@ -120,16 +210,11 @@ export function BudgetProductRow({
   const colors = useMemo(() => {
     const grouped = new Map<string, ApiProduct[]>()
     variants.filter((p) => !isCurtainCatalogItem(p)).forEach((p) => {
-      const c = productColor(p)
+      const c = catalogColor(p) || productColor(p)
       if (c) grouped.set(c, [...(grouped.get(c) || []), p])
     })
     return [...grouped.entries()]
   }, [variants])
-
-  const fixedFamilyColors =
-    selected?.familia_tecnica && !isCurtainCatalogItem(selected)
-      ? FAMILY_COLOR_OPTIONS[selected.familia_tecnica] || []
-      : []
 
   const confirmPriceReset = () => !allowManualPrice || !product.priceManual || window.confirm('Trocar o produto restaura o preço sugerido para este item. Deseja continuar?')
   const chooseCurtain = (suggestion: CurtainSuggestion) => {
@@ -154,7 +239,7 @@ export function BudgetProductRow({
     const rtKind = romanaTetoKind(p)
     const rlKind = roloKind(p)
     const dvKind = doubleVisionKind(p)
-    setQuery(fabricDisplay(p).name)
+    setQuery(displayModel(p))
     onChange({
       ...product,
       productId: p.id,
@@ -164,7 +249,7 @@ export function BudgetProductRow({
       groupTechnical: p.grupo_tecnico || '',
       modelTechnical: p.modelo_tecnico || '',
       unit: p.unidade_venda || p.unidade || '',
-      color: productColor(p),
+      color: isFinishedProduct(p) ? catalogColor(p) : productColor(p),
       price: rKind ? 0 : rlKind ? 0 : dvKind ? 0 : rtKind ? 0 : commercialPrice(p, commercialType),
       priceManual:false,
       suggestedPrice:rKind || rlKind || dvKind || rtKind ? undefined : commercialPrice(p,commercialType),
@@ -189,9 +274,6 @@ export function BudgetProductRow({
     onCreateProduct?.(product.id)
   }
 
-  const handleColorChange = (cor: string) => {
-    onChange({ ...product, color: cor })
-  }
 
   const hasSelectedProduct = isCurtain || Boolean(product.productId)
   const quantityInvalid =
@@ -230,8 +312,8 @@ export function BudgetProductRow({
                 dropdownMatches.map(match => (
                   <button type="button" key={match.key}
                     onClick={() => { if (match.suggestion) chooseCurtain(match.suggestion); else if (match.product) choose(match.product) }}>
-                    <strong>{commercialDisplayText(match.suggestion?.label ?? fabricDisplay(match.product!).name, [match.product?.codigo_interno || '', match.product?.codigo || '', match.product?.codigo_barras || ''])}</strong>
-                    {!match.suggestion && match.product && fabricDisplay(match.product).width && <small>Largura de fornecimento: {fabricDisplay(match.product).width}</small>}
+                    <strong>{commercialDisplayText(match.suggestion?.label ?? displayModel(match.product!), [match.product?.codigo_interno || '', match.product?.codigo || '', match.product?.codigo_barras || ''])}</strong>
+                    {!match.suggestion && match.product && !isFabricCatalogItem(match.product) && fabricDisplay(match.product).width && <small>Largura de fornecimento: {fabricDisplay(match.product).width}</small>}
                   </button>
                 ))
               )}
@@ -242,26 +324,20 @@ export function BudgetProductRow({
           <span>Cor</span>
           {isCurtain ? (
             <CurtainColorField product={product} catalog={catalog} onChange={onChange} />
-          ) : fixedFamilyColors.length > 0 ? (
-            <select value={product.color} onChange={(e) => handleColorChange(e.target.value)} disabled={fixedFamilyColors.length === 0}>
-              <option value="">Selecione a cor</option>
-              {fixedFamilyColors.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
           ) : (
-            <select value={product.color} disabled={!colors.length} onChange={(e) => {
-              const options = colors.find(([c]) => c === e.target.value)?.[1] || []
-              if (options.length === 1) choose(options[0])
-            }}>
-              <option value="">Sem variaÃƒÂ§ÃƒÂ£o</option>
-              {colors.map(([c, items]) => (
-                <option key={c} value={c} disabled={items.length !== 1}>
-                  {c}{items.length !== 1 ? ' (ambÃƒÂ­gua)' : ''}
+            <select value={selected && colors.some(([, items]) => items.some(p => p.id === selected.id)) ? String(selected.id) : ''}
+              disabled={!colors.length}
+              onChange={(e) => {
+                const variant = variants.find(p => p.id === Number(e.target.value))
+                if (variant) choose(variant)
+              }}>
+              <option value="">Selecione a cor</option>
+              {colors.flatMap(([c, items]) => items.map(p => (
+                <option key={p.id} value={p.id}>
+                  {items.length === 1 ? c :
+                    `${c} · ${[catalogBitola(p), fabricDisplay(p).width ? `Largura ${fabricDisplay(p).width}` : '', p.codigo_interno || p.codigo || `ID ${p.id}`].filter(Boolean).join(' · ')}`}
                 </option>
-              ))}
+              )))}
             </select>
           )}
         </label>

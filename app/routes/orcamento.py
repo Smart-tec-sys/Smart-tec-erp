@@ -34,12 +34,12 @@ def simular_rolo_item(data: RoloSimulacaoInput,
                       db: Session = Depends(get_db), tenant: TenantContext = Depends(get_current_tenant)):
     from app.models.produto import ProdutoDB
     from app.tenant.isolation import require_tenant
-    from app.services.rolo_simulacao import simular_rolo
+    from app.services.rolo_receita import simular_rolo_catalogo
     produto = db.query(ProdutoDB).filter(ProdutoDB.id == data.produto_id, ProdutoDB.empresa_id == require_tenant(tenant)).first()
     if produto is None:
         raise HTTPException(404, 'Produto não encontrado para a empresa ativa')
     try:
-        return simular_rolo(produto, data)
+        return simular_rolo_catalogo(db, produto, data, require_tenant(tenant))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -105,6 +105,17 @@ def atualizar(oid:int,data:OrcamentoUpdate,db:Session=Depends(get_db),tenant:Ten
     except ValueError as exc:raise HTTPException(422,str(exc)) from exc
     if not r:raise HTTPException(404,"Orçamento não encontrado")
     return r
+
+@router.post("/{oid}/duplicar", status_code=201)
+def duplicar(oid: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(get_current_tenant)):
+    try:
+        resultado = orcamento_service.duplicar(db, oid, tenant)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if resultado is None:
+        raise HTTPException(404, "Orçamento não encontrado")
+    return resultado
+
 @router.delete("/{oid}",status_code=204)
 def remover(oid:int,db:Session=Depends(get_db),tenant:TenantContext=Depends(get_current_tenant)):
     if not orcamento_service.remover(db,oid,tenant):raise HTTPException(404,"Orçamento não encontrado")

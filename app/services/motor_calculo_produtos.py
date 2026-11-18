@@ -2,6 +2,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 import math
 
+from app.technical.rules.rolo import (
+    MotorObrigatorioErro, selecionar_tubo_rolo, tubo_para_codigo_tecnico,
+)
+
 
 @dataclass
 class ComponenteCalculado:
@@ -95,8 +99,47 @@ def _calcular_rolo(modelo: str, largura: float, altura: float, quantidade_produt
     qtd_linear_fita_base = max(largura - desconto_tecido, 0.0) * quantidade_produto
     qtd_corrente = min(max(altura * 2, 0.0), 3.0) * quantidade_produto
 
-    tubo = _pegar(catalogo, "tubo_32", "tubo_38", "tubo")
-    comando = _pegar(catalogo, "comando_32", "comando_38", "comando")
+    # Respeita a regra técnica existente; nunca troca um diâmetro por outro
+    # apenas porque uma chave genérica ou um tubo menor está no carrinho.
+    acionamento = str(opcoes.get("acionamento") or "manual").strip().lower()
+    if acionamento not in ("manual", "motorizado"):
+        resultado.alertas.append("Acionamento inválido: use manual ou motorizado.")
+        return resultado
+    try:
+        selecao = selecionar_tubo_rolo(largura, acionamento)
+    except MotorObrigatorioErro as erro:
+        resultado.alertas.append(str(erro))
+        return resultado
+    diametro = selecao.diametro.value.replace("mm", "")
+    codigo_tubo = tubo_para_codigo_tecnico(selecao.diametro)
+    tubo = _pegar(catalogo, f"tubo_{diametro}", codigo_tubo)
+    if not tubo:
+        # Aceita chave genérica somente quando ela identifica explicitamente
+        # o diâmetro correto, sem mascarar falta de tabela do fornecedor.
+        candidato = _pegar(catalogo, "tubo")
+        if candidato and str(candidato.get("codigo_tecnico") or candidato.get("codigo") or "").strip().upper() == codigo_tubo:
+            tubo = candidato
+    if not tubo:
+        resultado.alertas.append(f"Tubo {diametro} mm não encontrado na receita do fornecedor.")
+
+    # Comando manual e motorização são alternativas, não itens cumulativos.
+    comando = None
+    motor = None
+    if acionamento == "manual":
+        comando = _pegar(catalogo, f"comando_{diametro}", f"COMANDO_ROLO_{diametro}MM")
+        if not comando:
+            candidato = _pegar(catalogo, "comando")
+            codigo_esperado = f"COMANDO_ROLO_{diametro}MM"
+            if candidato and str(candidato.get("codigo_tecnico") or candidato.get("codigo") or "").strip().upper() == codigo_esperado:
+                comando = candidato
+        if not comando:
+            resultado.alertas.append(f"Comando manual compatível com tubo {diametro} mm não encontrado.")
+    else:
+        motor = _pegar(catalogo, "motor_rolo", "motor")
+        if not motor:
+            resultado.alertas.append("Motor da Rolô não informado na receita do fornecedor.")
+        if selecao.requer_confirmacao_vendedor:
+            resultado.alertas.append(selecao.observacao or "Confirmar tubo motorizado com vendedor.")
 
     _add(resultado, _pegar(catalogo, "tecido"), "Tecido", "Largura -3cm x altura +15cm", qtd_tecido_m2, "M²", perda_tecido)
     _add(resultado, tubo, "Tubo", "Largura -2,5cm", qtd_linear_tubo_base, "ML")
@@ -104,10 +147,17 @@ def _calcular_rolo(modelo: str, largura: float, altura: float, quantidade_produt
     _add(resultado, _pegar(catalogo, "base", "perfil"), "Perfil/Base", "Base chata/cônica • largura -2,5cm", qtd_linear_tubo_base, "ML")
     _add(resultado, _pegar(catalogo, "fita_base"), "Fita base", "Fita plástica 1,5 • largura -3cm", qtd_linear_fita_base, "ML")
     _add(resultado, _pegar(catalogo, "espaguete_base"), "Espaguete base", "Espaguete 3mm • largura -3cm", qtd_linear_fita_base, "ML")
-    _add(resultado, _pegar(catalogo, "corrente"), "Corrente", "Altura dupla, máx. 3m", qtd_corrente, "ML")
-    _add(resultado, _pegar(catalogo, "emenda_corrente"), "Emenda corrente", "Fixo", 3 * quantidade_produto, "UN")
+    if acionamento == "manual":
+        _add(resultado, _pegar(catalogo, "corrente"), "Corrente", "Altura dupla, máx. 3m", qtd_corrente, "ML")
+        _add(resultado, _pegar(catalogo, "emenda_corrente"), "Emenda corrente", "Fixo", 3 * quantidade_produto, "UN")
     _add(resultado, _pegar(catalogo, "tampa_base"), "Tampa da base", "Fixo", 2 * quantidade_produto, "UN")
-    _add(resultado, comando, "Comando", "Fixo • kit compatível com tubo", 1 * quantidade_produto, "KIT")
+    if acionamento == "manual" and comando:
+        _add(resultado, comando, "Comando", "Fixo • kit compatível com tubo", 1 * quantidade_produto, "KIT")
+    if acionamento == "motorizado" and motor:
+        _add(resultado, motor, "Motor", "Motorizado • referência aprovada pelo fornecedor", 1 * quantidade_produto, "UN")
+        acessorios = _pegar(catalogo, "kit_motor_rolo", "acessorio_motor_rolo")
+        if acessorios:
+            _add(resultado, acessorios, "Acessórios do motor", "Kit compatível com motor", 1 * quantidade_produto, "KIT")
 
     resultado.custo_total = round(resultado.custo_total, 4)
     return resultado
