@@ -10,6 +10,35 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ApiProduct, BudgetProduct, CommercialType } from '../types/budget'
 import { commercialPrice, formatCurrency, normalizeSearch, productColor, productLineSubtotal, negotiateProductPrice, restoreSuggestedProductPrice, suggestedProductPrice } from '../types/budget'
 const CREATE_PRODUCT_VALUE = '__CREATE_PRODUCT__'
+
+// Em produtos Rolô, 138 e 253 são medidas em centímetros; 1,38 e 2,53 já estão em metros.
+// Aplicar ao sair do campo para não interferir na digitação de valores intermediários.
+const normalizeRoloDimension = (raw: string): string => {
+  const trimmed = raw.trim()
+  if (!/^\\d+(?:[.,]\\d+)?$/.test(trimmed)) return raw
+  const value = Number(trimmed.replace(',', '.'))
+  if (!Number.isFinite(value) || value < 100) return raw
+  return (value / 100).toFixed(4).replace(/0+$/, '').replace(/\\.$/, '').replace('.', ',')
+}
+
+
+// Colecoes Picasso sao produtos acabados com variacoes de cor, nao cinco itens comerciais.
+const picassoFamily = (p: ApiProduct) =>
+  /^ST-ROLO-PICASSO-(BK|TR)-/.test(p.codigo_interno || '')
+    ? normalizeSearch(p.produto_base || '')
+    : ''
+
+const groupPicassoFinished = (products: ApiProduct[]) => {
+  const seen = new Set<string>()
+  return products.filter(p => {
+    const family = picassoFamily(p)
+    if (!family) return true
+    if (seen.has(family)) return false
+    seen.add(family)
+    return true
+  })
+}
+
 import { RomanaSimulation } from './RomanaSimulation'
 import { RomanaTetoSimulation } from './RomanaTetoSimulation'
 import { RoloSimulation } from './RoloSimulation'
@@ -79,7 +108,7 @@ export function BudgetProductRow({
   const selected = catalog.find((p) => p.id === product.productId)
   const selectedDisplay = isCurtain
     ? 'Cortina de tecido'
-    : fabricDisplay(selected ?? { id: product.productId ?? 0, nome: product.product }).name
+    : selected && picassoFamily(selected) ? (selected.produto_base || selected.nome) : fabricDisplay(selected ?? { id: product.productId ?? 0, nome: product.product }).name
   const [query, setQuery] = useState(fabricDisplay({ id: product.productId ?? 0, nome: product.product }).name)
   const update = <K extends keyof BudgetProduct>(key: K, value: BudgetProduct[K]) => onChange({ ...product, [key]: value })
   const matches = useMemo(() => {
@@ -97,7 +126,7 @@ export function BudgetProductRow({
   }, [catalog, query])
   useEffect(() => { setQuery(selectedDisplay) }, [selectedDisplay])
   const variants = useMemo(
-    () => (selected && fabricDisplay(selected).fabric && productColor(selected) ? catalog.filter(p => active(p) && fabricVariantKey(p) === fabricVariantKey(selected)) : selected?.familia_tecnica ? catalog.filter((p) => active(p) && p.familia_tecnica === selected.familia_tecnica) : selected ? [selected] : []),
+    () => (selected && picassoFamily(selected) ? catalog.filter(p => active(p) && picassoFamily(p) === picassoFamily(selected)) : selected && fabricDisplay(selected).fabric && productColor(selected) ? catalog.filter(p => active(p) && fabricVariantKey(p) === fabricVariantKey(selected)) : selected?.familia_tecnica ? catalog.filter((p) => active(p) && p.familia_tecnica === selected.familia_tecnica) : selected ? [selected] : []),
     [catalog, selected]
   )
   const curtainVirtualMatches = useMemo(() => curtainSuggestions(catalog, query), [catalog, query])
@@ -107,7 +136,7 @@ export function BudgetProductRow({
       return []
     }
     // Relevância antes do limite: tecidos e componentes não podem esconder produtos acabados.
-    return rankProductSuggestions(groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p))), query, isFinishedProduct)
+    return rankProductSuggestions(groupPicassoFinished(groupFabricSuggestions(matches.filter((p) => !isCurtainCatalogItem(p)))), query, isFinishedProduct)
       .slice(0, 12)
   }, [matches, query])
 
@@ -154,7 +183,7 @@ export function BudgetProductRow({
     const rtKind = romanaTetoKind(p)
     const rlKind = roloKind(p)
     const dvKind = doubleVisionKind(p)
-    setQuery(fabricDisplay(p).name)
+    setQuery(picassoFamily(p) ? (p.produto_base || p.nome) : fabricDisplay(p).name)
     onChange({
       ...product,
       productId: p.id,
@@ -230,7 +259,7 @@ export function BudgetProductRow({
                 dropdownMatches.map(match => (
                   <button type="button" key={match.key}
                     onClick={() => { if (match.suggestion) chooseCurtain(match.suggestion); else if (match.product) choose(match.product) }}>
-                    <strong>{commercialDisplayText(match.suggestion?.label ?? fabricDisplay(match.product!).name, [match.product?.codigo_interno || '', match.product?.codigo || '', match.product?.codigo_barras || ''])}</strong>
+                    <strong>{commercialDisplayText(match.suggestion?.label ?? (match.product && picassoFamily(match.product) ? (match.product.produto_base || match.product.nome) : fabricDisplay(match.product!).name), [match.product?.codigo_interno || '', match.product?.codigo || '', match.product?.codigo_barras || ''])}</strong>
                     {!match.suggestion && match.product && fabricDisplay(match.product).width && <small>Largura de fornecimento: {fabricDisplay(match.product).width}</small>}
                   </button>
                 ))
@@ -291,11 +320,11 @@ export function BudgetProductRow({
         </label>
         <label className="field">
           <span>Largura</span>
-          <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.width)} onChange={(e) => update('width', e.target.value)} />
+          <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.width)} onChange={(e) => update('width', e.target.value)} onBlur={(e) => { if (product.roloKind) { const normalized = normalizeRoloDimension(e.target.value); if (normalized !== e.target.value) update('width', normalized) } }} />
         </label>
         <label className="field">
           <span>Altura</span>
-          <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.height)} onChange={(e) => update('height', e.target.value)} />
+          <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.height)} onChange={(e) => update('height', e.target.value)} onBlur={(e) => { if (product.roloKind) { const normalized = normalizeRoloDimension(e.target.value); if (normalized !== e.target.value) update('height', normalized) } }} />
         </label>
         <label className={`field${validationAttempted && valueInvalid ? ' field-invalid' : ''}`}>
           <span>Valor unitário *</span>
