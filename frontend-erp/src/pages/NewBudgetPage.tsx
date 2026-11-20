@@ -721,7 +721,7 @@ if(saleType==='PARCEIRO'&&!partnerId){
 if(loading)return <div className="panel loading-state">Carregando catálogo completo, clientes e orçamento...</div>
   return (
     <>
-      <div className="new-budget-page" onFocusCapture={selectZeroOnFocus}><section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack}><ArrowLeft size={15}/> Voltar para orçamentos</button><p className="eyebrow">PROPOSTA COMERCIAL CONECTADA</p><h1>{budgetId?'Editar orçamento':'Novo orçamento'} <span className="draft-badge">API real</span></h1><p className="heading-subtitle">Catálogo, clientes, itens, totais e reabertura conectados ao FastAPI.</p></div><div className="budget-number">
+      <div className="new-budget-page budget-edit-page" onFocusCapture={selectZeroOnFocus}><section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack}><ArrowLeft size={15}/> Voltar para orçamentos</button><p className="eyebrow">PROPOSTA COMERCIAL CONECTADA</p><h1>{budgetId?'Editar orçamento':'Novo orçamento'} <span className="draft-badge">API real</span></h1><p className="heading-subtitle">Catálogo, clientes, itens, totais e reabertura conectados ao FastAPI.</p></div><div className="budget-number">
   <span>NÚMERO</span>
   <strong>{saved?`#${saved.numero}`:'Automático'}</strong>
   {(budgetId||saved?.id)&&status==='APROVADO'&&(

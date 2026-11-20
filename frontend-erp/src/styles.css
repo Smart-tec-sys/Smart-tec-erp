@@ -1366,6 +1366,38 @@ textarea { font: inherit; }
 .product-suggestions button { display: flex; width: 100%; flex-direction: column; gap: 2px; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; cursor: pointer; }
 .product-suggestions button:hover { background: #f4f6f8; }
 .product-suggestions small { color: #667085; }
+.budget-edit-page .product-rows,
+.budget-edit-page .budget-product-row { min-width: 0; max-width: 100%; }
+.budget-edit-page .product-fields {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 2px 2px 10px;
+}
+.budget-edit-page .product-fields:has(.product-suggestions) { padding-bottom: 320px; }
+.budget-edit-page .product-fields:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.budget-edit-page .product-fields > .field,
+.budget-edit-page .product-field-motor,
+.budget-edit-page .product-fields > .product-subtotal { flex: 0 0 140px; min-width: 0; }
+.budget-edit-page .product-fields > .product-field-name { flex-basis: 240px; }
+.budget-edit-page .product-fields > .product-field-color { flex-basis: 165px; }
+.budget-edit-page .product-fields > .product-field-drive { flex-basis: 145px; }
+.budget-edit-page .product-fields > .product-field-motor { flex-basis: 220px; }
+.budget-edit-page .product-fields > .product-field-details { flex-basis: 210px; }
+.budget-edit-page .product-fields > .product-field-environment { flex-basis: 160px; }
+.budget-edit-page .product-fields > .product-field-quantity { flex-basis: 110px; }
+.budget-edit-page .product-fields > .product-field-profile { flex-basis: 150px; }
+.budget-edit-page .product-fields > .product-field-measure { flex-basis: 110px; }
+.budget-edit-page .product-fields > .product-field-price { flex-basis: 170px; }
+.budget-edit-page .product-fields .field > span { white-space: nowrap; font-size: 11px; }
+.budget-edit-page .product-fields .field input,
+.budget-edit-page .product-fields .field select { height: 36px; font-size: 12px; }
+.budget-edit-page .product-field-motor p { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
+.budget-edit-page .product-fields > .product-subtotal { height: auto; padding-top: 20px; text-align: left; }
+.budget-edit-page .budget-product-row > .api-message { min-width: 0; overflow-wrap: anywhere; }
 .payload-preview { max-height: 320px; overflow: auto; padding: 14px; border-radius: 8px; background: #101828; color: #e4e7ec; font-size: 12px; white-space: pre-wrap; }
 .api-message { padding: 12px 14px; border-radius: 8px; background: #f2f4f7; color: #344054; }
 .api-message.error { background: #fff1f0; color: #b42318; }

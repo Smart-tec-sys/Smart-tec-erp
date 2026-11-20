@@ -201,8 +201,8 @@ export function BudgetProductRow({
           <Trash2 size={15} />
         </button>
       </div>
-      <div className="product-fields">
-        <label className="field product-field-wide product-search-box">
+      <div className="product-fields" role="region" aria-label={`Campos de ${product.product || 'produto'}`} tabIndex={0}>
+        <label className="field product-field-wide product-search-box product-field-name">
           <span>Produto</span>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ex.: rolo bk denver" autoComplete="off" />
           {query !== selectedDisplay && (
@@ -224,7 +224,7 @@ export function BudgetProductRow({
             </div>
           )}
         </label>
-        <label className="field">
+        <label className="field product-field-color">
           <span>Cor</span>
           {isCurtain ? (
             <CurtainColorField product={product} catalog={catalog} onChange={onChange} />
@@ -251,11 +251,11 @@ export function BudgetProductRow({
             </select>
           )}
         </label>
-        <label className="field product-field-wide">
+        <label className="field product-field-wide product-field-details">
           <span>Detalhe</span>
           <input value={product.details} onChange={(e) => update('details', e.target.value)} placeholder="Ex.: Sala Ã‚Â· comando ÃƒÂ  direita" />
         </label>
-        <label className={`field${validationAttempted && quantityInvalid ? ' field-invalid' : ''}`}>
+        <label className={`field product-field-quantity${validationAttempted && quantityInvalid ? ' field-invalid' : ''}`}>
           <span>Quant. *</span>
           <div className="stepper">
             <button type="button" onClick={() => update('quantity', Math.max(1, product.quantity - 1))}>
@@ -267,19 +267,19 @@ export function BudgetProductRow({
             </button>
           </div>
         </label>
-        <label className={`field${validationAttempted && profileInvalid ? ' field-invalid' : ''}`}>
+        <label className={`field product-field-profile${validationAttempted && profileInvalid ? ' field-invalid' : ''}`}>
           <span>Perfil *</span>
           <input value={commercialType} readOnly />
         </label>
-        <label className="field">
+        <label className="field product-field-measure">
           <span>Largura</span>
           <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.width)} onChange={(e) => update('width', e.target.value)} />
         </label>
-        <label className="field">
+        <label className="field product-field-measure">
           <span>Altura</span>
           <input inputMode="decimal" placeholder="0,00" value={zeroInputValue(product.height)} onChange={(e) => update('height', e.target.value)} />
         </label>
-        <label className={`field${validationAttempted && valueInvalid ? ' field-invalid' : ''}`}>
+        <label className={`field product-field-price${validationAttempted && valueInvalid ? ' field-invalid' : ''}`}>
           <span>Valor *</span>
           <ZeroNumberInput min="0" step="0.01" value={product.price} readOnly={Boolean(product.romanaKind || product.romanaTetoKind || product.roloKind || product.doubleVisionKind || product.curtain)} onValueChange={value => update('price', value)} />
         </label>
