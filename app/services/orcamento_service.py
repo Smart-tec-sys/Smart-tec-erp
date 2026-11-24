@@ -211,7 +211,7 @@ def _preencher_pagamento(db, o, data, tenant_id):
     total_pagamento = sum(valores, Decimal("0"))
     total_comercial = Decimal(str(o.total_cliente_final or 0)).quantize(Decimal("0.01"))
     if total_pagamento != total_comercial:
-        raise ValueError("A soma das parcelas deve ser igual ao total comercial definitivo.")
+        raise ValueError(f"A soma das parcelas deve ser igual ao total comercial definitivo. Total servidor: R$ {total_comercial:.2f} | Parcelas: R$ {total_pagamento:.2f} | Diferenca: R$ {total_comercial - total_pagamento:.2f}")
 
     formas = {}
     for forma_id in {parcela.forma_pagamento_id for parcela in parcelas}:
