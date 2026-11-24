@@ -495,30 +495,30 @@ const payload=useMemo<BudgetPayload>(()=>({
   bankFeePercent,
   payment,
 ])
-const internalValuePreview=Math.max(
+const internalValuePreviewRaw=Math.max(
   0,
   total
 )
 
-const partnerValuePreview=partnerId
-  ? internalValuePreview*Math.max(
+const partnerValuePreviewRaw=partnerId
+  ? ((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)*Math.max(
       0,
       partnerPercent
     )/100
   : 0
 
-const rtValuePreview=includeRt
+const rtValuePreviewRaw=includeRt
   ? (
       rtType==='PERCENTUAL'
-        ? internalValuePreview*Math.max(0,rtPercent)/100
+        ? ((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)*Math.max(0,rtPercent)/100
         : Math.max(0,rtValue)
     )
   : 0
 
-const protectedBasePreview=
-  internalValuePreview+
-  partnerValuePreview+
-  rtValuePreview
+const protectedBasePreviewRaw=
+  ((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)+
+  ((Math.round((partnerValuePreviewRaw + Number.EPSILON) * 100)) / 100)+
+  ((Math.round((rtValuePreviewRaw + Number.EPSILON) * 100)) / 100)
 
 const feeRatePreview=includeBankFee
   ? Math.max(
@@ -530,16 +530,16 @@ const feeRatePreview=includeBankFee
     )
   : 0
 
-const clientTotalPreview=
+const clientTotalPreviewRaw=
   feeRatePreview>0
-    ? protectedBasePreview/
+    ? ((Math.round((protectedBasePreviewRaw + Number.EPSILON) * 100)) / 100)/
       (1-feeRatePreview/100)
-    : protectedBasePreview
+    : ((Math.round((protectedBasePreviewRaw + Number.EPSILON) * 100)) / 100)
 
 const bankFeeValuePreview=Math.max(
   0,
-  clientTotalPreview-
-  protectedBasePreview
+  ((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100)-
+  ((Math.round((protectedBasePreviewRaw + Number.EPSILON) * 100)) / 100)
 )
 
 const serverPayload={
@@ -650,7 +650,7 @@ if(saleType==='PARCEIRO'&&!partnerId){
   setError('Selecione a revenda.')
   return
 }
-if(!paymentPlanIsConsistent(clientTotalPreview,payment)){
+if(!paymentPlanIsConsistent(((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100),payment)){
   setError('Gere ou ajuste as parcelas para que a soma corresponda exatamente ao total comercial.')
   return
 }
@@ -1400,7 +1400,7 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
       <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion allowManualPrice onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
       <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Selecione um serviço do catálogo ou informe um serviço livre; preços e descontos podem ser negociados." count={`${services.length} itens`}>{serviceCatalogError&&<p className="api-message error" role="alert">Catálogo de serviços indisponível: {serviceCatalogError}. Ainda é possível salvar serviços livres.</p>}<div className="service-rows">{services.map(s=><BudgetServiceRow key={s.id} service={s} catalogServices={serviceCatalog} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'',details:'',quantity:1,value:0,discount:0,unit:'UN',priceManual:true}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
       <BudgetSection icon={<Truck size={17}/>} title="Transporte" subtitle="Ainda sem campos próprios no contrato."><div className="form-grid relationship-grid"><Field label="Frete"><input type="number" value={freight} disabled/><small>Não persistido nesta fase</small></Field><Field label="Transportadora"><input disabled placeholder="Não persistida nesta fase"/></Field></div></BudgetSection>
-      <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={clientTotalPreview} value={payment} onChange={setPayment}/></BudgetSection>
+      <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100)} value={payment} onChange={setPayment}/></BudgetSection>
       <BudgetSection icon={<FileText size={17}/>} title="Observações" subtitle="Informações para o cliente e anotações internas da equipe."><div className="budget-observations-grid"><Field label="Observações para o cliente"><textarea value={observation} onChange={e=>setObservation(e.target.value)}/></Field><Field label="Observações internas"><textarea value={internalObservation} onChange={e=>setInternalObservation(e.target.value)}/></Field></div></BudgetSection>
       </div><BudgetSummary
         products={productTotal}
@@ -1416,11 +1416,11 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
         bankFeePercent={bankFeePercent}
         onBankFeePercent={setBankFeePercent}
 
-        internalValue={internalValuePreview}
-        partnerValue={partnerValuePreview}
-        rtValue={rtValuePreview}
+        internalValue={((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)}
+        partnerValue={((Math.round((partnerValuePreviewRaw + Number.EPSILON) * 100)) / 100)}
+        rtValue={((Math.round((rtValuePreviewRaw + Number.EPSILON) * 100)) / 100)}
         bankFeeValue={bankFeeValuePreview}
-        clientTotal={clientTotalPreview}
+        clientTotal={((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100)}
 
         onCancel={onBack}
         onSave={save}
