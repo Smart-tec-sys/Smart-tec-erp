@@ -70,6 +70,21 @@ def converter_orcamento(
         db.rollback()
         raise
 
+@router.get("/{pedido_id}/fiscal/preparacao-nfe")
+def preparacao_nfe(
+    pedido_id: int,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant),
+):
+    """Apenas diagnóstico, sem emitir, transmitir ou salvar documento fiscal."""
+    from app.services.fiscal_nfe_preparacao import preparar_venda_nfe
+
+    resultado = preparar_venda_nfe(db, pedido_id, tenant)
+    if resultado is None:
+        raise HTTPException(status_code=404, detail="Venda/pedido não encontrado.")
+    return resultado
+
+
 @router.post("/{pedido_id}/conta-receber")
 def gerar_conta_receber(
     pedido_id: int,

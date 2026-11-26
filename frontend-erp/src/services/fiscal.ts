@@ -1,0 +1,129 @@
+import { apiConfig } from './api'
+import { getApiAuthHeaders } from './auth'
+
+export type FiscalEmpresaDados = {
+  inscricao_estadual: string | null
+  inscricao_municipal: string | null
+  cnae_principal: string | null
+  regime_especial_tributacao: string | null
+  informacoes_complementares: string | null
+  crt: '1' | '2' | '3' | '4' | null
+  uf: string | null
+  municipio_codigo_ibge: string | null
+  cidade: string | null
+  cep: string | null
+  logradouro: string | null
+  numero: string | null
+  bairro: string | null
+  complemento: string | null
+  serie_nfe: number | null
+  ambiente: 'HOMOLOGACAO'
+}
+export type FiscalProdutoDados = {
+  ncm: string | null
+  cfop_padrao_saida: string | null
+  cest: string | null
+  origem_mercadoria: string | null
+  cst_icms: string | null
+  csosn: string | null
+  cst_pis: string | null
+  cst_cofins: string | null
+  cst_ibs_cbs: string | null
+  cclass_trib_ibs_cbs: string | null
+}
+export type FiscalEmpresaResponse = { empresa_id:number; documento:string|null; razao_social:string|null; nome_fantasia:string|null; dados:FiscalEmpresaDados; emissao_habilitada:false }
+export type FiscalProdutoResponse = { empresa_id:number; produto_id:number; dados:FiscalProdutoDados; configurado:boolean; emissao_habilitada:false }
+
+async function fiscalRequest<T>(path:string, method:'GET'|'PATCH'|'POST'='GET', body?:Record<string,unknown>, empresaEsperada?:number):Promise<T> {
+  const auth = await getApiAuthHeaders()
+  if (empresaEsperada !== undefined && Number(auth['X-Empresa-ID']) !== empresaEsperada) {
+    throw new Error('A empresa ativa mudou. Reabra a página do certificado.')
+  }
+  const response = await fetch(apiConfig.baseUrl + path,{
+    method, headers:{'Content-Type':'application/json',...auth},
+    ...(body ? {body: JSON.stringify(body)} : {}),
+  })
+  if(!response.ok) {
+    // Não exibir stack traces ou corpo bruto de erro.
+    throw new Error(response.status===403?'Somente administradores podem editar o cadastro fiscal.':
+      response.status===404?'Cadastro não encontrado na empresa ativa.':
+      response.status===422?'Revise os campos fiscais e seus formatos.':
+      'Não foi possível consultar ou salvar o cadastro fiscal.')
+  }
+  return response.json() as Promise<T>
+}
+
+export const getFiscalEmpresa = ()=>fiscalRequest<FiscalEmpresaResponse>('/fiscal/cadastros/empresa')
+export const patchFiscalEmpresa = (data:Partial<FiscalEmpresaDados>)=>
+  fiscalRequest<FiscalEmpresaResponse>('/fiscal/cadastros/empresa','PATCH',data)
+export const getFiscalProduto = (id:number)=>fiscalRequest<FiscalProdutoResponse>('/fiscal/cadastros/produtos/'+id)
+export const patchFiscalProduto = (id:number,data:Partial<FiscalProdutoDados>)=>
+  fiscalRequest<FiscalProdutoResponse>('/fiscal/cadastros/produtos/'+id,'PATCH',data)
+
+export type FiscalPreXmlCampo = { campo_xml:string; descricao:string; situacao:'INFORMADO'|'PENDENTE'|'INTEGRACAO_PENDENTE' }
+export type FiscalPreXmlGrupo = { grupo:string; titulo:string; situacao:'BLOQUEADO'; campos:FiscalPreXmlCampo[] }
+export type FiscalPreXmlMapa = {
+  tipo:'MAPA_PRE_XML_NFE'; versao_mapa:number; modelo:'55'; estado:'NAO_APTO_EMISSAO';
+  xml_gerado:false; schema_validado:false; chave_gerada:false; assinado:false; transmitido:false;
+  grupos:FiscalPreXmlGrupo[];
+  resumo:{grupos_total:number;campos_informados:number;campos_pendentes:number;integracoes_pendentes:number};
+  aviso:string;
+}
+export type FiscalPendencia = { codigo:string; campo:string; nivel:string; mensagem:string }
+export type PreparacaoNfeResponse = {
+  documento: 'NFE'; estado: 'NAO_APTO_EMISSAO'; simulacao:true; transmitido:false;
+  pedido_id:number; numero_venda:string|null;
+  resumo: Record<string,string|number|null>;
+  quantidade_pendencias:number; pendencias:FiscalPendencia[];
+  mapa_pre_xml?:FiscalPreXmlMapa;
+  cadastros_fiscais?:{
+    emitente_cadastrado:boolean; total_skus:number;
+    skus_com_cadastro:number; skus_sem_cadastro:number[];
+    tipo_validacao:string;
+  };
+  aviso:string;
+}
+export const prepararNfeVenda = (pedidoId:number)=>
+  fiscalRequest<PreparacaoNfeResponse>('/pedidos/'+pedidoId+'/fiscal/preparacao-nfe')
+
+export type FiscalCertificadoA1Status = {
+  empresa_id:number;tipo:'A1';situacao:'NAO_CONFIGURADO'|'CADASTRADO';
+  cofre_configurado:boolean;certificado_armazenado:boolean;emissao_habilitada:false;aviso:string;
+  importacao_habilitada?:boolean;
+  integracao_kms?:'INATIVO'|'CONFIGURACAO_OIDC_DETECTADA_NAO_VERIFICADA';
+}
+export const getFiscalCertificadoA1Status = ()=>fiscalRequest<FiscalCertificadoA1Status>('/fiscal/cadastros/certificado-a1/status')
+
+export type FiscalA1Laboratorio = {
+  importacao_lab_habilitada: boolean
+  certificado_lab_armazenado: boolean
+}
+const rotaA1Lab = '/fiscal/cadastros/certificado-a1/laboratorio'
+export const getFiscalA1Laboratorio = () => fiscalRequest<FiscalA1Laboratorio>(rotaA1Lab)
+export const verificarFiscalA1Laboratorio = () =>
+  fiscalRequest<{ certificado_lab_verificado: boolean }>(rotaA1Lab + '/verificar', 'POST')
+export const testarAssinaturaFiscalA1Laboratorio = () =>
+  fiscalRequest<{ assinatura_lab_verificada: boolean }>(rotaA1Lab + '/testar-assinatura', 'POST')
+export const conferirXmlVendaFiscalLaboratorio = () =>
+  fiscalRequest<{ campos_conferidos: number; total: string; assinado: false; transmitido: false }>(
+    '/fiscal/cadastros/nfe/laboratorio/conferir-venda', 'POST',
+  )
+export const assinarXmlVendaFiscalLaboratorio = () =>
+  fiscalRequest<{ campos_conferidos: number; total: string; assinado: true; assinatura_lab_verificada: true; xsd_validado: string; transmitido: false }>(
+    '/fiscal/cadastros/nfe/laboratorio/assinar-venda', 'POST',
+  )
+
+async function importarCertificadoA1(rota: string, arquivo: File, senha: string, empresaEsperada?: number) {
+  if (arquivo.size < 1 || arquivo.size > 128 * 1024) {
+    throw new Error('Selecione um arquivo de certificado de até 128 KB.')
+  }
+  const bytes = new Uint8Array(await arquivo.arrayBuffer())
+  const pfx = btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))
+  return fiscalRequest<{ certificado_armazenado: boolean }>(rota, 'POST', { pfx, senha }, empresaEsperada)
+}
+
+export const importarFiscalA1Laboratorio = (arquivo: File, senha: string) =>
+  importarCertificadoA1(rotaA1Lab, arquivo, senha)
+
+export const importarFiscalA1Empresa = (arquivo: File, senha: string, empresaId: number) =>
+  importarCertificadoA1('/fiscal/cadastros/certificado-a1/importar', arquivo, senha, empresaId)
