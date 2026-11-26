@@ -23,6 +23,13 @@ export function fabricVariantKey(product: ApiProduct) {
   const view = fabricDisplay(product)
   return JSON.stringify([normalizeSearch(view.name), product.familia_tecnica ?? '', product.modelo_tecnico ?? '', product.grupo_tecnico ?? '', product.tipo_produto ?? '', product.unidade_venda ?? product.unidade ?? '', normalizeSearch(view.width).replace(',', '.')])
 }
+export function commercialVariantKey(product: ApiProduct) {
+  if (!product.produto_base?.trim()) return null
+  return JSON.stringify([
+    product.produto_base, product.familia_tecnica, product.modelo_tecnico,
+    product.grupo_tecnico, product.tipo_produto, product.unidade_venda ?? product.unidade,
+  ].map(value => normalizeSearch(value ?? '')))
+}
 export function groupFabricSuggestions(products: ApiProduct[]) {
   const groups = new Map<string, ApiProduct[]>()
   for (const product of products) {

@@ -1,5 +1,9 @@
 import type { BudgetProduct } from '../types/budget'
 
+export function compactTechnicalReason(message: string): string {
+  return message.split(/(?<=[.!?])\s+/u)[0]
+}
+
 export function technicalSimulationError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
   const match = /^API (\d+):\s*([\s\S]*)$/.exec(message)
@@ -25,7 +29,13 @@ export function technicalSimulationError(error: unknown): string {
 
 // Transporta somente as entradas dos componentes existentes; não calcula valores.
 export function technicalItemData(product: BudgetProduct) {
+  if (product.acessorioRolo) return { acessorio_rolo: { vinculo: 'AMBIENTE' as const } }
   if (product.curtain) return { cortina: { ...product.curtain, result: undefined, error: undefined, simulationKey: undefined } }
+  if (product.roloKind && product.motorProdutoId) return { rolo: {
+    motor_produto_id: product.motorProdutoId,
+    ...(product.kitProdutoId ? { kit_produto_id: product.kitProdutoId } : {}),
+    incluir_kit_instalacao: product.incluirKitInstalacao ?? false,
+  } }
   if (product.romanaTetoKind) return { romana_teto: {
     acionamento: product.acao_acionamento || 'MANUAL_BASTAO',
     lado_comando: product.lado_comando || 'ESQUERDA',

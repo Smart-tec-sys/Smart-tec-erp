@@ -6,10 +6,12 @@ from decimal import Decimal, ROUND_HALF_UP
 from app.services.origem_comercial import CLIENTE_FINAL_CAMPOS, validar_origem_comercial
 from app.services.condicoes_revenda import calcular_condicoes_revenda, textos_condicoes_revenda
 from types import SimpleNamespace
+from copy import deepcopy
 
 from sqlalchemy import Integer, cast, func, text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.models.orcamento import OrcamentoDB, OrcamentoItemDB, OrcamentoParcelaDB
+from app.schemas.orcamento import OrcamentoItemInput
 from app.models.financeiro_cadastros import FormaPagamentoDB
 from app.models.produto import ProdutoDB
 from app.tenant.context import TenantContext
@@ -170,7 +172,10 @@ def _validar_pagamento_existente(o):
         raise ValueError("A soma das parcelas deve ser igual ao total comercial definitivo. Revise as condições de pagamento.")
 
 
-def _preencher_pagamento(db, o, data, tenant_id):
+def _preencher_pagamento(
+    db, o, data, tenant_id,
+    parcela_model=OrcamentoParcelaDB,
+):
     modalidade = data.pagamento_modalidade
     if modalidade is None and data.pagamento_parcelas is None:
         _validar_pagamento_existente(o)
@@ -211,7 +216,7 @@ def _preencher_pagamento(db, o, data, tenant_id):
     total_pagamento = sum(valores, Decimal("0"))
     total_comercial = Decimal(str(o.total_cliente_final or 0)).quantize(Decimal("0.01"))
     if total_pagamento != total_comercial:
-        raise ValueError(f"A soma das parcelas deve ser igual ao total comercial definitivo. Total servidor: R$ {total_comercial:.2f} | Parcelas: R$ {total_pagamento:.2f} | Diferenca: R$ {total_comercial - total_pagamento:.2f}")
+        raise ValueError("A soma das parcelas deve ser igual ao total comercial definitivo.")
 
     formas = {}
     for forma_id in {parcela.forma_pagamento_id for parcela in parcelas}:
@@ -231,7 +236,7 @@ def _preencher_pagamento(db, o, data, tenant_id):
     o.pagamento_primeiro_vencimento = data.pagamento_primeiro_vencimento
     for parcela, valor in zip(parcelas, valores):
         forma = formas[parcela.forma_pagamento_id]
-        o.parcelas_pagamento.append(OrcamentoParcelaDB(
+        o.parcelas_pagamento.append(parcela_model(
             empresa_id=tenant_id,
             numero=parcela.numero,
             tipo=parcela.tipo,
@@ -242,6 +247,59 @@ def _preencher_pagamento(db, o, data, tenant_id):
         ))
 
 def _fill(db, o, data, tenant_id):
+    existentes = {item.id: item for item in o.itens if item.id is not None}
+    informados = [item.id for item in data.itens if item.id is not None]
+    removidos = data.itens_removidos_ids
+    if (len(informados) != len(set(informados)) or len(removidos) != len(set(removidos))
+            or set(informados) & set(removidos)
+            or not (set(informados) | set(removidos)) <= existentes.keys()):
+        raise ValueError("Identidade de item inválida ou duplicada para este orçamento.")
+    itens = []
+    usados = set(informados) | set(removidos)
+    legado = "itens_removidos_ids" not in data.model_fields_set
+    for entrada in data.itens:
+        if legado and entrada.id is None:
+            candidatos = [item for item in existentes.values()
+                          if item.id not in usados and item.tipo_item == entrada.tipo_item
+                          and item.produto_id == entrada.produto_id and item.servico_id == entrada.servico_id]
+            campos = ("quantidade", "largura", "altura", "preco_unitario", "desconto")
+            iguais = [item for item in candidatos if all(
+                Decimal(str(getattr(entrada, campo) or 0)) == Decimal(str(getattr(item, campo) or 0))
+                for campo in campos if campo in entrada.model_fields_set)]
+            if len(iguais) > 1:
+                iguais = [item for item in iguais if item.descricao == entrada.descricao]
+            if entrada.recalcular and len(candidatos) == 1:
+                iguais = candidatos
+            if len(iguais) == 1:
+                anterior = iguais[0]
+                valores = _item_dict(anterior)
+                valores.update(entrada.model_dump(include=entrada.model_fields_set))
+                valores["id"] = anterior.id
+                entrada = OrcamentoItemInput(**valores)
+                usados.add(anterior.id)
+            elif candidatos:
+                raise ValueError("Item legado ambíguo ou alterado; reabra o orçamento para identificá-lo e solicitar recálculo.")
+        itens.append(entrada)
+    itens.extend(OrcamentoItemInput(**_item_dict(item)) for item in existentes.values() if item.id not in usados)
+    data = data.model_copy(update={"itens": itens})
+    itens_inalterados = bool(o.id) and not removidos and all(item.id and not item.recalcular for item in itens)
+    total_anterior = o.total
+    campos_financeiros = ("desconto", "percentual_parceiro", "percentual_rt", "taxa_bancaria_percentual")
+    mesmas_condicoes = (
+        itens_inalterados
+        and all(Decimal(str(getattr(o, campo) or 0)) == Decimal(str(getattr(data, campo) or 0))
+                for campo in campos_financeiros)
+        and o.parceiro_id == data.parceiro_id
+        and bool(o.incluir_rt) == bool(data.incluir_rt)
+        and (o.tipo_rt or None) == (data.tipo_rt or None)
+        and bool(o.incluir_taxa_bancaria) == bool(data.incluir_taxa_bancaria)
+        and (data.tipo_rt != "VALOR_FIXO"
+             or Decimal(str(o.valor_rt or 0)) == Decimal(str(data.valor_rt or 0)))
+    )
+    totais_anteriores = {campo: getattr(o, campo) for campo in (
+        "total_final", "valor_parceiro", "valor_rt", "base_protegida",
+        "valor_taxa_bancaria", "total_cliente_final",
+    )} if mesmas_condicoes else {}
     cliente_final = {key: getattr(data, key) for key in CLIENTE_FINAL_CAMPOS}
     validar_origem_comercial(data.cliente_id, data.parceiro_id, cliente_final)
     for key, value in cliente_final.items():
@@ -255,6 +313,8 @@ def _fill(db, o, data, tenant_id):
     o.observacao_interna = data.observacao_interna
     o.desconto = data.desconto
     calcular_itens(db, o, data, tenant_id, OrcamentoItemDB)
+    if itens_inalterados:
+        o.total = total_anterior
     # ================================================================
     # PARCEIRO
     # ================================================================
@@ -369,12 +429,71 @@ def _fill(db, o, data, tenant_id):
     o.representante_id = data.representante_id
 
     calcular_composicao(o, data)
+    for campo, valor in totais_anteriores.items():
+        setattr(o, campo, valor)
     _preencher_pagamento(db, o, data, tenant_id)
 
 def criar(db,data,tenant:TenantContext):
     try:
         tenant_id=require_tenant(tenant); o=OrcamentoDB(numero=_numero(db),empresa_id=tenant_id); _fill(db,o,data,tenant_id); db.add(o); db.commit(); return obter(db,o.id,tenant)
     except Exception: db.rollback(); raise
+
+def duplicar(db: Session, oid: int, tenant: TenantContext):
+    """Copia o snapshot salvo, sem reprecificar nem alterar o documento original."""
+    try:
+        empresa_id = require_tenant(tenant)
+        origem = db.query(OrcamentoDB).options(
+            selectinload(OrcamentoDB.itens),
+            selectinload(OrcamentoDB.parcelas_pagamento),
+        ).filter(
+            OrcamentoDB.id == oid, OrcamentoDB.empresa_id == empresa_id,
+        ).with_for_update().first()
+        if origem is None:
+            return None
+        if any(item.empresa_id != empresa_id for item in origem.itens) or any(
+            parcela.empresa_id != empresa_id for parcela in origem.parcelas_pagamento
+        ):
+            raise ValueError("Itens ou parcelas não pertencem à empresa ativa.")
+
+        # Copiar atributos mapeados (incluindo preços e JSON técnico), nunca IDs
+        # nem timestamps. _numero já serializa a numeração pelo lock transacional.
+        def valores(modelo, registro, excluir):
+            return {
+                campo.key: deepcopy(getattr(registro, campo.key))
+                for campo in modelo.__mapper__.column_attrs
+                if campo.key not in excluir
+            }
+
+        copia = OrcamentoDB(
+            **valores(OrcamentoDB, origem, {
+                "id", "empresa_id", "numero", "status", "criado_em", "atualizado_em",
+            }),
+            empresa_id=empresa_id, numero=_numero(db), status="EM_ABERTO",
+        )
+        copia.itens = [
+            OrcamentoItemDB(
+                **valores(OrcamentoItemDB, item, {"id", "orcamento_id", "empresa_id"}),
+                empresa_id=empresa_id,
+            )
+            for item in origem.itens
+        ]
+        copia.parcelas_pagamento = [
+            OrcamentoParcelaDB(
+                **valores(OrcamentoParcelaDB, parcela, {
+                    "id", "orcamento_id", "empresa_id", "criado_em", "atualizado_em",
+                }),
+                empresa_id=empresa_id,
+            )
+            for parcela in origem.parcelas_pagamento
+        ]
+        db.add(copia)
+        db.flush()
+        resultado = _dict(copia)
+        db.commit()
+        return resultado
+    except Exception:
+        db.rollback()
+        raise
 
 def atualizar(db,oid,data,tenant:TenantContext):
     try:
@@ -429,3 +548,47 @@ def remover(db,oid,tenant:TenantContext):
         if not o:return False
         db.delete(o); db.commit(); return True
     except Exception: db.rollback(); raise
+
+
+def atualizar_status(db, oid, data, tenant: TenantContext):
+    try:
+        o = db.query(OrcamentoDB).filter(
+            OrcamentoDB.id == oid,
+            OrcamentoDB.empresa_id == require_tenant(tenant),
+        ).with_for_update().first()
+
+        if o is None:
+            return None
+
+        if o.status != data.status_esperado:
+            raise ValueError(
+                "Situacao alterada. Atualize a listagem."
+            )
+
+        from app.services.pedido_service import PedidoDB
+
+        venda = db.query(PedidoDB).filter(
+            PedidoDB.empresa_id == require_tenant(tenant),
+            PedidoDB.orcamento_id == oid,
+        ).first()
+
+        if venda is not None and o.status != data.status:
+            raise ValueError(
+                "Este orcamento ja gerou uma venda. "
+                "Nao e permitido alterar sua situacao."
+            )
+
+        if o.status != data.status:
+            if data.status == "APROVADO":
+                if not o.itens:
+                    raise ValueError("Orcamento sem itens.")
+                _validar_pagamento_existente(o)
+
+            o.status = data.status
+
+        db.commit()
+        return obter(db, oid, tenant)
+
+    except Exception:
+        db.rollback()
+        raise

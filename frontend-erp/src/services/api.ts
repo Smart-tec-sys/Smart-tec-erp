@@ -1,7 +1,7 @@
 import type { ApiBudget, ApiClient, ApiProduct, BudgetPayload } from '../types/budget'
 import type { RomanaResult } from '../types/romana'
 import type { RomanaTetoResult } from '../types/romana_teto'
-import type { RoloResult } from '../types/rolo'
+import type { RoloMotor, RoloResult } from '../types/rolo'
 import type { DoubleVisionResult } from '../types/double_vision'
 import type { CommercialProfile } from '../types/budget'
 import { getApiAuthHeaders } from './auth'
@@ -26,8 +26,16 @@ export const simulateRomanaTeto = (data: {
 }) =>
   request<RomanaTetoResult>('/orcamentos/simulacao-romana-teto', { method: 'POST', body: JSON.stringify(data) })
 
-export const simulateRolo = (data: { produto_id: number; largura: number; altura: number; quantidade: number; perfil_comercial: CommercialProfile; desconto: number; cor?: string; acionamento?: 'manual' | 'motorizado'; lado_comando?: string }) =>
+export type RoloRequest = { produto_id: number; largura: number; altura: number; quantidade: number; perfil_comercial: CommercialProfile; desconto: number; cor?: string; acionamento?: 'manual' | 'motorizado'; lado_comando?: string; motor_produto_id?: number; kit_produto_id?: number; incluir_kit_instalacao?: boolean }
+export type RoloAccessory = { produto_id: number; nome: string; codigo: string; tipo: 'CONTROLE_RF' | 'BOTAO' | 'INTERRUPTOR'; canais: 1 | 6 | 16 | null }
+export const simulateRolo = (data: RoloRequest) =>
   request<RoloResult>('/orcamentos/simulacao-rolo', { method: 'POST', body: JSON.stringify(data) })
+
+export const getRoloMotors = (data: RoloRequest) =>
+  request<RoloMotor[]>('/orcamentos/motores-rolo', { method: 'POST', body: JSON.stringify(data) })
+
+export const getRoloAccessories = (data: RoloRequest[]) =>
+  request<RoloAccessory[]>('/orcamentos/acessorios-comando-rolo', { method: 'POST', body: JSON.stringify(data) })
 
 export const simulateDoubleVision = (data: { produto_id: number; largura: number; altura: number; quantidade: number; perfil_comercial: CommercialProfile; desconto: number; com_bando?: boolean; tem_validacao_tecido_fornecedor?: boolean }) =>
   request<DoubleVisionResult>('/orcamentos/simulacao-double-vision', { method: 'POST', body: JSON.stringify(data) })
@@ -103,7 +111,7 @@ export async function getAllProducts(): Promise<ApiProduct[]> {
 
 export type CompanyPublicProfile = Partial<Record<
   'logradouro' | 'numero' | 'complemento' | 'bairro' | 'cidade' | 'estado' | 'cep' |
-  'telefone_comercial' | 'telefone_celular' | 'email' | 'site', string | null>>
+  'telefone_comercial' | 'telefone_celular' | 'email' | 'site' | 'cnae_principal', string | null>>
 export type CurrentCompany = {
   id: number; nome: string; nome_fantasia?: string | null; documento?: string | null;
   logo_url?: string | null; perfil_publico: CompanyPublicProfile
@@ -145,10 +153,23 @@ export type ProductChangeHistory = {
 export const getProductChangeHistory = (id: number) =>
   request<ProductChangeHistory[]>(`/produtos/${id}/historico`)
 export const deleteBudget = (id: number) => request<void>(`/orcamentos/${id}`, { method: 'DELETE' })
+export const updateBudgetStatus = (
+  id: number,
+  status: string,
+  statusEsperado: string
+) => request<ApiBudget>(`/orcamentos/${id}/status`, {
+  method: 'PATCH',
+  body: JSON.stringify({
+    status,
+    status_esperado: statusEsperado
+  })
+})
+
 export const getBudgets = () => request<ApiBudget[]>('/orcamentos/')
 export const getBudget = (id: number) => request<ApiBudget>(`/orcamentos/${id}`)
 export const createBudget = (payload: BudgetPayload) => request<ApiBudget>('/orcamentos/', { method: 'POST', body: JSON.stringify(payload) })
 export const updateBudget = (id: number, payload: BudgetPayload) => request<ApiBudget>(`/orcamentos/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+export const duplicateBudget = (id: number) => request<ApiBudget>(`/orcamentos/${id}/duplicar`, { method: 'POST' })
 
 export type ApiOrderItem = {
   id: number
@@ -178,7 +199,23 @@ export type ApiOrderItem = {
   dados_tecnicos?: Record<string, unknown> | null
 }
 
+export type ApiOrderInstallment = {
+  id: number
+  numero: number
+  tipo: 'PARCELA' | 'ENTRADA' | 'SALDO'
+  valor: number | string
+  vencimento: string
+  forma_pagamento_id: number
+  forma_pagamento_nome: string
+}
+
 export type ApiOrder = {
+  pagamento_modalidade?: string | null
+  pagamento_numero_parcelas?: number | null
+  pagamento_intervalo_dias?: number | null
+  pagamento_primeiro_vencimento?: string | null
+  pagamento_parcelas?: ApiOrderInstallment[]
+
   cliente_final_nome?: string | null
   cliente_final_documento?: string | null
   cliente_final_telefone?: string | null
@@ -583,6 +620,17 @@ export type OrderCreate = Pick<ApiOrder, 'cliente_id' | 'parceiro_id' | 'represe
   valor_rt: number
   incluir_taxa_bancaria: boolean
   taxa_bancaria_percentual: number
+  pagamento_modalidade?: 'AVISTA' | 'PARCELADO' | 'ENTRADA_SALDO' | null
+  pagamento_numero_parcelas?: number | null
+  pagamento_intervalo_dias?: number | null
+  pagamento_primeiro_vencimento?: string | null
+  pagamento_parcelas?: {
+    numero: number
+    tipo: 'PARCELA' | 'ENTRADA' | 'SALDO'
+    valor: number
+    vencimento: string
+    forma_pagamento_id: number
+  }[] | null
   itens: OrderItemCreate[]
 }
 export const createOrder = (payload: OrderCreate) => request<ApiOrder>('/pedidos/', { method: 'POST', body: JSON.stringify(payload) })

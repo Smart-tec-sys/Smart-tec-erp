@@ -63,5 +63,30 @@ export type RoloResult = {
 
 export type RoloState = { key: string; result?: RoloResult; error?: string }
 
+export type RoloKit = {
+  produto_id: number
+  nome: string
+  codigo: string | null
+  fornecedor: string | null
+  diametro_tubo_mm: number
+  conteudo: { papel: string; produto_id: number; quantidade_por_persiana: number }[] | null
+  custo: number
+}
+
+export type RoloMotor = {
+  produto_id: number
+  nome: string
+  torque_nm: number
+  tecnologia: 'RF' | 'WIFI_RF' | 'CONTATO_SECO'
+  diametro_tubo_mm?: number
+  perfil_tubo?: string
+  limite_largura_m?: number
+  limite_altura_m?: number
+  carga_estimada_kg?: number | null
+  capacidade_kg?: number | null
+  carga_pendente?: boolean
+  kits: RoloKit[]
+}
+
 export const roloKey = (p: BudgetProduct, profile: CommercialType) =>
-  JSON.stringify([p.productId, p.width, p.height, p.quantity, p.discount, profile, p.color || '', normalizeRoloDrive(p.acionamento)])
+  JSON.stringify([p.productId, p.width, p.height, p.quantity, p.discount, profile, p.color || '', normalizeRoloDrive(p.acionamento ?? (p.roloKind === 'MOTORIZADA' ? 'motorizado' : 'manual')), p.motorProdutoId ?? null, p.kitProdutoId ?? null, p.incluirKitInstalacao ?? false])

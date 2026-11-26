@@ -54,10 +54,31 @@ def calcular_base_comercial(unidade_venda, modelo, largura, area_faturavel, quan
 def _dinheiro(valor):
     return Decimal(str(valor or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-def _preco_produto(produto, perfil):
+def _custo_referencia_comercial(produto):
+    # Referencia comercial aprovada: Screen 5% Standard.
+    # Nao altera o custo industrial cadastrado.
+    if (
+        getattr(produto, "empresa_id", None) == 1
+        and getattr(produto, "id", None) in {8, 83}
+    ):
+        return Decimal("56.6667")
+
+    # Referencia comercial fixa: Screen 3% Importado.
+    if (
+        getattr(produto, "empresa_id", None) == 1
+        and getattr(produto, "id", None) == 84
+    ):
+        return Decimal("60.00")
+
+
     custo = Decimal(str(produto.custo_final or 0))
     if custo <= 0:
         custo = Decimal(str(produto.valor_custo or 0))
+    return custo
+
+
+def _preco_produto(produto, perfil):
+    custo = _custo_referencia_comercial(produto)
     if custo > 0:
         return (custo * MULTIPLICADORES[perfil]).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return _dinheiro(produto.valor_venda)
@@ -83,17 +104,89 @@ def _aplicar_preco_comercial(valores, item, preco_sugerido, base):
     valores["dados_tecnicos"] = dados
 
 
+def _validar_acessorios_rolo(db, itens, tenant_id, perfil):
+    from app.services.rolo_receita import listar_acessorios_comando_rolo
+    from app.services.rolo_simulacao import RoloSimulacaoInput, _tipo_rolo
+
+    acessorios = [item for item in itens if (item.dados_tecnicos or {}).get("acessorio_rolo") is not None]
+    if not acessorios:
+        return
+    ambientes = {}
+    for item in itens:
+        if item.tipo_item != "PRODUTO" or not item.produto_id:
+            continue
+        produto = db.query(ProdutoDB).filter_by(id=item.produto_id, empresa_id=tenant_id).one_or_none()
+        if produto is None:
+            raise ValueError(f"Produto {item.produto_id} não encontrado para a empresa ativa")
+        tipo = _tipo_rolo(produto)
+        acionamento = str(item.acionamento or ("motorizado" if tipo == "MOTORIZADA" else "manual")).lower()
+        if tipo and acionamento in {"motorizado", "motorizada"}:
+            ambiente = str(item.ambiente or "").strip().lower()
+            config = (item.dados_tecnicos or {}).get("rolo") or {}
+            if not isinstance(config, dict):
+                raise ValueError("Configuração técnica Rolô inválida.")
+            if Decimal(str(item.quantidade)) != Decimal(int(item.quantidade)):
+                raise ValueError("Rolô exige quantidade inteira de peças.")
+            ambientes.setdefault(ambiente, []).append(RoloSimulacaoInput(
+                produto_id=item.produto_id, largura=item.largura, altura=item.altura,
+                quantidade=int(item.quantidade), perfil_comercial=perfil, desconto=item.desconto,
+                cor=item.cor, acionamento="motorizado", motor_produto_id=config.get("motor_produto_id"),
+                kit_produto_id=config.get("kit_produto_id"),
+            ))
+    por_ambiente = {}
+    for item in acessorios:
+        config = item.dados_tecnicos["acessorio_rolo"]
+        if config != {"vinculo": "AMBIENTE"} or item.tipo_item != "PRODUTO" or not item.produto_id:
+            raise ValueError("Configuração de acessório Rolô inválida.")
+        if Decimal(str(item.quantidade)) != Decimal(int(item.quantidade)):
+            raise ValueError("Acessório Rolô exige quantidade inteira em unidades.")
+        ambiente = str(item.ambiente or "").strip().lower()
+        if not ambiente or ambiente not in ambientes:
+            raise ValueError("Acessório Rolô exige ambiente com persiana motorizada.")
+        if ambiente not in por_ambiente:
+            por_ambiente[ambiente] = {
+                a["produto_id"] for a in listar_acessorios_comando_rolo(db, ambientes[ambiente], tenant_id)
+            }
+        if item.produto_id not in por_ambiente[ambiente]:
+            raise ValueError("Acessório incompatível com as persianas motorizadas do ambiente.")
+
+
 def calcular_itens(db, o, data, tenant_id, item_model):
+    from types import SimpleNamespace
     from app.models.servico import ServicoDB
     from app.services.servico_service import calcular_preco_altura
 
+    existentes = {item.id: item for item in (getattr(o, "itens", None) or []) if getattr(item, "id", None)}
+    informados = [item.id for item in data.itens if getattr(item, "id", None) is not None]
+    if len(informados) != len(set(informados)) or any(item_id not in existentes for item_id in informados):
+        raise ValueError("Identidade de item inválida ou duplicada para este orçamento.")
+    if any((item.dados_tecnicos or {}).get("acessorio_rolo") is not None
+           and (not getattr(item, "id", None) or getattr(item, "recalcular", False))
+           for item in data.itens):
+        _validar_acessorios_rolo(db, data.itens, tenant_id, data.perfil_comercial)
     servicos_existentes = {
         item.servico_id for item in (getattr(o, "itens", None) or [])
         if getattr(item, "servico_id", None) is not None
     }
-    o.itens.clear()
+    documento = o
+    o = SimpleNamespace(itens=[])
     total = Decimal("0")
     for item in data.itens:
+        anterior = existentes.get(getattr(item, "id", None))
+        if anterior is not None and not getattr(item, "recalcular", False):
+            campos_numericos = ("quantidade", "largura", "altura", "preco_unitario", "desconto")
+            campos_identidade = ("tipo_item", "produto_id", "servico_id")
+            campos_opcionais = ("unidade", "cor", "acionamento")
+            if (any(Decimal(str(getattr(item, campo) or 0)) != Decimal(str(getattr(anterior, campo) or 0))
+                    for campo in campos_numericos)
+                    or any(getattr(item, campo) != getattr(anterior, campo) for campo in campos_identidade)
+                    or any(str(getattr(item, campo) or "").strip().casefold()
+                           != str(getattr(anterior, campo) or "").strip().casefold()
+                           for campo in campos_opcionais)):
+                raise ValueError("Item histórico alterado: solicite o recálculo explícito antes de salvar.")
+            total += Decimal(str(anterior.subtotal))
+            o.itens.append(anterior)
+            continue
         valores = item.dict(include=ITEM_PERSISTED_FIELDS)
         valores["empresa_id"] = tenant_id
         if item.tipo_item == "SERVICO":
@@ -211,7 +304,7 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 total += Decimal(str(valores['subtotal']))
                 o.itens.append(item_model(**valores))
                 continue
-            from app.services.rolo_simulacao import _tipo_rolo, simular_rolo, RoloSimulacaoInput
+            from app.services.rolo_simulacao import _tipo_rolo, RoloSimulacaoInput
             from app.services.romana_teto_simulacao import simular_romana_teto
             from app.schemas.orcamento import RomanaTetoSimulacaoInput
             from app.services.cortina_simulacao import _produto_cortina_fabricada, simular_cortina, CortinaSimulacaoInput
@@ -221,14 +314,37 @@ def calcular_itens(db, o, data, tenant_id, item_model):
             if rolo or modelo_tecnico in {'ROMANA TETO', 'ROMANA DE TETO'} or _produto_cortina_fabricada(produto):
                 if Decimal(str(item.quantidade)) != Decimal(int(item.quantidade)):
                     raise ValueError('O modelo técnico exige quantidade inteira de peças.')
-            if rolo == 'MOTORIZADA':
-                raise ValueError('Rolô motorizada: cálculo técnico não liberado.')
-            if rolo == 'MANUAL':
-                simulacao = simular_rolo(produto, RoloSimulacaoInput(
+            if rolo in {'MANUAL', 'MOTORIZADA'}:
+                from app.services.rolo_receita import simular_rolo_catalogo
+                rolo_config = (item.dados_tecnicos or {}).get('rolo') or {}
+                if not isinstance(rolo_config, dict):
+                    raise ValueError('Configuração técnica Rolô inválida.')
+                simulacao = simular_rolo_catalogo(db, produto, RoloSimulacaoInput(
                     produto_id=item.produto_id, largura=item.largura, altura=item.altura,
                     quantidade=int(item.quantidade), perfil_comercial=data.perfil_comercial,
-                    desconto=item.desconto, cor=item.cor, acionamento=item.acionamento or 'manual',
-                    lado_comando=item.lado_comando))
+                    desconto=item.desconto, cor=item.cor,
+                    acionamento=item.acionamento or ('motorizado' if rolo == 'MOTORIZADA' else 'manual'),
+                    lado_comando=item.lado_comando, motor_produto_id=rolo_config.get('motor_produto_id'),
+                    kit_produto_id=rolo_config.get('kit_produto_id'),
+                    incluir_kit_instalacao=rolo_config.get('incluir_kit_instalacao')), tenant_id)
+                if "receita" in simulacao:
+                    valores["dados_tecnicos"] = {
+                        **(valores.get("dados_tecnicos") or {}),
+                        "rolo": {
+                            "bitola": simulacao["bitola_tecnica"], "receita": simulacao["receita"],
+                            "acionamento": simulacao["acionamento_permitido"],
+                            "fabricacao": simulacao["fabricacao_por_peca"],
+                            **({
+                                "motor_produto_id": simulacao["componentes_tecnicos"]["motor"]["produto_id"],
+                                "kit_produto_id": simulacao["componentes_tecnicos"]["acessorios"][0]["produto_id"],
+                        "incluir_kit_instalacao": simulacao.get("incluir_kit_instalacao", True),
+                                "motor": simulacao["componentes_tecnicos"]["motor"],
+                                "carga_pendente": simulacao["componentes_tecnicos"]["motor"].get(
+                                    "carga_pendente", False
+                                ),
+                            } if rolo_config.get("motor_produto_id") is not None else {}),
+                        },
+                    }
             elif modelo_tecnico in {'ROMANA TETO', 'ROMANA DE TETO'}:
                 config = (item.dados_tecnicos or {}).get('romana_teto', {})
                 simulacao = simular_romana_teto(produto, RomanaTetoSimulacaoInput(
@@ -256,6 +372,14 @@ def calcular_itens(db, o, data, tenant_id, item_model):
                 o.itens.append(item_model(**valores))
                 continue
             preco = _preco_produto(produto, data.perfil_comercial)
+            if (item.dados_tecnicos or {}).get("acessorio_rolo") is not None:
+                valores.update(unidade="UN", modelo_tecnico=None, area=0, preco_unitario=preco,
+                               subtotal=_dinheiro(max(Decimal("0"), Decimal(str(item.quantidade)) * preco
+                                                       - Decimal(str(item.desconto or 0)))))
+                _aplicar_preco_comercial(valores, item, preco, item.quantidade)
+                total += Decimal(str(valores["subtotal"]))
+                o.itens.append(item_model(**valores))
+                continue
             modelo = str(item.modelo_tecnico or produto.modelo_tecnico or "").strip().upper()
 
             # Usa regra central de área faturável (mínimo 1,50 m² para produtos vendidos em M²)
@@ -293,7 +417,21 @@ def calcular_itens(db, o, data, tenant_id, item_model):
             _aplicar_preco_comercial(valores, item, sugerido, item.quantidade)
         total += Decimal(str(valores["subtotal"]))
         o.itens.append(item_model(**valores))
-    o.total = total.quantize(
+    final = []
+    for entrada, calculado in zip(data.itens, o.itens):
+        anterior = existentes.get(getattr(entrada, "id", None))
+        if anterior is calculado:
+            anterior.descricao = entrada.descricao
+            anterior.observacao_item = entrada.observacao_item
+            anterior.ambiente = entrada.ambiente
+        if anterior is not None and anterior is not calculado:
+            for campo in ITEM_PERSISTED_FIELDS | {"empresa_id"}:
+                setattr(anterior, campo, getattr(calculado, campo, None))
+            final.append(anterior)
+        else:
+            final.append(calculado)
+    documento.itens[:] = final
+    documento.total = total.quantize(
         Decimal("0.01"),
         rounding=ROUND_HALF_UP,
     )

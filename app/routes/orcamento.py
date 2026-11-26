@@ -34,12 +34,39 @@ def simular_rolo_item(data: RoloSimulacaoInput,
                       db: Session = Depends(get_db), tenant: TenantContext = Depends(get_current_tenant)):
     from app.models.produto import ProdutoDB
     from app.tenant.isolation import require_tenant
-    from app.services.rolo_simulacao import simular_rolo
+    from app.services.rolo_receita import simular_rolo_catalogo
     produto = db.query(ProdutoDB).filter(ProdutoDB.id == data.produto_id, ProdutoDB.empresa_id == require_tenant(tenant)).first()
     if produto is None:
         raise HTTPException(404, 'Produto não encontrado para a empresa ativa')
     try:
-        return simular_rolo(produto, data)
+        return simular_rolo_catalogo(db, produto, data, require_tenant(tenant))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post('/motores-rolo')
+def motores_rolo_item(data: RoloSimulacaoInput,
+                      db: Session = Depends(get_db), tenant: TenantContext = Depends(get_current_tenant)):
+    from app.models.produto import ProdutoDB
+    from app.tenant.isolation import require_tenant
+    from app.services.rolo_receita import listar_motores_rolo
+    empresa_id = require_tenant(tenant)
+    produto = db.query(ProdutoDB).filter_by(id=data.produto_id, empresa_id=empresa_id).first()
+    if produto is None:
+        raise HTTPException(404, 'Produto não encontrado para a empresa ativa')
+    try:
+        return listar_motores_rolo(db, produto, data, empresa_id)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post('/acessorios-comando-rolo')
+def acessorios_comando_rolo(data: list[RoloSimulacaoInput],
+                            db: Session = Depends(get_db), tenant: TenantContext = Depends(get_current_tenant)):
+    from app.tenant.isolation import require_tenant
+    from app.services.rolo_receita import listar_acessorios_comando_rolo
+    try:
+        return listar_acessorios_comando_rolo(db, data, require_tenant(tenant))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -105,6 +132,17 @@ def atualizar(oid:int,data:OrcamentoUpdate,db:Session=Depends(get_db),tenant:Ten
     except ValueError as exc:raise HTTPException(422,str(exc)) from exc
     if not r:raise HTTPException(404,"Orçamento não encontrado")
     return r
+
+@router.post("/{oid}/duplicar", status_code=201)
+def duplicar(oid: int, db: Session = Depends(get_db), tenant: TenantContext = Depends(get_current_tenant)):
+    try:
+        resultado = orcamento_service.duplicar(db, oid, tenant)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if resultado is None:
+        raise HTTPException(404, "Orçamento não encontrado")
+    return resultado
+
 @router.delete("/{oid}",status_code=204)
 def remover(oid:int,db:Session=Depends(get_db),tenant:TenantContext=Depends(get_current_tenant)):
     if not orcamento_service.remover(db,oid,tenant):raise HTTPException(404,"Orçamento não encontrado")
@@ -121,3 +159,25 @@ def atualizar_condicoes_revenda(oid: int, data: OrcamentoCondicoesRevendaInput,
     if r is None:
         raise HTTPException(404, "Orcamento nao encontrado")
     return r
+
+
+from app.schemas.orcamento import OrcamentoStatusInput
+
+@router.patch("/{oid}/status")
+def alterar_status_orcamento(
+    oid: int,
+    data: OrcamentoStatusInput,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant),
+):
+    try:
+        resultado = orcamento_service.atualizar_status(
+            db, oid, data, tenant
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    if resultado is None:
+        raise HTTPException(404, "Orcamento nao encontrado")
+
+    return resultado

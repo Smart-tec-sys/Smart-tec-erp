@@ -1,0 +1,163 @@
+{
+  "empresa_nome": "Smart-tec Persianas",
+  "empresa_documento": null,
+  "fornecedor": "Ação Distribuidora",
+  "acabamento": "CINZA",
+  "largura_bobina_m": 2.5,
+  "custeio_tecido": "FAIXA_INTEGRAL_ML",
+  "fontes": {
+    "TabTecidos Ação 02.04.26.pdf": "040674489f611d759bd0c360bb7d4c650c24ef0c024158db9813efea954f5262",
+    "Tab Perfil Ação 02.04.26.pdf": "7fc4128f2a236ba3cd11d6e19a0b8342f4ba42ac3d9e295e2f7534629c52688b",
+    "Tab Componentes 02.04.26.pdf": "921df1da1c39a2e2e6eb2f67b5c7152fdb0c95d9c19d80e3984100525e904ac0"
+  },
+  "insumos": {
+    "tubo32": {
+      "nome": "TUBO DE 32MM - 6M - AC130",
+      "codigo_interno": "02711500950",
+      "fornecedor": "Ação Distribuidora",
+      "criar_se_ausente": true,
+      "unidade_tecnica": "ML",
+      "preco_compra": 64.10,
+      "ipi_percentual": null,
+      "unidades_por_compra": 6,
+      "diametro_mm": 32,
+      "origem": "Tab Perfil Ação 02.04.26.pdf p.5, Tabela 2 por barra 6m; fonte sem coluna de IPI, sem acréscimo inferido."
+    },
+    "tubo38": {
+      "nome": "TUBO DE 38MM - 6M - AC131 (L)",
+      "codigo_interno": "02711500954",
+      "unidade_tecnica": "ML",
+      "preco_compra": 92.13,
+      "ipi_percentual": null,
+      "unidades_por_compra": 6,
+      "diametro_mm": 38,
+      "origem": "Tab Perfil Ação 02.04.26.pdf p.5, Tabela 2 por barra 6m; fonte sem coluna de IPI, sem acréscimo inferido."
+    },
+    "comando32": {
+      "nome": "COMANDO 32MM ACAO MAXI - CINZA",
+      "codigo_interno": "02122500980",
+      "unidade_tecnica": "KIT",
+      "preco_compra": 15.45,
+      "ipi_percentual": 3.25,
+      "unidades_por_compra": 1,
+      "diametro_mm": 32,
+      "origem": "Tab Componentes 02.04.26.pdf p.3, Tabela 2 e IPI; cadastro existente de comando tratado como KIT."
+    },
+    "comando38": {
+      "nome": "COMANDO 38MM ACAO MAXI - CINZA",
+      "codigo_interno": "02122600980",
+      "unidade_tecnica": "KIT",
+      "preco_compra": 25.88,
+      "ipi_percentual": 3.25,
+      "unidades_por_compra": 1,
+      "diametro_mm": 38,
+      "origem": "Tab Componentes 02.04.26.pdf p.4, Tabela 2 e IPI; cadastro existente de comando tratado como KIT."
+    },
+    "fita_tubo": {
+      "nome": "FITA DUPLA FACE PARA ROLÔ 25MM - GUARAÇAI",
+      "codigo_interno": "2001318855700",
+      "unidades_venda_validas": ["ML", "M", "METRO", "METROS"],
+      "unidade_tecnica": "ML",
+      "base_preco": "CUSTO_CADASTRADO",
+      "preco_compra": 0.84,
+      "ipi_percentual": null,
+      "unidades_por_compra": 1,
+      "origem": "Custo cadastrado local da fita 25mm, reutilizado sem alteração. Não há Tabela 2 Ação de 25mm confirmada; nenhum IPI adicional inferido."
+    },
+    "base": {
+      "nome": "PDA - BASE CONICA CINZA - AC133",
+      "codigo_interno": "02711500980",
+      "unidade_tecnica": "ML",
+      "preco_compra": 100.43,
+      "ipi_percentual": null,
+      "unidades_por_compra": 6,
+      "origem": "Tab Perfil Ação 02.04.26.pdf p.2, Tabela 2 por barra 6m; fonte sem coluna de IPI, sem acréscimo inferido."
+    },
+    "fita_base": {
+      "nome": "15MMX100MTS COMP - FITA DE PLASTICO ADESIVA IMPORTADA -",
+      "codigo_interno": "02611300933",
+      "unidade_tecnica": "ML",
+      "preco_compra": 107,
+      "ipi_percentual": 9.75,
+      "unidades_por_compra": 100,
+      "origem": "Tab Componentes 02.04.26.pdf p.15, fita plástica 15mm, Tabela 2 por rolo 100m e IPI."
+    },
+    "espaguete_base": {
+      "nome": "ESPAGUETE / MACARRAO 3,00MM (ROLO COM 340MTS)",
+      "codigo_interno": "03615100930",
+      "unidade_tecnica": "ML",
+      "preco_compra": 346.26,
+      "ipi_percentual": 3.25,
+      "unidades_por_compra": 340,
+      "origem": "Tab Componentes 02.04.26.pdf p.22, espaguete 3mm, Tabela 2 por rolo 340m e IPI."
+    },
+    "corrente": {
+      "nome": "CORRENTE BOLA 10 JUNTA - CINZA (IMP) - C/ 250MT",
+      "codigo_interno": "02210500030",
+      "unidade_tecnica": "ML",
+      "preco_compra": 217.50,
+      "ipi_percentual": 9.75,
+      "unidades_por_compra": 250,
+      "origem": "Tab Componentes 02.04.26.pdf p.7, Tabela 2 por rolo 250m e IPI; corrente Bola 10 existente."
+    },
+    "emenda_corrente": {
+      "nome": "CSF - CONECTOR DE PLÁSTICO PLUS (IMP) - CINZA",
+      "codigo_interno": "02310700980",
+      "unidade_tecnica": "UN",
+      "preco_compra": 0.36,
+      "ipi_percentual": 9.75,
+      "unidades_por_compra": 1,
+      "origem": "Tab Componentes 02.04.26.pdf p.8, conector cinza importado, Tabela 2 por peça e IPI."
+    },
+    "tampa_base": {
+      "nome": "TAMPA DA BASE CONICA COM ABA - CINZA - ALPEX 4217 (AC133)",
+      "nome_legado": "4217 ( AC133) COMP - TAMPA DA BASE CONICA COM ABA - MARROM -",
+      "corrigir_nome": true,
+      "codigo_interno": "02611300980",
+      "unidade_tecnica": "UN",
+      "preco_compra": 0.53,
+      "ipi_percentual": 3.25,
+      "unidades_por_compra": 1,
+      "origem": "Tab Componentes 02.04.26.pdf p.18, código 02611300980 identificado como CINZA, Tabela 2 por peça e IPI."
+    }
+  },
+  "componentes": {
+    "fita_tubo": "fita_tubo",
+    "base": "base",
+    "fita_base": "fita_base",
+    "espaguete_base": "espaguete_base",
+    "corrente": "corrente",
+    "emenda_corrente": "emenda_corrente",
+    "tampa_base": "tampa_base"
+  },
+  "tubos": {"32mm": "tubo32", "38mm": "tubo38"},
+  "comandos": {"32mm": "comando32", "38mm": "comando38"},
+  "modelos": [
+    {
+      "nome": "Rolô Picasso Translúcido",
+      "preco_tecido_ml": 60.09,
+      "ipi_percentual": 3.25,
+      "origem": "TabTecidos Ação 02.04.26.pdf p.9, Tabela 2 por ML + IPI 3,25%, largura 2,50m.",
+      "variacoes": [
+        {"cor": "AMENDOA", "codigo_comercial": "ST-ROLO-PICASSO-TR-AMENDOA", "codigo_tecido": "00217800050", "nome_tecido": "TEC PICASSO TRANS - AMENDOA - 2,50M"},
+        {"cor": "BEGE", "codigo_comercial": "ST-ROLO-PICASSO-TR-BEGE", "codigo_tecido": "00217800020", "nome_tecido": "TEC PICASSO TRANS - BEGE - 2,50M"},
+        {"cor": "CINZA", "codigo_comercial": "ST-ROLO-PICASSO-TR-CINZA", "codigo_tecido": "00217800980", "nome_tecido": "TEC PICASSO TRANS - CINZA - 2,50M"},
+        {"cor": "FENDI", "codigo_comercial": "ST-ROLO-PICASSO-TR-FENDI", "codigo_tecido": "00217801420", "nome_tecido": "TEC PICASSO TRANS - FENDI - 2,50M"},
+        {"cor": "GELO", "codigo_comercial": "ST-ROLO-PICASSO-TR-GELO", "codigo_tecido": "00217803020", "nome_tecido": "TEC PICASSO TRANS - GELO - 2,50M"}
+      ]
+    },
+    {
+      "nome": "Rolô Picasso Blackout",
+      "preco_tecido_ml": 103.53,
+      "ipi_percentual": 3.25,
+      "origem": "TabTecidos Ação 02.04.26.pdf p.5, Tabela 2 por ML + IPI 3,25%, largura 2,50m.",
+      "variacoes": [
+        {"cor": "AMENDOA", "codigo_comercial": "ST-ROLO-PICASSO-BK-AMENDOA", "codigo_tecido": "00124100050", "nome_tecido": "TEC PICASSO BK - AMENDOA - 2,50M"},
+        {"cor": "BEGE", "codigo_comercial": "ST-ROLO-PICASSO-BK-BEGE", "codigo_tecido": "00124100020", "nome_tecido": "TEC PICASSO BK - BEGE - 2,50M"},
+        {"cor": "CINZA", "codigo_comercial": "ST-ROLO-PICASSO-BK-CINZA", "codigo_tecido": "00124100980", "nome_tecido": "TEC PICASSO BK - CINZA - 2,50M"},
+        {"cor": "FENDI", "codigo_comercial": "ST-ROLO-PICASSO-BK-FENDI", "codigo_tecido": "00124101420", "nome_tecido": "TEC PICASSO BK - FENDI - 2,50M"},
+        {"cor": "GELO", "codigo_comercial": "ST-ROLO-PICASSO-BK-GELO", "codigo_tecido": "00124103020", "nome_tecido": "TEC PICASSO BK - GELO - 2,50M"}
+      ]
+    }
+  ]
+}

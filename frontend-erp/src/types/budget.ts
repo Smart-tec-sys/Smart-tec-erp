@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js'
 import { romanaKey } from './romana'
 import { romanaTetoKey } from './romana_teto'
 import { roloKey } from './rolo'
@@ -9,6 +10,9 @@ import type { DoubleVisionState } from './double_vision'
 export type CommercialType = 'Decorador' | 'Varejo' | 'Consumidor final'
 export type CommercialProfile = 'DECORADOR' | 'VAREJO' | 'CONSUMIDOR_FINAL'
 export type ApiProduct = {
+  rolo_liberado_comercial?: boolean
+  rolo_cores_disponiveis?: string[]
+
   id: number
   nome: string
   codigo?: string | null
@@ -88,7 +92,7 @@ export type ApiClient = {
   permitir_exceder?: boolean | null
   observacoes?: string | null
 }
-export type ApiBudgetItem = { dados_tecnicos?: { cortina?: CurtainState; romana_teto?: { acionamento?: string; lado_comando?: string; comprimento_bastao_m?: number; comprimento_corrente_sem_fim_m?: number }; comercial?: { preco_unitario_manual?: boolean; preco_unitario_sugerido?: number } } | null; id?:number; tipo_item:string; produto_id?:number|null; servico_id?:number|null; descricao:string; codigo_interno?:string|null; grupo_tecnico?:string|null; modelo_tecnico?:string|null; unidade?:string|null; quantidade:number; largura:number; altura:number; area:number; preco_unitario:number; preco_unitario_manual?:boolean|null; preco_unitario_sugerido?:number|null; desconto:number; subtotal:number; observacao_item?:string|null; ambiente?:string|null; cor?:string|null }
+export type ApiBudgetItem = { dados_tecnicos?: { cortina?: CurtainState; rolo?: { motor_produto_id?: number | null; incluir_kit_instalacao?: boolean; kit_produto_id?: number | null }; acessorio_rolo?: { vinculo: 'AMBIENTE' }; romana_teto?: { acionamento?: string; lado_comando?: string; comprimento_bastao_m?: number; comprimento_corrente_sem_fim_m?: number }; comercial?: { preco_unitario_manual?: boolean; preco_unitario_sugerido?: number } } | null; id?:number; recalcular?:boolean; tipo_item:string; produto_id?:number|null; servico_id?:number|null; descricao:string; codigo_interno?:string|null; grupo_tecnico?:string|null; modelo_tecnico?:string|null; unidade?:string|null; quantidade:number; largura:number; altura:number; area:number; preco_unitario:number; preco_unitario_manual?:boolean|null; preco_unitario_sugerido?:number|null; desconto:number; subtotal:number; observacao_item?:string|null; ambiente?:string|null; cor?:string|null; acionamento?:string|null }
 export type PaymentMode = 'AVISTA' | 'PARCELADO' | 'ENTRADA_SALDO'
 export type BudgetPaymentInstallment = {
   id?: number
@@ -100,6 +104,7 @@ export type BudgetPaymentInstallment = {
   forma_pagamento_nome?: string
 }
 export type ApiBudget = {
+  itens_removidos_ids?: number[]
   cliente_final_nome?: string | null
   cliente_final_documento?: string | null
   cliente_final_telefone?: string | null
@@ -267,8 +272,8 @@ export type CurtainState = {
   }
 }
 
-export type BudgetProduct = { id:number; productId:number|null; product:string; code:string; family:string; groupTechnical:string; modelTechnical:string; unit:string; color:string; details:string; environment:string; quantity:number; width:string; height:string; price:number; priceManual?:boolean; suggestedPrice?:number; discount:number; romanaKind?: 'MANUAL' | 'MOTORIZADA' | null; romana?: RomanaState; romanaTetoKind?: 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA' | null; romanaTeto?: RomanaTetoState; roloKind?: 'MANUAL' | 'MOTORIZADA' | null; rolo?: RoloState; doubleVisionKind?: 'MANUAL' | 'MOTORIZADA' | null; doubleVision?: DoubleVisionState; curtain?: CurtainState; acionamento?: string; acao_acionamento?: string; lado_comando?: string; comprimento_bastao?: string; comprimento_corrente_sem_fim?: string }
-export type BudgetService = { id:number; service:string; details:string; quantity:number; value:number; discount:number; serviceId?:number|null; unit?:string; heightCm?:number; priceManual?:boolean }
+export type BudgetProduct = { id:number; historico?:ApiBudgetItem; recalcular?:boolean; productId:number|null; product:string; code:string; family:string; groupTechnical:string; modelTechnical:string; unit:string; color:string; details:string; environment:string; quantity:number; width:string; height:string; price:number; priceManual?:boolean; suggestedPrice?:number; discount:number; romanaKind?: 'MANUAL' | 'MOTORIZADA' | null; romana?: RomanaState; romanaTetoKind?: 'MANUAL_BASTAO' | 'MANUAL_CORRENTE' | 'MOTORIZADA' | null; romanaTeto?: RomanaTetoState; roloKind?: 'MANUAL' | 'MOTORIZADA' | null; rolo?: RoloState; motorProdutoId?: number; kitProdutoId?: number; incluirKitInstalacao?: boolean; acessorioRolo?: boolean; doubleVisionKind?: 'MANUAL' | 'MOTORIZADA' | null; doubleVision?: DoubleVisionState; curtain?: CurtainState; acionamento?: string; acao_acionamento?: string; lado_comando?: string; comprimento_bastao?: string; comprimento_corrente_sem_fim?: string }
+export type BudgetService = { id:number; historico?:ApiBudgetItem; recalcular?:boolean; service:string; details:string; quantity:number; value:number; discount:number; serviceId?:number|null; unit?:string; heightCm?:number; priceManual?:boolean }
 export type BudgetInstallment = { id:number; dueDate:string; description:string; value:number; paymentMethod:string; note:string }
 export const formatCurrency = (value:number) => value.toLocaleString('pt-BR', { style:'currency', currency:'BRL' })
 export const parseDecimal = (value:string) => Number(value.replace(',', '.')) || 0
@@ -276,10 +281,18 @@ export const normalizeSearch = (value:string) => value.normalize('NFD').replace(
 export const productColor = (product:ApiProduct) => product.cor_componente || product.cor || product.variacao_cor || ''
 export const productCost = (product:ApiProduct) => Number(product.custo_final || product.valor_custo || product.valor_venda || 0)
 export const commercialPercent:Record<CommercialType,number> = { Decorador:50, Varejo:100, 'Consumidor final':150 }
-export const roundHalfUp = (value:number) => Math.round((value + Number.EPSILON) * 100) / 100
+export const roundHalfUp = (
+  value: number | string,
+  places = 2
+): number =>
+  new Decimal(value)
+    .toDecimalPlaces(places, Decimal.ROUND_HALF_UP)
+    .toNumber()
 export const commercialPrice = (product:ApiProduct, type:CommercialType) => {
   const cost = Number(product.custo_final || product.valor_custo || 0)
-  return cost > 0 ? roundHalfUp(cost * (1 + commercialPercent[type] / 100)) : roundHalfUp(Number(product.valor_venda || 0))
+  return cost > 0 ? roundHalfUp(new Decimal(cost)
+    .times(new Decimal(commercialPercent[type]).div(100).plus(1))
+    .toString()) : roundHalfUp(Number(product.valor_venda || 0))
 }
 export const usesArea = (model:string) => ['ROLO','ROLÔ','DOUBLE_VISION','DOUBLE VISION','ROMANA','ROMANA_TETO','ROMANA DE TETO'].some(value=>normalizeSearch(model).startsWith(normalizeSearch(value)))
 export const usesLinearMeter = (unit:string) => ['ML','M','METRO','METRO LINEAR'].includes(normalizeSearch(unit))
@@ -295,7 +308,7 @@ export const applySuggestedProductPrice = (item:BudgetProduct, price:number|unde
     ? { ...item, suggestedPrice:price, price:item.priceManual ? item.price : price }
     : item
 export const negotiateProductPrice = (item:BudgetProduct, price:number):BudgetProduct => ({
-  ...item, price:Math.round((price + Number.EPSILON) * 10000) / 10000, priceManual:true,
+  ...item, price:roundHalfUp(price, 4), priceManual:true,
 })
 export const suggestedProductPrice = (item:BudgetProduct, profile:CommercialType):number|undefined => {
   if(item.romanaKind) return item.romana?.key === romanaKey(item,profile) && !item.romana.error && item.romana.result?.preco_disponivel ? item.romana.result.preco_unitario : undefined
@@ -309,7 +322,17 @@ export const restoreSuggestedProductPrice = (item:BudgetProduct, profile:Commerc
   const price = suggestedProductPrice(item,profile)
   return price === undefined ? item : { ...item, price, suggestedPrice:price, priceManual:false }
 }
+export const commercialSubtotal = (
+  quantity: number,
+  price: number,
+  discount = 0
+): number => Decimal.max(
+  0,
+  new Decimal(quantity).times(price).minus(discount)
+).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber()
+
 export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType) => {
+  if (item.historico && !item.recalcular) return item.historico.subtotal
   // Um resultado de simulação pertence às entradas que o geraram.
   if(profile){
     if(item.romanaKind && (item.romana?.error || item.romana?.key !== romanaKey(item,profile))) return 0
@@ -320,18 +343,27 @@ export const productLineSubtotal = (item:BudgetProduct, profile?:CommercialType)
       if(item.curtain.error || item.curtain.simulationKey !== curtainKey(item,profile)) return 0
     }
   }
-  const areaPerPiece = Math.round(parseDecimal(item.width) * parseDecimal(item.height) * 10000) / 10000
+  const areaPerPiece = new Decimal(parseDecimal(item.width))
+    .times(parseDecimal(item.height))
+    .toDecimalPlaces(4, Decimal.ROUND_HALF_UP)
+    .toNumber()
   const commercialBase = usesLinearMeter(item.unit)
-    ? parseDecimal(item.width) * item.quantity
+    ? new Decimal(parseDecimal(item.width)).times(item.quantity).toNumber()
     : usesSquareMeter(item.unit) || usesArea(item.modelTechnical)
-      ? (usesSquareMeter(item.unit) ? Math.max(1.5,areaPerPiece) : areaPerPiece) * item.quantity
+      ? new Decimal(
+          usesSquareMeter(item.unit)
+            ? Math.max(1.5, areaPerPiece)
+            : areaPerPiece
+        ).times(item.quantity)
+         .toDecimalPlaces(4, Decimal.ROUND_HALF_UP)
+         .toNumber()
       : item.quantity
   if(item.priceManual){
     const result = item.romana?.result ?? item.romanaTeto?.result ?? item.rolo?.result ?? item.doubleVision?.result
     const base = item.curtain ? item.quantity : result ? Number(result.area_faturavel_m2) : commercialBase
-    return roundHalfUp(Math.max(0,base * item.price - item.discount))
+    return commercialSubtotal(base, item.price, item.discount)
   }
-  return item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : roundHalfUp(Math.max(0,commercialBase*item.price-item.discount))
+  return item.romanaKind ? Number(item.romana?.result?.subtotal || 0) : item.romanaTetoKind ? Number(item.romanaTeto?.result?.subtotal || 0) : item.roloKind ? Number(item.rolo?.result?.subtotal || 0) : item.doubleVisionKind ? Number(item.doubleVision?.result?.subtotal || 0) : item.curtain?.result?.preco_disponivel ? Number(item.curtain.result.subtotal || 0) : commercialSubtotal(commercialBase, item.price, item.discount)
 }
 export const profileLabel:Record<CommercialProfile,CommercialType>={DECORADOR:'Decorador',VAREJO:'Varejo',CONSUMIDOR_FINAL:'Consumidor final'}
 export const emptyProduct = (id:number):BudgetProduct => ({ id, productId:null, product:'', code:'', family:'', groupTechnical:'', modelTechnical:'', unit:'', color:'', details:'', environment:'', quantity:1, width:'0,00', height:'0,00', price:0, discount:0, romanaKind:undefined, romana:undefined, romanaTetoKind:undefined, romanaTeto:undefined, roloKind:undefined, rolo:undefined, doubleVisionKind:undefined, doubleVision:undefined, curtain:undefined, acionamento:undefined, lado_comando:undefined, comprimento_bastao:undefined, comprimento_corrente_sem_fim:undefined })

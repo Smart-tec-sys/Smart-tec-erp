@@ -31,6 +31,9 @@ class RoloSimulacaoInput(BaseModel):
     cor: Optional[str] = None
     acionamento: Literal['manual', 'motorizado'] = 'manual'
     lado_comando: Optional[str] = None
+    motor_produto_id: Optional[int] = Field(default=None, gt=0)
+    kit_produto_id: Optional[int] = Field(default=None, gt=0)
+    incluir_kit_instalacao: Optional[bool] = None
 
 
 def _tipo_rolo(produto) -> Optional[str]:
@@ -52,6 +55,17 @@ def _tipo_rolo(produto) -> Optional[str]:
             'grupo_tecnico', 'familia_tecnica', 'tipo_produto', 'unidade_venda',
         )
     }
+    # O acabado Standard consolidado conserva o grupo comercial legado de motor.
+    # Corrigir só a classificação em memória; componentes continuam excluídos.
+    if (getattr(produto, 'id', None) == 503
+            and campos['grupo_produto'] == 'MOTORIZACAO'
+            and campos['modelo_tecnico'] == 'ROLO'
+            and campos['grupo_tecnico'] == 'PERSIANA ROLO'
+            and campos['tipo_produto'] == 'PRODUTO FABRICADO'
+            and campos['unidade_venda'] == 'M2'
+            and re.search(r'\bSCREEN\s*3\s*%\s+STAND(?:ARD|ART)\b', campos['nome'])
+            and 'IMPORTAD' not in campos['nome']):
+        campos['grupo_produto'] = 'PERSIANAS'
     # No DEV ha componentes com modelo ROLO, unidade M2 e composicao Sim.
     # Nenhum desses atributos pode sobrepor uma classificacao de componente.
     componentes = {

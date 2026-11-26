@@ -1,20 +1,20 @@
-import { technicalSimulationError } from '../utils/technicalSimulation'
+import { compactTechnicalReason, technicalSimulationError } from '../utils/technicalSimulation'
 import { useEffect } from 'react'
 import { simulateRolo } from '../services/api'
 import { formatCurrency, parseDecimal, type BudgetProduct, type CommercialType } from '../types/budget'
 import { roloKey, normalizeRoloDrive, type RoloState } from '../types/rolo'
 
-type Props = { product: BudgetProduct; profile: CommercialType; onResult: (id: number, state: RoloState) => void }
+type Props = { product: BudgetProduct; profile: CommercialType; onResult: (id: number, state: RoloState) => void; compactMotorHelp?: boolean }
 
-export function RoloSimulation({ product, profile, onResult }: Props) {
+export function RoloSimulation({ product, profile, onResult, compactMotorHelp = false }: Props) {
   const key = roloKey(product, profile), id = product.id, kind = product.roloKind
   useEffect(() => {
-    if (kind === 'MANUAL') {
+    if (kind === 'MANUAL' || kind === 'MOTORIZADA') {
       let cancelled = false
-      const [produto_id, width, height, quantidade, desconto, commercial, cor, acionamento] = JSON.parse(key) as [number, string, string, number, number, CommercialType, string, string]
+      const [produto_id, width, height, quantidade, desconto, commercial, cor, acionamento, motorProdutoId, kitProdutoId, incluirKitInstalacao] = JSON.parse(key) as [number, string, string, number, number, CommercialType, string, string, number | null, number | null, boolean]
       if (!produto_id || parseDecimal(width) <= 0 || parseDecimal(height) <= 0 || !Number.isInteger(quantidade) || quantidade <= 0) return
-    const timer = setTimeout(() => {
-        void simulateRolo({ produto_id, largura: parseDecimal(width), altura: parseDecimal(height), quantidade, desconto, perfil_comercial: profile === 'Decorador' ? 'DECORADOR' : profile === 'Varejo' ? 'VAREJO' : 'CONSUMIDOR_FINAL', cor: cor || undefined, acionamento: normalizeRoloDrive(acionamento) })
+      const timer = setTimeout(() => {
+        void simulateRolo({ produto_id, largura: parseDecimal(width), altura: parseDecimal(height), quantidade, desconto, perfil_comercial: profile === 'Decorador' ? 'DECORADOR' : profile === 'Varejo' ? 'VAREJO' : 'CONSUMIDOR_FINAL', cor: cor || undefined, acionamento: normalizeRoloDrive(acionamento), ...(motorProdutoId ? { motor_produto_id: motorProdutoId } : {}), ...(kitProdutoId ? { kit_produto_id: kitProdutoId } : {}), incluir_kit_instalacao: incluirKitInstalacao })
           .then(result => { if (!cancelled) onResult(id, { key, result }) })
           .catch(error => { if (!cancelled) onResult(id, { key, error: technicalSimulationError(error) }) })
       }, 350)
@@ -24,15 +24,17 @@ export function RoloSimulation({ product, profile, onResult }: Props) {
 
   if (!kind) return null
 
-  if (kind === 'MOTORIZADA') {
-    return (
-      <div className="api-message error" role="alert">
-        Rolô motorizada: cálculo técnico indisponível. Salvamento bloqueado; nenhum motor genérico será utilizado.
-      </div>
-    )
-  }
-
   const state = product.rolo, current = state?.key === key, r = current && !state?.error ? state?.result : undefined
+  const manual = normalizeRoloDrive(product.acionamento ?? (kind === 'MOTORIZADA' ? 'motorizado' : 'manual')) === 'manual'
+  const motorTecnico = r?.componentes_tecnicos.motor
+  const cargaPendente = !manual
+    && motorTecnico != null
+    && typeof motorTecnico === 'object'
+    && (
+      (motorTecnico as Record<string, unknown>).carga_pendente === true
+      || (motorTecnico as Record<string, unknown>).status_validacao_carga === 'PENDENTE'
+    )
+
   const show = (obj: Record<string, unknown>, field: string) => {
     const value = obj?.[field]
     return value === null || value === undefined ? 'Pendente' : typeof value === 'number' ? value.toLocaleString('pt-BR', { maximumFractionDigits: 4 }) : Array.isArray(value) ? value.map(v => typeof v === 'number' ? v.toLocaleString('pt-BR', { maximumFractionDigits: 4 }) : JSON.stringify(v)).join(' · ') : String(value)
@@ -49,30 +51,59 @@ export function RoloSimulation({ product, profile, onResult }: Props) {
     }
     return current === null || current === undefined ? 'Pendente' : typeof current === 'number' ? current.toLocaleString('pt-BR', { maximumFractionDigits: 4 }) : String(current)
   }
+  const componentLabel = (value: unknown): string => {
+    if (Array.isArray(value)) return value.map(componentLabel).join(' · ')
+    if (value && typeof value === 'object') {
+      const item = value as Record<string, unknown>
+      const description = [item.nome, item.codigo || item.produto_codigo, item.observacao].filter(Boolean)
+      return description.length ? description.join(' · ') : Object.values(item).map(componentLabel).join(' · ')
+    }
+    return value == null ? 'Pendente' : String(value)
+  }
 
   return (
     <section className="api-message" aria-live="polite">
       <strong>Rolô — simulação técnica</strong>
-      <p>Custo técnico: indisponível nesta fase. Resultado recalculado; não é histórico de fabricação.</p>
+      <p>Custo técnico: {r?.custo_tecnico == null ? 'indisponível' : formatCurrency(Number(r.custo_tecnico))}. Resultado recalculado; não é histórico de fabricação.</p>
       {!current && <p>Calculando… Totais ainda não confirmados; aguarde antes de salvar.</p>}
       {current && state?.error && (
-        <p role="alert">Não foi possível simular. Revise as medidas ou a conexão. Dados preservados; salvamento bloqueado. {state.error}</p>
+        <p role="alert">{manual || !compactMotorHelp ? <>Não foi possível simular. Revise as medidas ou a conexão. Dados preservados; salvamento bloqueado. {state.error}</> : <>Salvamento bloqueado: {compactTechnicalReason(state.error)}</>}</p>
       )}
       {r && (
         <>
           <p>{r.quantidade_pecas} peça(s) · Área real: {Number(r.area_real_m2).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m² · Área faturável: {Number(r.area_faturavel_m2).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} m² · Mínimo faturável aplicado: {r.minimo_faturavel_aplicado ? 'Sim' : 'Não'}</p>
           <p>Bitola selecionada: <strong>{r.bitola_tecnica}</strong> · Acionamento: {r.acionamento_permitido}{r.requer_confirmacao_vendedor ? ' ⚠ Requer confirmação do vendedor' : ''}</p>
           <p>Custo cadastrado do produto: {r.custo_cadastrado === null ? 'indisponível' : formatCurrency(Number(r.custo_cadastrado))}. Preço comercial unitário: {r.preco_disponivel ? formatCurrency(Number(r.preco_unitario)) : 'indisponível'} · Subtotal: {formatCurrency(Number(r.subtotal))}</p>
+          {cargaPendente && (
+            <p role="status" style={{
+              color: '#92400e',
+              backgroundColor: '#fffbeb',
+              border: '1px solid #f59e0b',
+              borderRadius: '6px',
+              padding: '10px'
+            }}>
+              <strong>Confirmacao tecnica pendente.</strong>
+              {' '}Orcamento permitido. A capacidade de carga
+              deve ser confirmada antes da fabricacao.
+            </p>
+          )}
           <p>Origem do preço: {r.origem_preco}. {r.aviso}</p>
+          {r.componentes_tecnicos.tecido && typeof r.componentes_tecnicos.tecido === 'object' && 'quantidade_compra_ml' in r.componentes_tecnicos.tecido && (
+            <p>Tecido: compra de {showNested(r.componentes_tecnicos, 'tecido.quantidade_compra_ml')} ML de bobina com {showNested(r.componentes_tecnicos, 'tecido.largura_bobina_m')} m de largura. Faixa integral por peça, incluindo altura +15 cm e perda de 5%; sem crédito de sobras laterais.</p>
+          )}
           <dl>
             <dt>Componentes técnicos</dt>
             <dd>
               Tubo: {showNested(r.componentes_tecnicos, 'tubo.codigo')} ({showNested(r.componentes_tecnicos, 'tubo.diametro')}) · {showNested(r.componentes_tecnicos, 'tubo.quantidade_ml')} ml<br/>
-              Comando: {showNested(r.componentes_tecnicos, 'comando.tipo')} — {showNested(r.componentes_tecnicos, 'comando.observacao')}<br/>
+              {manual && <>Comando: {showNested(r.componentes_tecnicos, 'comando.tipo')} — {showNested(r.componentes_tecnicos, 'comando.observacao')}<br/></>}
               Tecido: {showNested(r.componentes_tecnicos, 'tecido.quantidade_m2')} m² ({showNested(r.componentes_tecnicos, 'tecido.regra')})<br/>
               Base: {showNested(r.componentes_tecnicos, 'base.quantidade_ml')} ml<br/>
-              Corrente: {showNested(r.componentes_tecnicos, 'corrente.quantidade_ml')} ml ({showNested(r.componentes_tecnicos, 'corrente.regra')})<br/>
-              Emenda corrente: {showNested(r.componentes_tecnicos, 'emenda_corrente.quantidade_un')} un<br/>
+              {manual && <>
+                Corrente: {showNested(r.componentes_tecnicos, 'corrente.quantidade_ml')} ml ({showNested(r.componentes_tecnicos, 'corrente.regra')})<br/>
+                Emenda corrente: {showNested(r.componentes_tecnicos, 'emenda_corrente.quantidade_un')} un<br/>
+              </>}
+              {r.componentes_tecnicos.motor != null && <>Motor: {componentLabel(r.componentes_tecnicos.motor)}<br/></>}
+              {r.componentes_tecnicos.acessorios != null && <>Acessórios: {componentLabel(r.componentes_tecnicos.acessorios)}<br/></>}
               Tampas: {showNested(r.componentes_tecnicos, 'tampas.quantidade_un')} un<br/>
               Suportes: {showNested(r.componentes_tecnicos, 'suportes.observacao')}<br/>
               Ponteira: {showNested(r.componentes_tecnicos, 'ponteira.observacao')}<br/>

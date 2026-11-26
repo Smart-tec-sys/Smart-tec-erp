@@ -19,6 +19,8 @@ class RomanaTetoSimulacaoInput(BaseModel):
 
 
 class OrcamentoItemInput(BaseModel):
+    id: Optional[int] = Field(default=None, gt=0)
+    recalcular: bool = False
     tipo_item: Literal["PRODUTO", "SERVICO"] = "PRODUTO"
     produto_id: Optional[int] = None
     servico_id: Optional[int] = Field(default=None, gt=0)
@@ -32,7 +34,7 @@ class OrcamentoItemInput(BaseModel):
     altura: float = Field(default=0, ge=0, allow_inf_nan=False)
     area: float = Field(default=0, ge=0, allow_inf_nan=False)
     preco_unitario: float = Field(default=0, ge=0, allow_inf_nan=False)
-    preco_unitario_manual: bool = False
+    preco_unitario_manual: Optional[bool] = False
     desconto: float = Field(default=0, ge=0, allow_inf_nan=False)
     subtotal: float = Field(default=0, ge=0, allow_inf_nan=False)
     observacao_item: Optional[str] = None
@@ -68,6 +70,7 @@ class OrcamentoParcelaInput(BaseModel):
     forma_pagamento_id: int = Field(gt=0)
 
 class OrcamentoInput(BaseModel):
+    itens_removidos_ids: list[int] = Field(default_factory=list)
     cliente_final_nome: Optional[str] = None
     cliente_final_documento: Optional[str] = None
     cliente_final_telefone: Optional[str] = None
@@ -137,3 +140,10 @@ class OrcamentoCondicoesRevendaInput(BaseModel):
     observacao_comercial: str
     observacao_interna: str
     observacoes_itens: dict[int, str] = Field(default_factory=dict)
+
+
+class OrcamentoStatusInput(BaseModel):
+    status: Literal["EM_ABERTO", "APROVADO", "CANCELADO"]
+    status_esperado: str
+
+    model_config = {"extra": "forbid"}

@@ -16,7 +16,10 @@ from typing import Literal
 class TuboRoloDiametro(str, Enum):
     D32 = "32mm"
     D38 = "38mm"
+    D41 = "41mm"
+    D56 = "56mm"
     D43 = "43mm"
+    D53 = "53mm"
     D65 = "65mm"
     D70 = "70mm"
 
@@ -113,7 +116,10 @@ def codigo_tecnico_para_tubo(codigo: str) -> TuboRoloDiametro | None:
     mapping = {
         "TUBO_ROLO_32MM": TuboRoloDiametro.D32,
         "TUBO_ROLO_38MM": TuboRoloDiametro.D38,
+        "TUBO_ROLO_41MM": TuboRoloDiametro.D41,
+        "TUBO_ROLO_56MM": TuboRoloDiametro.D56,
         "TUBO_ROLO_43MM": TuboRoloDiametro.D43,
+        "TUBO_ROLO_53MM": TuboRoloDiametro.D53,
         "TUBO_ROLO_65MM": TuboRoloDiametro.D65,
         "TUBO_ROLO_70MM": TuboRoloDiametro.D70,
     }
