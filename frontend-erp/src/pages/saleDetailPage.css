@@ -2,3 +2,54 @@
 .sale-item-technical { margin-top: 12px; font-size: 10px; }
 .sale-item-technical > summary { color: var(--color-primary); cursor: pointer; }
 .sale-item-technical > .form-grid { margin-top: 12px; }
+
+
+/* SMARTTEC_VENDA_VERTICAL */
+
+.product-fields.sale-product-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+    overflow: visible;
+    min-width: 0;
+}
+
+.product-fields.sale-product-fields > * {
+    min-width: 0;
+    max-width: 100%;
+}
+
+.product-fields.sale-product-fields > :first-child {
+    grid-column: 1 / -1;
+}
+
+.product-fields.sale-product-fields .field > span {
+    font-size: 12px;
+    white-space: normal;
+}
+
+.product-fields.sale-product-fields .field input {
+    height: 38px;
+    width: 100%;
+    min-width: 0;
+    font-size: 13px;
+}
+
+.product-fields.sale-product-fields .product-subtotal {
+    grid-column: 1 / -1;
+    height: auto;
+    padding: 14px 0;
+    text-align: right;
+    border-top: 1px solid var(--color-border, #e5e7eb);
+}
+
+.product-fields.sale-product-fields .product-subtotal strong {
+    font-size: 20px;
+}
+
+@media (max-width: 600px) {
+    .product-fields.sale-product-fields {
+        grid-template-columns: 1fr;
+    }
+}

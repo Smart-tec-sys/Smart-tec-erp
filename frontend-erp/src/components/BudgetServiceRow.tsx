@@ -17,7 +17,9 @@ const unidades: UnidadeServico[] = ['UN', 'ML', 'M2', 'HORA', 'SERVICO']
 
 export function BudgetServiceRow({ service, onChange, onRemove, catalogServices = [] }: Props) {
   const update = <K extends keyof BudgetService>(key: K, value: BudgetService[K]) => onChange({ ...service, [key]: value })
-  const subtotal = Math.max(0, service.quantity * service.value - service.discount)
+  const subtotal = service.historico && !service.recalcular
+    ? service.historico.subtotal
+    : Math.max(0, service.quantity * service.value - service.discount)
   const linkedService = catalogServices.find(item => item.id === service.serviceId)
   const updateHeight = (heightCm: number) => {
     let value = service.value

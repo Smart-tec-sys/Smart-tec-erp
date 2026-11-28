@@ -75,9 +75,20 @@ const text = tree => tree == null || typeof tree === 'boolean' ? '' : Array.isAr
   const {BudgetProductRow}=await compile('components/BudgetProductRow.tsx',source=>source
     .replace("import { useEffect, useMemo, useState } from 'react'",'const useEffect=()=>{};const useMemo=f=>f();const useState=v=>[globalThis.priceQuery??v,()=>{}]')
     .replace("import { CurtainColorField } from './CurtainColorField'",'const CurtainColorField=()=>null')
+    .replace("import { FloatingProductSuggestions } from './FloatingProductSuggestions'",'function FloatingProductSuggestions(){}')
+    .replace("import { RoloMotorSelector } from './RoloMotorSelector'",'function RoloMotorSelector(){}')
+    .replace("import { MotorHelp } from './MotorHelp'",'function MotorHelp(){}')
     .replace(/import \{ ZeroNumberInput, zeroInputValue \} from '[^']+'/,'const ZeroNumberInput=()=>null;const zeroInputValue=v=>v')
     .replace(/import \{ (\w+Simulation) \} from '[^']+'/g,'const $1=()=>null'))
+  const {BudgetServiceRow}=await compile('components/BudgetServiceRow.tsx',source=>source
+    .replace("import { ZeroNumberInput } from './ZeroNumberInput'",'const ZeroNumberInput=()=>null'))
+  const historicalService=BudgetServiceRow({service:{id:1,service:'Instalação',quantity:1,value:81,discount:0,
+    historico:{id:400,subtotal:80.99}},onChange(){},onRemove(){}})
+  assert.ok(text(nodes(historicalService).find(n=>n.props?.className==='service-subtotal')).includes('80,99'))
   function rowTree(product=manual){globalThis.priceQuery=query;return BudgetProductRow({product,catalog,commercialType:'Varejo',allowManualPrice:true,onChange:p=>changed=p,onRemove(){},onRomana(){},onRomanaTeto(){},onRolo(){},onDoubleVision(){},onCurtain(){}})}
+  nodes(rowTree({...manual,historico:{id:100,subtotal:74.25}})).find(n=>n.type==='button'&&text(n)==='Recalcular este item').props.onClick()
+  assert.equal(changed.price,200)
+  assert.equal(changed.recalcular,true)
   let tree=rowTree(curtain)
   const priceInput=nodes(tree).find(n=>n.props?.['aria-label']?.startsWith('Valor unitário'))
   assert.equal(priceInput.props.readOnly,false)
@@ -108,17 +119,20 @@ const text = tree => tree == null || typeof tree === 'boolean' ? '' : Array.isAr
     useMemo:fn=>fn(),useCallback:fn=>fn,
     useEffect(fn,deps){const slot=index++;const old=cells[slot];if(!old||deps.some((v,i)=>v!==old[i])){cells[slot]=deps;pending.push(fn)}},
   }
+  let loadClients=async()=>[{id:1,nome:'Cliente',tipo:'Pessoa Física',documento:'52998224725',email:'cliente@example.test',telefone_celular:'11999998888',cep:'01001000',logradouro:'Rua A',numero:'1',bairro:'Centro',cidade:'São Paulo',estado:'SP'}]
   globalThis.budgetApi={
-    getAllProducts:async()=>catalog,getClients:async()=>[{id:1,nome:'Cliente',tipo:'Pessoa Física',documento:'52998224725',email:'cliente@example.test',telefone_celular:'11999998888',cep:'01001000',logradouro:'Rua A',numero:'1',bairro:'Centro',cidade:'São Paulo',estado:'SP'}],
+    getAllProducts:async()=>catalog,getClients:()=>loadClients(),
     getBudget:async()=>sourceBudget,getProductGroups:async()=>[],getProductUnits:async()=>['UN','M2'],getCommercialPartners:async()=>[],getRepresentatives:async()=>[],getFuncionariosCadastro:async()=>[],
     async createBudget(payload){return saveApi(null,payload)},async updateBudget(id,payload){return saveApi(id,payload)},
   }
-  function saveApi(id,payload){apiCalls.push({id,payload});if(saveMode==='pending')return new Promise((resolve,reject)=>{resolveSave=resolve;rejectSave=reject});return Promise.resolve({...payload,id:id??99,numero:'SINTETICO'})}
+  function saveApi(id,payload){apiCalls.push({id,payload});if(saveMode==='pending')return new Promise((resolve,reject)=>{resolveSave=resolve;rejectSave=reject});return Promise.resolve({...payload,id:id??99,numero:'SINTETICO',itens:payload.itens.map((item,index)=>({...item,id:item.id??100+index}))})}
   await compile('components/BudgetPaymentSection.tsx',source=>source.replace("import { listFinanceRecords, type FinanceRecord } from '../services/api'",'const listFinanceRecords=async()=>[];type FinanceRecord=any'))
   const {NewBudgetPage}=await compile('pages/NewBudgetPage.tsx',source=>source
     .replace("import { useCallback, useEffect, useMemo, useRef, useState } from 'react'",'const {useCallback,useEffect,useMemo,useRef,useState}=globalThis.budgetHooks')
+    .replace("import { CadastroClienteDialog } from './CadastrosPage'",'function CadastroClienteDialog(){}')
+    .replace("import { RoloAccessoriesPanel } from '../components/RoloAccessoriesPanel'",'function RoloAccessoriesPanel(){}')
     .replace(/^import \{.*\} from '..\/services\/api'$/m,'const {createBudget,getAllProducts,getBudget,getClients,updateBudget,createClient,createProduct,getProductGroups,getProductUnits,convertBudgetToOrder,getCommercialPartners,getRepresentatives,getFuncionariosCadastro}=globalThis.budgetApi')
-    .replace(/^import \{ (BudgetProductRow|BudgetServiceRow|BudgetSummary|ZeroNumberInput) \} from '[^']+'$/gm,'function $1(){return null}')
+    .replace(/^import \{ (BudgetProductRow|BudgetClientPicker|BudgetServiceRow|BudgetSummary|ZeroNumberInput) \} from '[^']+'$/gm,'function $1(){return null}')
     .replace(/^import \{ CommercialRegistrationDialog,.*$/m,"function CommercialRegistrationDialog(){return null};const CREATE_COMMERCIAL_VALUE='__CREATE__'"))
   let page
   function render(){index=0;dirty=false;page=NewBudgetPage(pageProps);return page}
@@ -126,22 +140,41 @@ const text = tree => tree == null || typeof tree === 'boolean' ? '' : Array.isAr
   async function mount(budget){cells=[];pending=[];sourceBudget=budget;apiCalls=[];savedEvents=[];pageProps={budgetId:budget?.id,onBack(){throw Error('Navegação indevida')},onSaved:(...args)=>savedEvents.push(args)};return settle()}
   const findComponent=name=>nodes(page).find(n=>n.type?.name===name)
   function chooseProfile(value){const section=nodes(page).find(n=>n.props?.title==='Perfil comercial');nodes(section).find(n=>n.type==='select').props.onChange({target:{value}})}
-  const existing={id:5,numero:'5',cliente_id:1,perfil_comercial:'VAREJO',status:'EM_ABERTO',desconto:0,itens:[{tipo_item:'PRODUTO',produto_id:10,descricao:'Acessório',unidade:'UN',quantidade:1,largura:0,altura:0,preco_unitario:77.5,preco_unitario_manual:true,desconto:0,subtotal:77.5}]}
+  const existing={id:5,numero:'5',cliente_id:1,perfil_comercial:'VAREJO',status:'EM_ABERTO',desconto:0,itens:[{id:100,tipo_item:'PRODUTO',produto_id:10,descricao:'Acessório',unidade:'UN',quantidade:1,largura:0,altura:0,preco_unitario:77.5,preco_unitario_manual:true,desconto:0,subtotal:77.5}]}
   await mount(existing)
+  assert.equal(findComponent('BudgetClientPicker').props.value,1,'cliente salvo reaparece pelo ID real')
   assert.equal(findComponent('BudgetProductRow').props.product.price,77.5)
   assert.equal(findComponent('BudgetSummary').props.saveLabel,'Salvar alterações')
+  const originalClients=loadClients
+  const productBefore=findComponent('BudgetProductRow').props.product
+  findComponent('BudgetClientPicker').props.onCreate();await settle()
+  assert.ok(findComponent('CadastroClienteDialog'),'abre cadastro completo sem sair do orçamento')
+  loadClients=async()=>[{id:47,nome:'Cliente criado',documento:'123'}]
+  findComponent('CadastroClienteDialog').props.onSaved({id:47,nome:'Cliente criado'});await settle()
+  assert.equal(findComponent('BudgetClientPicker').props.value,47,'seleciona ID devolvido pelo cadastro')
+  assert.equal(findComponent('BudgetClientPicker').props.clients[0].documento,'123','atualiza lista pelo serviço')
+  assert.deepEqual(findComponent('BudgetProductRow').props.product,productBefore,'preserva produto e valores')
+  findComponent('BudgetClientPicker').props.onCreate();await settle()
+  loadClients=async()=>{throw new Error('Rede indisponível')}
+  findComponent('CadastroClienteDialog').props.onSaved({id:48,nome:'Outro cliente'});await settle()
+  assert.equal(findComponent('BudgetClientPicker').props.value,48)
+  assert.match(findComponent('BudgetSummary').props.saveError,/não foi possível atualizar a lista/)
+  assert.deepEqual(findComponent('BudgetProductRow').props.product,productBefore)
+  loadClients=originalClients
+  await mount(existing)
   assert.ok(!nodes(page).some(n=>n.props?.title==='Payload da API'))
   confirmResult=false;chooseProfile('DECORADOR');await settle()
   assert.equal(findComponent('BudgetProductRow').props.product.price,77.5)
   confirmResult=true;chooseProfile('DECORADOR');await settle()
-  assert.equal(findComponent('BudgetProductRow').props.product.price,150)
-  assert.equal(findComponent('BudgetProductRow').props.product.priceManual,false)
+  assert.equal(findComponent('BudgetProductRow').props.product.price,77.5)
+  assert.equal(findComponent('BudgetProductRow').props.product.priceManual,true)
   await mount({...existing,itens:[{...existing.itens[0],preco_unitario_manual:null}]})
   assert.equal(findComponent('BudgetProductRow').props.product.price,77.5,'legado preservado')
   assert.equal(findComponent('BudgetProductRow').props.product.priceManual,true)
 
   await mount({...existing,itens:[{...existing.itens[0],produto_id:11,modelo_tecnico:'ROMANA',unidade:'M2',largura:.5,altura:.5}]})
   let row=findComponent('BudgetProductRow').props
+  row.onChange({...row.product,recalcular:true});await settle();row=findComponent('BudgetProductRow').props
   row.onRomana(1,{key:romanaKey(row.product,'Varejo'),result:{preco_unitario:200,subtotal:300,preco_disponivel:true,area_faturavel_m2:1.5}})
   await settle();row=findComponent('BudgetProductRow').props
   assert.equal(row.product.price,77.5,'simulação mantém negociação')
@@ -158,7 +191,7 @@ const text = tree => tree == null || typeof tree === 'boolean' ? '' : Array.isAr
   assert.equal(findComponent('BudgetSummary').props.saveLabel,'Salvar orçamento')
   chooseProfile('VAREJO')
   const clientField=nodes(page).find(n=>n.props?.label==='Cliente')
-  nodes(clientField).find(n=>n.type==='select').props.onChange({target:{value:'1'}})
+  nodes(clientField).find(n=>n.type?.name==='BudgetClientPicker').props.onChange(1)
   row=findComponent('BudgetProductRow').props
   row.onChange({...base,quantity:1,price:88,priceManual:true})
   await settle()
@@ -172,14 +205,14 @@ const text = tree => tree == null || typeof tree === 'boolean' ? '' : Array.isAr
   assert.equal(findComponent('BudgetSummary').props.saveError,'Falha sintética de rede')
   attempt=findComponent('BudgetSummary').props.onSave();await new Promise(setImmediate)
   assert.equal(savedEvents.length,0)
-  resolveSave({id:99,numero:'99',...apiCalls.at(-1).payload});await attempt;await settle()
+  resolveSave({id:99,numero:'99',...apiCalls.at(-1).payload,itens:apiCalls.at(-1).payload.itens.map((item,index)=>({...item,id:item.id??100+index}))});await attempt;await settle()
   assert.deepEqual(savedEvents,[[99,'created']])
   assert.equal(apiCalls.at(-1).payload.itens[0].preco_unitario_manual,true)
   saveMode='ok'
 
   await mount({...existing,itens:[{...existing.itens[0],preco_unitario:100}],pagamento_modalidade:'PARCELADO',pagamento_numero_parcelas:2,pagamento_intervalo_dias:30,pagamento_primeiro_vencimento:'2026-11-10',pagamento_parcelas:[{numero:1,tipo:'PARCELA',valor:50,vencimento:'2026-11-10',forma_pagamento_id:1},{numero:2,tipo:'PARCELA',valor:50,vencimento:'2026-12-10',forma_pagamento_id:1}]})
   row=findComponent('BudgetProductRow').props
-  row.onChange({...row.product,price:80,priceManual:true});await settle()
+  row.onChange({...row.product,price:80,priceManual:true,recalcular:true});await settle()
   await findComponent('BudgetSummary').props.onSave();await settle()
   assert.equal(apiCalls.length,0,'parcelas divergentes bloqueiam envio')
   assert.ok(findComponent('BudgetSummary').props.saveError.includes('parcelas'))

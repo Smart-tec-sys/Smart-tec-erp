@@ -15,3 +15,6 @@
 .row-actions-menu { max-height: calc(100vh - 24px); overflow-y: auto; }
 .row-actions-submenu { padding-left: 18px; border-left: 1px solid #e1e3e6; margin-left: 10px; }
 .row-actions-chevron { margin-left: auto; }
+.budget-share { max-width: 640px; }
+.budget-share-field { display: grid; gap: 6px; margin: 16px 0; }
+.budget-share-field input, .budget-share-field select { width: 100%; padding: 10px; border: 1px solid #d5d8de; border-radius: 6px; font: inherit; }

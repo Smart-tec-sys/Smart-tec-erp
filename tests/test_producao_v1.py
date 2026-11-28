@@ -43,16 +43,33 @@ def _sqlite_jsonb(tipo, compiler, **kwargs):
 
 @pytest.fixture
 def contexto(monkeypatch):
+    from app.models.financeiro_cadastros import FormaPagamentoDB
     monkeypatch.setenv("PRODUCAO_V1_ENABLED", "true")
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     @event.listens_for(engine, "connect")
     def habilitar_fk(conexao, _):
         conexao.execute("PRAGMA foreign_keys=ON")
     nomes = ("empresas", "clientes", "funcionarios", "produtos", "orcamentos", "orcamentos_itens",
-             "parceiros_comerciais", "representantes", "servicos", "pedidos", "pedidos_itens",
+             "parceiros_comerciais", "representantes", "servicos", "pedidos", "pedidos_itens", "formas_pagamento", "pedido_parcelas", "orcamento_parcelas",
              "ordens_producao", "producao_pecas", "producao_componentes",
              "producao_revisoes_ficha")
     Base.metadata.create_all(engine, tables=[Base.metadata.tables[n] for n in nomes])
+
+    with engine.begin() as conexao:
+        conexao.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_orcamentos_id_empresa "
+            "ON orcamentos (id, empresa_id)"
+        )
+
+        conexao.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_pedidos_id_empresa "
+            "ON pedidos (id, empresa_id)"
+        )
+        conexao.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_formas_pagamento_id_empresa "
+            "ON formas_pagamento (id, empresa_id)"
+        )
+
     with Session(engine) as db:
         db.add_all([EmpresaDB(id=1, nome="Fábrica <Teste>", slug="teste"),
                     EmpresaDB(id=2, nome="Outra", slug="outra")])
@@ -68,7 +85,7 @@ def contexto(monkeypatch):
         ])
         db.add(ProdutoDB(id=20, empresa_id=2, nome="Alheio", unidade="UN",
                          custo_final=10, situacao="Ativo"))
-        venda = PedidoDB(id=1, empresa_id=1, numero="VEN-1", status="ABERTO",
+        venda = PedidoDB(id=1, empresa_id=1, numero="VEN-1", status="APROVADO",
                          cliente_id=1, perfil_comercial="VAREJO",
                          total=600, total_final=600)
         venda.itens = [PedidoItemDB(
@@ -110,7 +127,7 @@ def preparar(db, tenant):
     return op
 
 
-@pytest.mark.parametrize("status", ["ABERTO", "CONCLUIDO", "FATURADO"])
+@pytest.mark.parametrize("status", ["APROVADO"])
 def test_confirmacao_explicita_sem_alterar_comercial(contexto, status):
     db, tenant, venda, _, _ = contexto
     venda.status = status
@@ -130,7 +147,7 @@ def test_confirmacao_explicita_sem_alterar_comercial(contexto, status):
     assert venda.total_final == Decimal("600.00")
 
 
-@pytest.mark.parametrize("status", ["ABERTO", "FATURADO", "CONCLUIDO"])
+@pytest.mark.parametrize("status", ["APROVADO"])
 def test_status_comercial_nao_substitui_autorizacao_explicita(contexto, status):
     db, tenant, venda, *_ = contexto
     venda.status = status
@@ -401,7 +418,7 @@ def test_recupera_cortes_e_insumos_recalculados_por_peca(contexto):
     db.get(ProdutoDB, 1).custo_final = 100
     db.flush()
     assert service.serializar(db, op)["calculos_por_peca"] == congelado
-    assert venda.status == "ABERTO" and venda.total_final == Decimal("600.00")
+    assert venda.status == "APROVADO" and venda.total_final == Decimal("600.00")
     with pytest.raises(ValueError, match="já liberada"):
         service.liberar(db, op.id, tenant, True)
     with pytest.raises(ValueError, match="imutável"):
@@ -493,6 +510,10 @@ def test_ambiente_preservado_na_conversao_de_orcamento_e_na_op(contexto):
     assert pedido["status"] == "ABERTO"
     assert pedido["itens"][0]["ambiente"] == "Quarto"
     pedido_id = pedido["id"]
+    pedido_service.atualizar(
+        db, pedido_id, tenant,
+        PedidoUpdate(status="APROVADO"),
+    )
     service.aprovar_fabricacao(db, pedido_id, tenant)
     service.liberar_pedido_fabricacao(db, pedido_id, tenant)
     ordem = service.criar(db, pedido_id, tenant, True)
@@ -690,6 +711,30 @@ def test_sem_escrita_estoque_financeiro_ou_status_comercial(contexto):
     db.commit()
     assert escritas
     assert all("ordens_producao" in sql or "producao_pecas" in sql for sql in escritas)
-    assert venda.status == "ABERTO" and venda.total_final == Decimal("600.00")
+    assert venda.status == "APROVADO" and venda.total_final == Decimal("600.00")
     assert db.get(ProdutoDB, 1).estoque_atual == 50
     assert db.get(ProdutoDB, 1).saldo_metros == 80
+
+
+@pytest.mark.parametrize(
+    "status", ["ABERTO", "FATURADO", "CONCLUIDO", "CANCELADO"]
+)
+def test_nova_fabricacao_exige_venda_aprovada(contexto, status):
+    db, tenant, venda, *_ = contexto
+    venda.status = status
+    db.flush()
+
+    for operacao in (
+        service.aprovar_fabricacao,
+        service.liberar_pedido_fabricacao,
+    ):
+        with pytest.raises(ValueError, match="situacao|situa|aprovadas"):
+            operacao(db, venda.id, tenant)
+
+    with pytest.raises(ValueError, match="situacao|situa|aprovadas"):
+        service.criar(db, venda.id, tenant, True)
+
+    assert venda.producao_aprovado_em is None
+    assert venda.producao_liberado_em is None
+    assert service.listar(db, venda.id, tenant) == []
+    assert venda.status == status

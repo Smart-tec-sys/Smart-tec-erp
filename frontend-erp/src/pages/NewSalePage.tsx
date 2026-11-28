@@ -1,3 +1,6 @@
+import { BudgetPaymentSection, paymentPlanIsConsistent, type BudgetPaymentState } from '../components/BudgetPaymentSection'
+import { decimalSum, commercialPercentage, commercialNet, commercialBankTotal, commercialDifference } from '../utils/commercialDecimal'
+import { commercialSubtotal } from '../types/budget'
 import { commercialDisplayText } from '../utils/commercialDisplay'
 import { curtainKey } from "../types/budget"
 import { technicalItemData } from '../utils/technicalSimulation'
@@ -7,12 +10,14 @@ import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowLeft, FileText, Loader2, PackagePlus, Plus, ReceiptText, UserPlus, WalletCards, X } from 'lucide-react'
 import { BudgetProductRow } from '../components/BudgetProductRow'
+import { RoloAccessoriesPanel } from '../components/RoloAccessoriesPanel'
+import { createRoloAccessoryProduct } from '../utils/roloAccessory'
 import { BudgetServiceRow } from '../components/BudgetServiceRow'
 import { BudgetSummary } from '../components/BudgetSummary'
 import { createClient, createOrder, getAllProducts, getClients, getCommercialPartners, getFuncionariosCadastro, getRepresentatives,
   type ApiCommercialPartner, type ApiRepresentative, type ApiOrder, type OrderCreate } from '../services/api'
 import { listarServicos, type Servico } from '../services/servicos'
-import { commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, roundHalfUp,
+import { applySuggestedProductPrice, commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, roundHalfUp,
   type ApiClient, type ApiProduct, type BudgetProduct, type BudgetService, type CommercialProfile, type CurtainState } from '../types/budget'
 import { romanaKey, type RomanaState } from '../types/romana'
 import { romanaTetoKey, type RomanaTetoState } from '../types/romana_teto'
@@ -29,6 +34,7 @@ const CREATE_CLIENT_VALUE = '__CREATE_CLIENT__'
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 
 export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: (sale: ApiOrder) => void }) {
+  const [clientSearch,setClientSearch]=useState('')
   const [clients, setClients] = useState<ApiClient[]>([])
   const [catalog, setCatalog] = useState<ApiProduct[]>([])
   const [serviceCatalog, setServiceCatalog] = useState<Servico[]>([])
@@ -79,6 +85,14 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
   const [includeBankFee, setIncludeBankFee] = useState(false)
   const [bankFeePercent, setBankFeePercent] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
+  const [payment, setPayment] = useState<BudgetPaymentState>({
+    mode: '',
+    count: 1,
+    intervalDays: 30,
+    firstDueDate: today(),
+    defaultPaymentMethodId: 0,
+    installments: [],
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -105,7 +119,10 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
   }, [profile, catalog])
   const onRomana = useCallback((id: number, state: RomanaState) => setProducts(rows => rows.map(p => p.id === id ? { ...p, romana: state, price: Number(state.result?.preco_unitario ?? p.price) } : p)), [])
   const onRomanaTeto = useCallback((id: number, state: RomanaTetoState) => setProducts(rows => rows.map(p => p.id === id ? { ...p, romanaTeto: state, price: Number(state.result?.preco_unitario ?? p.price) } : p)), [])
-  const onRolo = useCallback((id: number, state: RoloState) => setProducts(rows => rows.map(p => p.id === id ? { ...p, rolo: state, price: Number(state.result?.preco_unitario ?? p.price) } : p)), [])
+  const onRolo = useCallback((id: number, state: RoloState) => setProducts(rows => rows.map(p =>
+    p.id === id && state.key === roloKey(p, profileLabel[profile])
+      ? applySuggestedProductPrice({ ...p, rolo: state }, state.result?.preco_disponivel ? state.result.preco_unitario : undefined)
+      : p)), [profile])
   const onDoubleVision = useCallback((id: number, state: DoubleVisionState) => setProducts(rows => rows.map(p => p.id === id ? { ...p, doubleVision: state, price: Number(state.result?.preco_unitario ?? p.price) } : p)), [])
   const onCurtain = useCallback((id: number, state: CurtainState) => setProducts(rows => rows.map(p => p.id === id ? { ...p, color: state.cor, curtain: state, price: Number(state.result?.preco_unitario ?? p.price) } : p)), [])
 
@@ -208,14 +225,14 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
   }
   function addProduct() { const row = emptyProduct(nextId.current++); setProducts(rows => [...rows, row]) }
   function addService() { const row: BudgetService = { id: nextId.current++, service: '', details: '', quantity: 1, value: 0, discount: 0, unit: 'UN', priceManual: true }; setServices(rows => [...rows, row]) }
-  const productsTotal = roundHalfUp(products.reduce((sum, p) => sum + productLineSubtotal(p,profileLabel[profile]), 0))
-  const servicesTotal = roundHalfUp(services.reduce((sum, s) => sum + roundHalfUp(Math.max(0, s.quantity * s.value - s.discount)), 0))
-  const internalValue = roundHalfUp(Math.max(0, productsTotal + servicesTotal - discount))
-  const partnerValue = partnerId ? roundHalfUp(internalValue * partnerPercent / 100) : 0
+  const productsTotal = decimalSum(products.map(p => productLineSubtotal(p,profileLabel[profile])))
+  const servicesTotal = decimalSum(services.map(s => commercialSubtotal(s.quantity, s.value, s.discount)))
+  const internalValue = commercialNet(decimalSum([productsTotal, servicesTotal]), discount)
+  const partnerValue = partnerId ? commercialPercentage(internalValue, partnerPercent) : 0
   const rtEnabled = representativeId !== null && includeRt
-  const rtAmount = rtEnabled ? roundHalfUp(rtType === 'PERCENTUAL' ? internalValue * rtPercent / 100 : rtValue) : 0
-  const base = roundHalfUp(internalValue + partnerValue + rtAmount)
-  const clientTotal = includeBankFee && bankFeePercent > 0 && bankFeePercent < 100 ? roundHalfUp(base / (1 - bankFeePercent / 100)) : base
+  const rtAmount = rtEnabled ? (rtType === 'PERCENTUAL' ? commercialPercentage(internalValue, rtPercent) : roundHalfUp(rtValue)) : 0
+  const base = decimalSum([internalValue, partnerValue, rtAmount])
+  const clientTotal = includeBankFee && bankFeePercent > 0 && bankFeePercent < 100 ? commercialBankTotal(base, bankFeePercent) : base
   const pending = products.some(p =>
     (p.romanaKind && (p.romanaKind === 'MOTORIZADA' || p.romana?.key !== romanaKey(p, profileLabel[profile]) || p.romana?.error || !p.romana?.result?.preco_disponivel)) ||
     (p.romanaTetoKind && (p.romanaTetoKind === 'MOTORIZADA' || p.romanaTeto?.key !== romanaTetoKey(p, profileLabel[profile]) || p.romanaTeto?.error || !p.romanaTeto?.result?.preco_disponivel)) ||
@@ -239,7 +256,23 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
     if (includeRt && representativeId === null) { setError('Selecione um representante para informar RT.'); return }
     if (rtEnabled && (rtType === 'PERCENTUAL' ? rtPercent <= 0 || rtPercent > 100 : rtValue <= 0)) { setError('Informe um RT válido e maior que zero.'); return }
     if (includeBankFee && (bankFeePercent < 0 || bankFeePercent >= 100)) { setError('Taxa bancária deve ficar entre 0 e menos de 100%.'); return }
+    if (!paymentPlanIsConsistent(clientTotal, payment)) {
+      setError('Revise as parcelas e o total do cliente.')
+      return
+    }
+
     const payload: OrderCreate = {
+      pagamento_modalidade: payment.mode || null,
+      pagamento_numero_parcelas: payment.mode ? payment.installments.length : null,
+      pagamento_intervalo_dias: payment.mode ? payment.intervalDays : null,
+      pagamento_primeiro_vencimento: payment.mode ? payment.firstDueDate : null,
+      pagamento_parcelas: payment.mode ? payment.installments.map(p => ({
+        numero: p.numero,
+        tipo: p.tipo,
+        valor: p.valor,
+        vencimento: p.vencimento,
+        forma_pagamento_id: p.forma_pagamento_id
+      })) : null,
       cliente_id: saleType === 'DIRETA' ? clientId : null, parceiro_id: saleType === 'PARCEIRO' ? partnerId : null,
       vendedor_id: sellerId, representante_id: representativeId,
       cliente_final_nome: saleType === 'PARCEIRO' ? partnerFinalClient.trim() || null : null,
@@ -256,12 +289,12 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
         ...products.map(p => ({ tipo_item: 'PRODUTO', produto_id: p.productId, descricao: p.product, codigo_interno: p.code || null,
           grupo_tecnico: p.groupTechnical || null, modelo_tecnico: p.modelTechnical || null, unidade: p.unit || null,
           quantidade: p.quantity, largura: parseDecimal(p.width), altura: parseDecimal(p.height), area: parseDecimal(p.width) * parseDecimal(p.height) * p.quantity,
-          preco_unitario: p.price, desconto: p.discount, subtotal: productLineSubtotal(p,profileLabel[profile]), observacao_item: p.details || null, ambiente: p.environment.trim() || null, cor: p.color || null,
+          preco_unitario: p.price, preco_unitario_manual: Boolean(p.priceManual), desconto: p.discount, subtotal: productLineSubtotal(p,profileLabel[profile]), observacao_item: p.details || null, ambiente: p.environment.trim() || null, cor: p.color || null,
           acionamento: p.acao_acionamento || p.acionamento || null, lado_comando: p.lado_comando || null,
           dados_tecnicos: technicalItemData(p) })),
         ...services.map(s => ({ tipo_item: 'SERVICO', produto_id: null, servico_id: s.serviceId ?? null, descricao: s.service.trim(), unidade: s.unit || 'UN', quantidade: s.quantity,
           largura: 0, altura: (s.heightCm || 0) / 100, area: 0, preco_unitario: s.value, preco_unitario_manual: s.priceManual ?? true, desconto: s.discount,
-          subtotal: Math.max(0, s.quantity * s.value - s.discount), observacao_item: s.details || null })),
+          subtotal: commercialSubtotal(s.quantity, s.value, s.discount), observacao_item: s.details || null })),
       ],
     }
     savingRef.current = true; setSaving(true)
@@ -272,7 +305,7 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
 
   if (loading) return <div className="panel loading-state">Carregando nova venda...</div>
   if (loadError) return <div className="panel"><button className="back-button" onClick={onBack}>← Voltar para Vendas</button><p className="api-message error" role="alert">{loadError}</p></div>
-  return <div className="new-budget-page" onFocusCapture={selectZeroOnFocus}>
+  return <div className="new-budget-page budget-edit-page" onFocusCapture={selectZeroOnFocus}>
     <section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack} disabled={saving}><ArrowLeft size={15} /> Voltar para Vendas</button><p className="eyebrow">VENDA COMERCIAL</p><h1 className="commercial-title">Nova venda <span className="draft-badge">Em aberto</span></h1><p className="heading-subtitle">Preencha os dados comerciais, os itens e confira o resumo antes de salvar.</p></div><div className="budget-number"><span>Número da venda</span><strong>Gerado ao salvar</strong></div></section>
     {warning && <div className="api-message" role="status">{warning}</div>}
     {error && <div className="api-message error" role="alert">{error}</div>}
@@ -299,9 +332,10 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
               <>
                 <Field label="Cliente">
                   <div className="product-search-box">
+                    <input type="search" aria-label="Pesquisar cliente" placeholder="Pesquisar cliente por nome ou documento" value={clientSearch} onChange={e => setClientSearch(e.target.value)} autoComplete="off" />
                     <select value={clientId ?? 0} onChange={e => handleClientSelectChange(e.target.value)}>
                       <option value={0}>Selecione o cliente</option>
-                      {clients.map(c => <option key={c.id} value={c.id}>{commercialDisplayText(c.nome)}</option>)}
+                      {clients.filter(c => c.id === clientId || !clientSearch.trim() || [c.nome,c.documento].some(v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(clientSearch.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()))).map(c => <option key={c.id} value={c.id}>{commercialDisplayText(c.nome)}</option>)}
                       <option value={CREATE_CLIENT_VALUE}>+ Cadastrar novo cliente</option>
                     </select>
                   </div>
@@ -511,11 +545,29 @@ export function NewSalePage({ onBack, onSaved }: { onBack: () => void; onSaved: 
         </Section>
         <Section title="Dados da venda" subtitle="Venda manual, sem vínculo com orçamento de origem." icon={<FileText size={17} />}><div className="form-grid general-grid"><Field label="Situação"><input value="Em aberto" readOnly /></Field><Field label="Data da venda"><input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} /></Field><Field label="Prazo de entrega"><input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} /></Field><Field label="Canal de venda"><input maxLength={100} value={channel} onChange={e => setChannel(e.target.value)} /></Field></div></Section>
 
-        <Section title="Produtos" subtitle="Selecione produtos e configure suas medidas e detalhes." icon={<PackagePlus size={17} />}><div className="product-rows">{products.map(p => <BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={attempted} onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={updateProduct} onRemove={() => setProducts(rows => rows.filter(row => row.id !== p.id))} />)}</div><button type="button" className="secondary-button add-product" onClick={addProduct}><Plus size={16} /> Adicionar produto</button></Section>
+
+        <Section title="Produtos" subtitle="Selecione produtos e configure suas medidas e detalhes." icon={<PackagePlus size={17} />}><div className="product-rows">{products.map(p => <BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={attempted} allowManualPrice compactMotorHelp onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={updateProduct} onRemove={() => setProducts(rows => rows.filter(row => row.id !== p.id))} />)}</div><button type="button" className="secondary-button add-product" onClick={addProduct}><Plus size={16} /> Adicionar produto</button></Section>
+<RoloAccessoriesPanel products={products} profile={profile} onAdd={(item, ambiente) => {
+          try {
+            const next = createRoloAccessoryProduct(item, catalog, profileLabel[profile], nextId.current++, ambiente)
+            setProducts(rows => [...rows, next])
+          } catch (e) { setError(e instanceof Error ? e.message : String(e)) }
+        }}/>
+
         <Section title="Serviços" subtitle="Selecione um serviço do catálogo ou informe um serviço livre; preços e descontos podem ser negociados." icon={<ReceiptText size={17} />}>{serviceCatalogError&&<p className="api-message error" role="alert">Catálogo de serviços indisponível: {serviceCatalogError}. Ainda é possível salvar serviços livres.</p>}<div className="service-rows">{services.map(s => <BudgetServiceRow key={s.id} service={s} catalogServices={serviceCatalog} onChange={next => setServices(rows => rows.map(row => row.id === next.id ? next : row))} onRemove={() => setServices(rows => rows.filter(row => row.id !== s.id))} />)}</div><button type="button" className="secondary-button add-product" onClick={addService}><Plus size={16} /> Adicionar serviço</button></Section>
+        <Section title="Pagamento"
+          subtitle="Condições comerciais e parcelas da venda."
+          icon={<WalletCards size={17} />}>
+          <BudgetPaymentSection
+            total={clientTotal}
+            value={payment}
+            onChange={setPayment}
+          />
+        </Section>
+
         <Section title="Observações" subtitle="Informações da venda e notas de uso interno." icon={<FileText size={17} />}><div className="budget-observations-grid"><Field label="Observações"><textarea value={observation} onChange={e => setObservation(e.target.value)} /></Field><Field label="Observação interna"><textarea value={internalObservation} onChange={e => setInternalObservation(e.target.value)} /></Field></div></Section>
       </fieldset>
-      <BudgetSummary products={productsTotal} services={servicesTotal} freight={0} showFreight={false} discount={discount} onDiscount={value => { if (!savingRef.current) setDiscount(value) }} includeBankFee={includeBankFee} onIncludeBankFee={value => { if (!savingRef.current) setIncludeBankFee(value) }} bankFeePercent={bankFeePercent} onBankFeePercent={value => { if (!savingRef.current) setBankFeePercent(value) }} internalValue={internalValue} partnerValue={partnerValue} rtValue={rtAmount} bankFeeValue={roundHalfUp(clientTotal-base)} clientTotal={clientTotal} onCancel={() => { if (!savingRef.current) onBack() }} onSave={() => void save()} saving={saving} saveLabel="Salvar venda" isCollapsed={collapsed} onToggle={() => setCollapsed(value => !value)} />
+      <BudgetSummary products={productsTotal} services={servicesTotal} freight={0} showFreight={false} discount={discount} onDiscount={value => { if (!savingRef.current) setDiscount(value) }} includeBankFee={includeBankFee} onIncludeBankFee={value => { if (!savingRef.current) setIncludeBankFee(value) }} bankFeePercent={bankFeePercent} onBankFeePercent={value => { if (!savingRef.current) setBankFeePercent(value) }} internalValue={internalValue} partnerValue={partnerValue} rtValue={rtAmount} bankFeeValue={commercialDifference(clientTotal, base)} clientTotal={clientTotal} onCancel={() => { if (!savingRef.current) onBack() }} onSave={() => void save()} saving={saving} saveLabel="Salvar venda" isCollapsed={collapsed} onToggle={() => setCollapsed(value => !value)} />
     </div>
     {commercialRegistration && <CommercialRegistrationDialog entity={commercialRegistration} onClose={() => setCommercialRegistration(null)} onCreated={record => {
       if (commercialRegistration === 'revenda') { setPartners(rows => [record, ...rows]); setPartnerId(record.id); setPartnerPercent(Number(record.percentual_padrao ?? 0)) }

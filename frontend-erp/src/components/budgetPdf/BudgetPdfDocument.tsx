@@ -41,7 +41,7 @@ function ItemTable({ items, prices, services = false, finalPrices = false }: { i
 function Summary({ data }: { data: BudgetPdfData }) {
   const f = data.finance
   const rows: Array<[string, number | null]> = f.kind === 'customer'
-    ? [['Total cliente final', f.customerTotal]]
+    ? [['VALOR TOTAL', f.customerTotal]]
     : f.kind === 'direct'
       ? [['Subtotal', f.total], ...(f.discount != null && f.discount > 0 ? [['Desconto', f.discount] as [string, number | null]] : []), ['Total', f.finalTotal]]
       : [['Valor-base Smart-tec', f.smartTotal], [`Acréscimo parceiro / revenda${f.resellerPercent != null ? ` (${f.resellerPercent.toLocaleString('pt-BR')}%)` : ''}`, f.resellerValue], ...(f.kind==='internal'&&f.rt !== null ? [['RT', f.rt] as [string, number | null]] : []), ...(f.kind==='internal'&&f.bankFee !== null ? [['Taxa bancária', f.bankFee] as [string, number | null]] : []), ['Total cliente final', f.customerTotal]]
@@ -55,7 +55,9 @@ function Summary({ data }: { data: BudgetPdfData }) {
 
 export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfData }) {
   const visibility = budgetFinancialVisibility(data.mode)
-  return <Document title={`ORÇAMENTO ${data.number}`} author={display(data.company)} subject={data.mode === 'reseller_internal' ? 'Interno Smart-tec' : data.mode==='reseller_commercial'?'Comercial da revenda':'Proposta comercial'}>
+  const isSale = data.documentKind === 'sale'
+  const documentTitle = isSale ? 'VENDA' : 'ORÇAMENTO'
+  return <Document title={`${documentTitle} ${data.number}`} author={display(data.company)} subject={data.mode === 'reseller_internal' ? 'Interno Smart-tec' : data.mode==='reseller_commercial'?'Comercial da revenda':'Proposta comercial'}>
     <Page size="A4" style={s.page} wrap>
       <View style={s.header} wrap={false}>
         <View style={s.logoBlock}>
@@ -74,10 +76,10 @@ export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfDat
         </View>
       </View>
       <View style={s.documentMeta} wrap={false}>
-        <Text style={s.title}>ORÇAMENTO Nº {data.number}</Text>
+        <Text style={s.title}>{documentTitle} Nº {data.number}</Text>
         <View style={s.meta}>
           <Text>DATA: {data.date}</Text>
-          <Text>VALIDADE: {data.validity}</Text>
+          {!isSale && <Text>VALIDADE: {data.validity}</Text>}
           {(data.mode === 'direct'||data.mode === 'reseller_internal') && <Text>TABELA COMERCIAL: {display(data.commercialTable)}</Text>}
         </View>
       </View>
@@ -128,10 +130,10 @@ export function BudgetPdfDocument({ data }: DocumentProps & { data: BudgetPdfDat
             <Text style={s.acceptanceText}>DATA: ____ / ____ / ______</Text>
           </View>
         </View>
-        {data.validity !== '—' && <Text style={s.acceptanceText}>Proposta válida até {data.validity}.</Text>}
+        {!isSale && data.validity !== '—' && <Text style={s.acceptanceText}>Proposta válida até {data.validity}.</Text>}
       </View>
       <View style={s.footer} fixed>
-        <Text>{[display(data.company), `ORÇAMENTO ${data.number}`].filter(Boolean).join(' · ')}</Text>
+        <Text>{[display(data.company), `${documentTitle} ${data.number}`].filter(Boolean).join(' · ')}</Text>
         <Text render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} />
       </View>
     </Page>

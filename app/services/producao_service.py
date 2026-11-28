@@ -20,7 +20,7 @@ from app.models.producao import (
 from app.tenant.isolation import require_tenant
 
 STATUS = ("AGUARDANDO", "CORTE", "MONTAGEM", "CONFERENCIA", "CONCLUIDA")
-VENDAS_PERMITIDAS = {"ABERTO", "FATURADO", "CONCLUIDO"}
+VENDAS_PERMITIDAS = {"APROVADO", "FATURADO", "CONCLUIDO"}
 BLOQUEIOS_MODELOS = {
     "ROLO": "Rolô manual: falta BOM industrial validada com vínculos/equivalências reais para tecido, tubo 32/38, fita do tubo, base, fita/espaguete da base, corrente, emenda, tampas e comando; consumo e cortes precisam de validação industrial.",
     "DOUBLE VISION": "Double Vision manual: falta BOM industrial validada com vínculos/equivalências reais para tecidos, tubo selecionado, comando, eixo/base, tampas, grapas, barra estabilizadora ou bandô, espaguete, fita, corrente, emenda e pêndulo.",
@@ -49,7 +49,42 @@ def _venda(db, pedido_id, empresa_id):
     return pedido
 
 
+
+def _exigir_carga_rolo_validada(pedido):
+    for item in pedido.itens:
+        dados = getattr(item, "dados_tecnicos", None) or {}
+
+        if not isinstance(dados, dict):
+            continue
+
+        rolo = dados.get("rolo") or {}
+
+        if not isinstance(rolo, dict):
+            continue
+
+        motor = rolo.get("motor") or {}
+
+        pendente = (
+            rolo.get("carga_pendente") is True
+            or (
+                isinstance(motor, dict)
+                and (
+                    motor.get("carga_pendente") is True
+                    or motor.get("status_validacao_carga") == "PENDENTE"
+                )
+            )
+        )
+
+        if pendente:
+            raise ValueError(
+                f"Item {item.id}: Rolô motorizada com "
+                "capacidade de carga pendente de confirmacao "
+                "tecnica. Fabricacao bloqueada."
+            )
+
+
 def _exigir_pedido_autorizado(pedido):
+    _exigir_carga_rolo_validada(pedido)
     if pedido.producao_aprovado_em is None:
         raise ValueError("Aprovação explícita do pedido é necessária para fabricação.")
     if pedido.producao_liberado_em is None:
@@ -131,6 +166,13 @@ def aprovar_fabricacao(db, pedido_id, tenant):
     empresa_id = require_tenant(tenant)
     usuario = _usuario(tenant)
     pedido = _venda(db, pedido_id, empresa_id)
+    if pedido.status != "APROVADO":
+        raise ValueError(
+            "Somente vendas aprovadas podem iniciar "
+            "uma nova fabricacao."
+        )
+
+    _exigir_carga_rolo_validada(pedido)
     _nome_cliente(db, pedido, empresa_id)
     if pedido.producao_aprovado_em is not None:
         raise ValueError("Venda já aprovada para fabricação.")
@@ -148,6 +190,13 @@ def liberar_pedido_fabricacao(db, pedido_id, tenant):
     empresa_id = require_tenant(tenant)
     usuario = _usuario(tenant)
     pedido = _venda(db, pedido_id, empresa_id)
+    if pedido.status != "APROVADO":
+        raise ValueError(
+            "Somente vendas aprovadas podem iniciar "
+            "uma nova fabricacao."
+        )
+
+    _exigir_carga_rolo_validada(pedido)
     _nome_cliente(db, pedido, empresa_id)
     if pedido.producao_aprovado_em is None:
         raise ValueError("Aprovação explícita do pedido é necessária antes da liberação.")
@@ -167,6 +216,12 @@ def criar(db, pedido_id, tenant, confirmar):
     if confirmar is not True:
         raise ValueError("Confirme explicitamente a fabricação da venda.")
     pedido = _venda(db, pedido_id, empresa_id)
+    if pedido.status != "APROVADO":
+        raise ValueError(
+            "Somente vendas aprovadas podem iniciar "
+            "uma nova fabricacao."
+        )
+
     _exigir_pedido_autorizado(pedido)
     if listar(db, pedido_id, tenant):
         raise ValueError("Esta venda já possui ordem de produção; não é permitido duplicar peças.")

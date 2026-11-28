@@ -1,3 +1,4 @@
+import { moneyToCents } from '../utils/commercialDecimal'
 import { useEffect, useMemo, useState } from 'react'
 import { listFinanceRecords, type FinanceRecord } from '../services/api'
 import { formatCurrency, type BudgetPaymentInstallment, type PaymentMode } from '../types/budget'
@@ -17,7 +18,7 @@ const addDays = (date: string, days: number) => {
   return value.toISOString().slice(0, 10)
 }
 
-const cents = (value: number) => Math.round(value * 100)
+const cents = moneyToCents
 
 export function BudgetPaymentSection({ total, value, onChange }: {
   total: number

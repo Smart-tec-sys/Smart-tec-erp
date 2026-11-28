@@ -15,7 +15,10 @@ import {
 import { formatCurrency, type ApiClient } from '../types/budget'
 import './saleDetailPage.css'
 import { ProducaoPanel } from '../components/ProducaoPanel'
-import { producaoV1Enabled } from '../services/producaoFlag'
+import { saleProductionEnabled, saleProductionReason } from '../services/saleProduction'
+import { prepareSavedSalePdf } from '../services/salePdf'
+import { downloadBudgetPdf } from '../services/budgetPdf'
+import type { BudgetPdfMode } from '../services/budgetPdfData'
 
 type Props = { saleId: number; onBack: () => void }
 
@@ -53,7 +56,7 @@ function statusLabel(status?: string | null) {
   if (!status?.trim()) return '—'
   const value = status.toUpperCase()
   const labels: Record<string, string> = {
-    ABERTO: 'Em aberto', CONCLUIDO: 'Concluído', CANCELADO: 'Cancelado', FATURADO: 'Faturado',
+    ABERTO: 'Em aberto', APROVADO: 'Aprovado', CONCLUIDO: 'Concluído', CANCELADO: 'Cancelado', FATURADO: 'Faturado',
   }
   return labels[value] ?? value.replaceAll('_', ' ')
 }
@@ -74,20 +77,21 @@ function SaleItems({ items, services = false }: { items: ApiOrder['itens']; serv
         <span className="product-row-index">{index + 1}</span>
         <strong>{commercialDisplayText(text(item.descricao), [item.codigo_interno || ''])}</strong>
       </div>
-      <div className={services ? 'service-fields' : 'product-fields'}>
+      <div className={services ? 'service-fields' : 'product-fields sale-product-fields'}>
         <ReadOnlyField label={services ? 'Serviço' : 'Produto'} value={text(item.descricao)} preservedValues={[item.codigo_interno || '']} />
-        <ReadOnlyField label="Código" value={text(item.codigo_interno)} />
+
         <ReadOnlyField label="Detalhe" value={text(item.observacao_item)} />
         <ReadOnlyField label="Quant." value={numberLabel(item.quantidade)} />
         <ReadOnlyField label="Unidade" value={text(item.unidade)} />
-        <ReadOnlyField label="Largura" value={numberLabel(item.largura)} />
-        <ReadOnlyField label="Altura" value={numberLabel(item.altura)} />
+        {(Number(item.largura) > 0 || Number(item.altura) > 0) && <ReadOnlyField label="Largura" value={numberLabel(item.largura)} />}
+        {(Number(item.largura) > 0 || Number(item.altura) > 0) && <ReadOnlyField label="Altura" value={numberLabel(item.altura)} />}
         <ReadOnlyField label="Valor unitário" value={moneyLabel(item.preco_unitario)} />
         <ReadOnlyField label="Desconto" value={moneyLabel(item.desconto)} />
         <div className="product-subtotal"><span>Subtotal</span><strong>{moneyLabel(item.subtotal)}</strong></div>
       </div>
       <details className="sale-item-technical">
         <summary>Dados técnicos</summary>
+        <ReadOnlyField label="Código interno" value={text(item.codigo_interno)} />
         <div className="form-grid general-grid">
           <ReadOnlyField label="Grupo técnico" value={text(item.grupo_tecnico)} />
           <ReadOnlyField label="Modelo" value={text(item.modelo_tecnico)} />
@@ -114,6 +118,49 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
   const [notFound, setNotFound] = useState(false)
   const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(false)
   const [producaoAberta, setProducaoAberta] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfError, setPdfError] = useState('')
+  const [pdfWarning, setPdfWarning] = useState('')
+  const [pdfPreview, setPdfPreview] = useState<{
+    blob: Blob; filename: string
+  } | null>(null)
+  const [pdfUrl, setPdfUrl] = useState('')
+
+  useEffect(() => {
+    if (!pdfPreview) {
+      setPdfUrl('')
+      return
+    }
+    const url = URL.createObjectURL(pdfPreview.blob)
+    setPdfUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [pdfPreview])
+
+  useEffect(() => {
+    setPdfPreview(null)
+    setPdfWarning('')
+  }, [saleId])
+
+  async function openSalePdf(mode: BudgetPdfMode) {
+    if (!order || pdfLoading) return
+    setPdfLoading(true)
+    setPdfError('')
+    setPdfWarning('')
+    setPdfPreview(null)
+    try {
+      const result = await prepareSavedSalePdf(order.id, mode)
+      setPdfPreview({
+        blob: result.blob,
+        filename: result.filename
+      })
+      setPdfWarning(result.warnings.join(' '))
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
 
   useEffect(() => {
     let cancelled = false
@@ -179,10 +226,60 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
           </div>
           <div className="budget-number"><span>NÚMERO</span><strong>{order.numero || `#${order.id}`}</strong></div>
         </section>
-        {producaoV1Enabled && <button type="button" className="secondary-button" onClick={() => setProducaoAberta(value => !value)}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
+          {order.parceiro_id != null ? <>
+            <button type="button" className="secondary-button"
+              disabled={pdfLoading}
+              onClick={() => void openSalePdf('reseller_commercial')}>
+              PDF Revenda
+            </button>
+            <button type="button" className="secondary-button"
+              disabled={pdfLoading}
+              onClick={() => void openSalePdf('reseller_internal')}>
+              PDF Interno Smart-tec
+            </button>
+            <button type="button" className="primary-button"
+              disabled={pdfLoading}
+              onClick={() => void openSalePdf('reseller_client')}>
+              PDF Cliente Final
+            </button>
+          </> : <button type="button" className="primary-button"
+              disabled={pdfLoading}
+              onClick={() => void openSalePdf('direct')}>
+              PDF Cliente
+          </button>}
+          {pdfLoading && <span role="status">Gerando PDF...</span>}
+        </div>
+
+        {pdfError && <div role="alert" className="api-message error">{pdfError}</div>}
+
+        {pdfPreview && pdfUrl && (
+          <section className="panel" style={{padding:16,marginBottom:16}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:12}}>
+              <button type="button" className="secondary-button"
+                onClick={() => setPdfPreview(null)}>
+                Voltar à venda
+              </button>
+              <button type="button" className="primary-button"
+                onClick={() => downloadBudgetPdf(pdfPreview.blob,pdfPreview.filename)}>
+                Baixar PDF
+              </button>
+              <a href={pdfUrl} target="_blank"
+                rel="noopener noreferrer" className="secondary-button">
+                Abrir para imprimir
+              </a>
+            </div>
+            {pdfWarning && <p role="status">{pdfWarning}</p>}
+            <iframe src={pdfUrl}
+              title="Visualização do PDF da venda"
+              style={{width:'100%',height:'70vh',border:'1px solid #ddd',borderRadius:6}} />
+          </section>
+        )}
+
+        {saleProductionEnabled && <button type="button" className="secondary-button" disabled={Boolean(saleProductionReason(order))} title={saleProductionReason(order)} onClick={() => setProducaoAberta(value => !value)}>
           {producaoAberta ? 'Fechar produção' : 'Abrir produção V1'}
         </button>}
-        {producaoV1Enabled && producaoAberta && <ProducaoPanel key={order.id} pedidoId={order.id} statusVenda={order.status || ''} />}
+        {saleProductionEnabled && !saleProductionReason(order) && producaoAberta && <ProducaoPanel key={order.id} pedidoId={order.id} statusVenda={order.status || ''} />}
         <div className={`new-budget-layout ${isSummaryCollapsed ? 'summary-collapsed' : ''}`}>
           <div className="new-budget-main">
             <BudgetSection icon={<FileText size={17}/>} title="Dados da venda" subtitle="Número, cliente, vendedor, situação e datas.">
@@ -224,7 +321,47 @@ export function SaleDetailPage({ saleId, onBack }: Props) {
               </div>
             </BudgetSection>
             <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Informações de pagamento da venda.">
-              <div className="api-message">Forma de pagamento não definida.</div>
+              {order.pagamento_parcelas?.length ? <>
+                <div className="form-grid relationship-grid">
+                  <ReadOnlyField label="Condição de pagamento"
+                    value={order.pagamento_modalidade === 'AVISTA'
+                      ? 'À vista'
+                      : order.pagamento_modalidade === 'ENTRADA_SALDO'
+                        ? 'Entrada + saldo' : 'Parcelado'} />
+
+                  <ReadOnlyField label="Quantidade de parcelas"
+                    value={String(order.pagamento_parcelas.length)} />
+
+                  <ReadOnlyField label="Total do cliente"
+                    value={moneyLabel(order.total_cliente_final)} />
+                </div>
+
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Parcela</th>
+                        <th>Vencimento</th>
+                        <th>Forma de pagamento</th>
+                        <th>Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {order.pagamento_parcelas.map(p => (
+                        <tr key={p.id}>
+                          <td>{p.tipo === 'ENTRADA' ? 'Entrada'
+                            : p.tipo === 'SALDO' ? 'Saldo' : p.numero}</td>
+                          <td>{p.vencimento.slice(0,10).split('-').reverse().join('/')}</td>
+                          <td>{p.forma_pagamento_nome || '—'}</td>
+                          <td>{moneyLabel(p.valor)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </> : <div className="api-message">
+                Forma de pagamento não definida.
+              </div>}
             </BudgetSection>
             <BudgetSection icon={<FileText size={17}/>} title="Observações" subtitle="Informações para o cliente e anotações internas da equipe.">
               <div className="budget-observations-grid">

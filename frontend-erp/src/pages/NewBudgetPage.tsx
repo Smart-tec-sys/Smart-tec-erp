@@ -1,21 +1,29 @@
+import { commercialSubtotal } from '../types/budget'
+import { commercialNet } from '../utils/commercialDecimal'
+import { decimalSum, commercialPercentage, commercialBankTotal, commercialDifference } from '../utils/commercialDecimal'
+import { roundHalfUp } from '../types/budget'
 import { commercialDisplayText } from '../utils/commercialDisplay'
 import { curtainKey } from "../types/budget"
 import { technicalItemData } from '../utils/technicalSimulation'
 import { ZeroNumberInput } from '../components/ZeroNumberInput'
 import { selectZeroOnFocus } from '../utils/selectZeroOnFocus'
 import { CommercialRegistrationDialog, CREATE_COMMERCIAL_VALUE, type CommercialRegistration } from '../components/CommercialRegistrationDialog'
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, PackagePlus, Plus, ReceiptText, Truck, WalletCards, X, Loader2, UserPlus, LayoutDashboard } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, PackagePlus, Plus, ReceiptText, Truck, WalletCards, X, Loader2, LayoutDashboard } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { romanaKind, romanaKey, type RomanaState } from '../types/romana'
 import { romanaTetoKind, romanaTetoKey, type RomanaTetoState } from '../types/romana_teto'
-import { roloKind, roloKey, type RoloState } from '../types/rolo'
+import { roloKind, roloKey, normalizeRoloDrive, type RoloState } from '../types/rolo'
 import { doubleVisionKind, doubleVisionKey, type DoubleVisionState } from '../types/double_vision'
 import { BudgetProductRow } from '../components/BudgetProductRow'
+import { BudgetClientPicker } from '../components/BudgetClientPicker'
+import { CadastroClienteDialog } from './CadastrosPage'
+import { RoloAccessoriesPanel } from '../components/RoloAccessoriesPanel'
+import { createRoloAccessoryProduct } from '../utils/roloAccessory'
 import { BudgetServiceRow } from '../components/BudgetServiceRow'
 import { BudgetSummary } from '../components/BudgetSummary'
 import { BudgetPaymentSection, paymentPlanIsConsistent, type BudgetPaymentState } from '../components/BudgetPaymentSection'
-import { createBudget, getAllProducts, getBudget, getClients, updateBudget, createClient, createProduct, getProductGroups, getProductUnits, convertBudgetToOrder, getCommercialPartners, getRepresentatives, getFuncionariosCadastro, type ApiOrder, type ApiCommercialPartner, type ApiRepresentative, type CadastroRecord } from '../services/api'
-import { listarServicos, type Servico } from '../services/servicos'
+import { createBudget, getAllProducts, getBudget, getClients, updateBudget, createProduct, getProductGroups, getProductUnits, convertBudgetToOrder, getCommercialPartners, getRepresentatives, getFuncionariosCadastro, type ApiOrder, type ApiCommercialPartner, type ApiRepresentative, type CadastroRecord } from '../services/api'
+import { listarServicos, precoServicoParaAltura, type Servico } from '../services/servicos'
 import { applySuggestedProductPrice, commercialPrice, emptyProduct, parseDecimal, productLineSubtotal, profileLabel, formatClientCompletenessMessage, getClientCompleteness, formatProductCompletenessMessage, getProductCompleteness, type ApiBudget, type ApiClient, type ApiProduct, type BudgetPayload, type BudgetProduct, type BudgetService, type CommercialProfile } from '../types/budget'
 import type { CurtainState } from '../types/budget'
 
@@ -46,9 +54,6 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
   const [converting,setConverting]=useState(false)
   const [convertedOrder,setConvertedOrder]=useState<ApiOrder|null>(null)
   const [showClientModal,setShowClientModal]=useState(false)
-  const [clientForm,setClientForm]=useState({tipo:'',nome:''})
-  const [clientModalError,setClientModalError]=useState('')
-  const [clientModalSaving,setClientModalSaving]=useState(false)
   const [showProductModal,setShowProductModal]=useState(false)
   const [editingProductId,setEditingProductId]=useState<number|null>(null)
   const [productForm,setProductForm]=useState({nome:'',grupo_produto:'',unidade_venda:'',valor_custo:''})
@@ -190,34 +195,57 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
       .catch(()=>undefined)
   },[budgetId])
  useEffect(()=>{let cancelado=false;void listarServicos('',false).then(items=>{if(!cancelado)setServiceCatalog(items)}).catch(e=>{if(!cancelado)setServiceCatalogError(e instanceof Error?e.message:String(e))});return()=>{cancelado=true}},[])
- useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);setCatalog(p);setClients(c);setProductGroups(g);setProductUnits(u);setInternalObservation(b?.observacao_interna??'');if(!budgetId)setClientId(0);if(b){if(b.perfil_comercial){setProfile(b.perfil_comercial);setProfileConfirmed(true)}else{setProfileConfirmed(false);setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}setClientId(b.cliente_id ?? 0);setStatus(b.status);setValidity(b.validade||today);setObservation(b.observacao||'');setDiscount(Number(b.desconto));setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);return{...emptyProduct(index+1),productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),priceManual:i.preco_unitario_manual??true,suggestedPrice:i.preco_unitario_sugerido??undefined,discount:Number(i.desconto),acao_acionamento:i.dados_tecnicos?.romana_teto?.acionamento,lado_comando:i.dados_tecnicos?.romana_teto?.lado_comando,comprimento_bastao:i.dados_tecnicos?.romana_teto?.comprimento_bastao_m?.toString(),comprimento_corrente_sem_fim:i.dados_tecnicos?.romana_teto?.comprimento_corrente_sem_fim_m?.toString(),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});setProducts(pp.length?pp:[emptyProduct(1)]);setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,serviceId:i.servico_id??null,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),unit:i.unidade||'UN',heightCm:Number(i.altura||0)*100,value:Number(i.preco_unitario),priceManual:i.dados_tecnicos?.comercial?.preco_unitario_manual??!i.servico_id,discount:Number(i.desconto)})));setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
- useEffect(()=>{if(!saved)return;const ambientes=saved.itens.filter(i=>i.tipo_item==='PRODUTO').map(i=>i.ambiente||'');setProducts(rows=>rows.map((row,index)=>({...row,environment:ambientes[index]??''})))},[saved])
+ const carregarItens=(b:ApiBudget,p:ApiProduct[])=>{
+if(b.itens.some(i=>!i.id))throw new Error('Orçamento contém item sem identidade persistida; não é possível editá-lo com segurança.');
+const pp=b.itens.filter(i=>i.tipo_item==='PRODUTO').map((i,index)=>{const found=p.find(x=>x.id===i.produto_id);
+return{...emptyProduct(index+1),historico:i,romanaKind:found?romanaKind(found):undefined,romanaTetoKind:found?romanaTetoKind(found):undefined,roloKind:found?roloKind(found):undefined,doubleVisionKind:found?doubleVisionKind(found):undefined,environment:i.ambiente??'',motorProdutoId:i.dados_tecnicos?.rolo?.motor_produto_id??undefined,kitProdutoId:i.dados_tecnicos?.rolo?.kit_produto_id??undefined,incluirKitInstalacao:i.dados_tecnicos?.rolo?.incluir_kit_instalacao??true,acessorioRolo:i.dados_tecnicos?.acessorio_rolo?.vinculo==='AMBIENTE',productId:i.produto_id||null,product:found?.nome||i.descricao,code:i.codigo_interno||'',family:found?.familia_tecnica||'',groupTechnical:i.grupo_tecnico||'',modelTechnical:i.modelo_tecnico||'',unit:i.unidade||'',color:i.cor||'',details:i.observacao_item||'',quantity:Number(i.quantidade),width:String(i.largura).replace('.',','),height:String(i.altura).replace('.',','),price:Number(i.preco_unitario),priceManual:i.preco_unitario_manual??true,suggestedPrice:i.preco_unitario_sugerido??undefined,discount:Number(i.desconto),acionamento:found && roloKind(found) ? normalizeRoloDrive(i.acionamento ?? (roloKind(found)==='MOTORIZADA'?'motorizado':'manual')) : undefined,acao_acionamento:i.dados_tecnicos?.romana_teto?.acionamento,lado_comando:i.dados_tecnicos?.romana_teto?.lado_comando,comprimento_bastao:i.dados_tecnicos?.romana_teto?.comprimento_bastao_m?.toString(),comprimento_corrente_sem_fim:i.dados_tecnicos?.romana_teto?.comprimento_corrente_sem_fim_m?.toString(),curtain:i.dados_tecnicos?.cortina ? {...i.dados_tecnicos.cortina,simulationKey:undefined,result:undefined,error:undefined} : undefined}});
+setProducts(pp.length?pp:[emptyProduct(1)]);
+setServices(b.itens.filter(i=>i.tipo_item==='SERVICO').map((i,index)=>({id:index+1,historico:i,serviceId:i.servico_id??null,service:i.descricao,details:i.observacao_item||'',quantity:Number(i.quantidade),unit:i.unidade||'UN',heightCm:Number(i.altura||0)*100,value:Number(i.preco_unitario),priceManual:i.dados_tecnicos?.comercial?.preco_unitario_manual??!i.servico_id,discount:Number(i.desconto)})));
+ }
+ useEffect(()=>{void(async()=>{try{const [p,c,b,g,u]=await Promise.all([getAllProducts(),getClients(),budgetId?getBudget(budgetId):Promise.resolve(null),getProductGroups(),getProductUnits()]);
+setCatalog(p);
+setClients(c);
+setProductGroups(g);
+setProductUnits(u);
+setInternalObservation(b?.observacao_interna??'');
+if(!budgetId)setClientId(0);
+if(b){if(b.perfil_comercial){setProfile(b.perfil_comercial);
+setProfileConfirmed(true)}else{setProfileConfirmed(false);
+setError('Orçamento sem tabela comercial. Selecione a tabela antes de salvar.')}setClientId(b.cliente_id ?? 0);
+setStatus(b.status);
+setValidity(b.validade||today);
+setObservation(b.observacao||'');
+setDiscount(Number(b.desconto));
+setPayment({mode:b.pagamento_modalidade??'',count:b.pagamento_numero_parcelas??2,intervalDays:b.pagamento_intervalo_dias??30,firstDueDate:b.pagamento_primeiro_vencimento??today,defaultPaymentMethodId:b.pagamento_parcelas?.[0]?.forma_pagamento_id??0,installments:b.pagamento_parcelas??[]});
+carregarItens(b,p);
+setSaved(b)}}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setLoading(false)}})()},[budgetId])
   useEffect(()=>{
     setProducts(rows=>rows.map(row=>{
       const found=catalog.find(p=>p.id===row.productId)
       if(!found)return row
       const next={...row,romanaKind:romanaKind(found),romanaTetoKind:romanaTetoKind(found),roloKind:roloKind(found),doubleVisionKind:doubleVisionKind(found)}
+      if (row.historico && !row.recalcular) return next
       return next.romanaKind || next.romanaTetoKind || next.roloKind || next.doubleVisionKind || next.curtain
         ? next : applySuggestedProductPrice(next,commercialPrice(found,profileLabel[profile]))
     }))
   },[profile,catalog])
   const onRomana = useCallback((id:number, state:RomanaState) => {
-    setProducts(rows => rows.map(row => row.id === id && state.key === romanaKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), romana:state} : row))
+    setProducts(rows => rows.map(row => row.id === id && (!row.historico || row.recalcular) && state.key === romanaKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), romana:state} : row))
   }, [])
   const onRomanaTeto = useCallback((id:number, state:RomanaTetoState) => {
-    setProducts(rows => rows.map(row => row.id === id && state.key === romanaTetoKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), romanaTeto:state} : row))
+    setProducts(rows => rows.map(row => row.id === id && (!row.historico || row.recalcular) && state.key === romanaTetoKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), romanaTeto:state} : row))
   }, [])
   const onRolo = useCallback((id:number, state:RoloState) => {
-    setProducts(rows => rows.map(row => row.id === id && state.key === roloKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), rolo:state} : row))
+    setProducts(rows => rows.map(row => row.id === id && (!row.historico || row.recalcular) && state.key === roloKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_disponivel ? state.result.preco_unitario : undefined), rolo:state} : row))
   }, [])
   const onDoubleVision = useCallback((id:number, state:DoubleVisionState) => {
-    setProducts(rows => rows.map(row => row.id === id && state.key === doubleVisionKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), doubleVision:state} : row))
+    setProducts(rows => rows.map(row => row.id === id && (!row.historico || row.recalcular) && state.key === doubleVisionKey(row,profileLabel[currentProfile.current]) ? {...applySuggestedProductPrice(row,state.result?.preco_unitario), doubleVision:state} : row))
   }, [])
 
   const onCurtain = useCallback((id: number, state: CurtainState) => {
     setProducts(rows =>
       rows.map(row =>
-        row.id === id && row.modelTechnical === 'CORTINA' && (!state.simulationKey || state.simulationKey === curtainKey(row,profileLabel[currentProfile.current]))
+        row.id === id && (!row.historico || row.recalcular) && row.modelTechnical === 'CORTINA' && (!state.simulationKey || state.simulationKey === curtainKey(row,profileLabel[currentProfile.current]))
           ? {
               ...applySuggestedProductPrice(row,state.result?.preco_disponivel ? state.result.preco_unitario : undefined),
               color: state.cor,
@@ -231,9 +259,20 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
     )
   }, [])
 
+  const recalcularServico=(row:BudgetService)=>{
+    const catalogado=serviceCatalog.find(item=>item.id===row.serviceId)
+    if(row.serviceId && !catalogado){setError('Serviço indisponível no catálogo; não é possível recalcular.');return}
+    let value=row.value
+    try {
+      if(catalogado) value=catalogado.tipo_calculo==='FAIXA_ALTURA'
+        ? precoServicoParaAltura(catalogado,row.heightCm||0) : catalogado.preco_venda
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      return
+    }
+    setServices(rows=>rows.map(r=>r.id===row.id?{...r,recalcular:true,priceManual:!catalogado,value}:r))
+  }
   const handleOpenClientModal=()=>{
-    setClientForm({tipo:'',nome:''})
-    setClientModalError('')
     setShowClientModal(true)
   }
 
@@ -259,37 +298,26 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
 
   const handleCloseClientModal=()=>{
     setShowClientModal(false)
-    setClientForm({tipo:'',nome:''})
-    setClientModalError('')
   }
 
-  const handleClientFormChange=(field:string,value:string)=>{
-    setClientForm(prev=>({...prev,[field]:value}))
-    if(clientModalError)setClientModalError('')
-  }
-
-  const handleCreateClient=async()=>{
-    if(!clientForm.tipo.trim()||!clientForm.nome.trim()){
-      setClientModalError('Tipo e Nome são obrigatórios')
+  const handleClientCreated=(created:CadastroRecord)=>{
+    setShowClientModal(false)
+    if (!Number.isInteger(created.id) || created.id <= 0) {
+      setError('Cliente cadastrado, mas a resposta não contém um ID válido. Atualize a página e selecione o cliente; não o cadastre novamente.')
       return
     }
-    setClientModalSaving(true)
-    setClientModalError('')
-    try{
-      const newClient=await createClient({tipo:clientForm.tipo.trim(),nome:clientForm.nome.trim()})
-      setClients(prev=>[newClient,...prev])
-      setClientId(newClient.id)
-      handleCloseClientModal()
-    }catch(e){
-      const msg=e instanceof Error?e.message:String(e)
-      if(msg.includes('409')||msg.toLowerCase().includes('duplic')||msg.toLowerCase().includes('unique')){
-        setClientModalError('Cliente já cadastrado com estes dados')
-      }else{
-        setClientModalError(msg)
+    const nome = typeof created.nome === 'string' ? created.nome : `Cliente #${created.id}`
+    setClients(prev=>[{id:created.id,nome},...prev.filter(client=>client.id!==created.id)])
+    setClientId(created.id)
+    void getClients().then(rows=>{
+      if (!rows.some(client=>client.id===created.id)) {
+        setError('Cliente cadastrado e selecionado, mas não apareceu na lista atualizada. Confira o cadastro antes de salvar o orçamento.')
+        return
       }
-    }finally{
-      setClientModalSaving(false)
-    }
+      setClients(rows)
+    }).catch(err=>{
+      setError(`Cliente cadastrado e selecionado, mas não foi possível atualizar a lista: ${err instanceof Error ? err.message : String(err)}`)
+    })
   }
 
   const handleOpenProductModal=(productId:number)=>{
@@ -345,8 +373,20 @@ export function NewBudgetPage({onBack,budgetId,onSaved,onConverted}:Props){
     }
   }
 
-const productTotal=products.reduce((s,i)=>s+productLineSubtotal(i,profileLabel[profile]),0),serviceTotal=services.reduce((s,i)=>s+Math.max(0,i.quantity*i.value-i.discount),0),total=Math.max(0,productTotal+serviceTotal+freight-discount)
-const makeItem = (p:BudgetProduct) => ({
+const productTotal=decimalSum(products.map(i=>productLineSubtotal(i,profileLabel[profile])))
+const serviceTotal=decimalSum(services.map(i=>i.historico&&!i.recalcular?i.historico.subtotal:commercialSubtotal(i.quantity,i.value,i.discount)))
+const linhasAtivas=products.filter(p=>p.historico || p.productId || p.curtain?.tecidoProdutoId)
+const itensInalterados=Boolean(saved && linhasAtivas.length+services.length===saved.itens.length
+  && [...linhasAtivas,...services].every(row=>row.historico?.id && !row.recalcular
+    && saved.itens.some(item=>item.id===row.historico?.id)))
+const total=itensInalterados && discount===Number(saved?.desconto)
+  ? Number(saved?.total_final ?? commercialNet(decimalSum([productTotal,serviceTotal,freight]),discount))
+  : commercialNet(decimalSum([productTotal,serviceTotal,freight]),discount)
+const makeItem = (p:BudgetProduct) => p.historico && !p.recalcular
+  ? { ...p.historico, recalcular:false }
+  : ({
+  id:p.historico?.id,
+  recalcular:Boolean(p.recalcular),
   tipo_item:'PRODUTO' as const,
   produto_id:p.productId,
   descricao:p.product,
@@ -367,12 +407,15 @@ const makeItem = (p:BudgetProduct) => ({
   observacao_item:p.details||null,
   ambiente:p.environment.trim()||null,
   cor:p.curtain?.cor||p.color||null,
-  acionamento:p.acao_acionamento||undefined,
+  acionamento:p.roloKind ? normalizeRoloDrive(p.acionamento ?? (p.roloKind==='MOTORIZADA'?'motorizado':'manual')) : p.acao_acionamento||undefined,
   lado_comando:p.lado_comando||null,
   comprimento_bastao:p.comprimento_bastao||null,
   comprimento_corrente_sem_fim:p.comprimento_corrente_sem_fim||null,
 })
 const payload=useMemo<BudgetPayload>(()=>({
+  itens_removidos_ids:(saved?.itens || []).flatMap(item =>
+    item.id && !products.some(row=>row.historico?.id===item.id) && !services.some(row=>row.historico?.id===item.id)
+      ? [item.id] : []),
   cliente_id:saleType==='DIRETA' ? clientId||null : null,
   ...(saleType==='PARCEIRO' ? {
     cliente_final_nome:partnerFinalClient.trim()||null,
@@ -441,10 +484,12 @@ const payload=useMemo<BudgetPayload>(()=>({
 
   itens:[
     ...products
-      .filter(p=>p.productId || p.curtain?.tecidoProdutoId)
+      .filter(p=>p.historico && !p.recalcular || p.productId || p.curtain?.tecidoProdutoId)
       .map(makeItem),
 
-    ...services.map(s=>({
+    ...services.map(s=>s.historico && !s.recalcular ? {...s.historico,recalcular:false} : ({
+      id:s.historico?.id,
+      recalcular:Boolean(s.recalcular),
       tipo_item:'SERVICO' as const,
       produto_id:null,
       servico_id:s.serviceId??null,
@@ -457,10 +502,7 @@ const payload=useMemo<BudgetPayload>(()=>({
       preco_unitario:s.value,
       preco_unitario_manual:s.priceManual??true,
       desconto:s.discount,
-      subtotal:Math.max(
-        0,
-        s.quantity*s.value-s.discount
-      ),
+      subtotal:s.historico && !s.recalcular ? s.historico.subtotal : commercialSubtotal(s.quantity,s.value,s.discount),
       observacao_item:s.details||null,
       cor:null,
     }))
@@ -477,6 +519,7 @@ const payload=useMemo<BudgetPayload>(()=>({
   serviceTotal,
   products,
   services,
+  saved,
   partnerId,
   partnerFinalClient,
   partnerFinalDocument,
@@ -500,25 +543,35 @@ const internalValuePreviewRaw=Math.max(
   total
 )
 
-const partnerValuePreviewRaw=partnerId
-  ? ((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)*Math.max(
-      0,
-      partnerPercent
-    )/100
+const condicoesInalteradas=Boolean(saved && itensInalterados && discount===Number(saved.desconto)
+  && (partnerId??null)===(saved.parceiro_id??null) && partnerPercent===Number(saved.percentual_parceiro??0)
+  && includeRt===Boolean(saved.incluir_rt) && (!includeRt || (rtType===saved.tipo_rt
+    && rtPercent===Number(saved.percentual_rt??0)
+    && (rtType!=='VALOR_FIXO' || rtValue===Number(saved.valor_rt??0))))
+  && includeBankFee===Boolean(saved.incluir_taxa_bancaria)
+  && bankFeePercent===Number(saved.taxa_bancaria_percentual??0))
+
+const partnerValuePreviewRaw=condicoesInalteradas && saved?.valor_parceiro!=null ? saved.valor_parceiro : partnerId
+  ? commercialPercentage(
+      roundHalfUp(internalValuePreviewRaw),
+      Math.max(0, partnerPercent)
+    )
   : 0
 
-const rtValuePreviewRaw=includeRt
+const rtValuePreviewRaw=condicoesInalteradas && saved?.valor_rt!=null ? saved.valor_rt : includeRt
   ? (
       rtType==='PERCENTUAL'
-        ? ((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)*Math.max(0,rtPercent)/100
+        ? commercialPercentage(roundHalfUp(internalValuePreviewRaw), Math.max(0,rtPercent))
         : Math.max(0,rtValue)
     )
   : 0
 
 const protectedBasePreviewRaw=
-  ((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)+
-  ((Math.round((partnerValuePreviewRaw + Number.EPSILON) * 100)) / 100)+
-  ((Math.round((rtValuePreviewRaw + Number.EPSILON) * 100)) / 100)
+  condicoesInalteradas && saved?.base_protegida!=null ? saved.base_protegida : decimalSum([
+  roundHalfUp(internalValuePreviewRaw),
+  roundHalfUp(partnerValuePreviewRaw),
+  roundHalfUp(rtValuePreviewRaw)
+])
 
 const feeRatePreview=includeBankFee
   ? Math.max(
@@ -531,27 +584,32 @@ const feeRatePreview=includeBankFee
   : 0
 
 const clientTotalPreviewRaw=
-  feeRatePreview>0
-    ? ((Math.round((protectedBasePreviewRaw + Number.EPSILON) * 100)) / 100)/
-      (1-feeRatePreview/100)
-    : ((Math.round((protectedBasePreviewRaw + Number.EPSILON) * 100)) / 100)
+  condicoesInalteradas && saved?.total_cliente_final!=null ? saved.total_cliente_final : feeRatePreview>0
+    ? commercialBankTotal(
+      roundHalfUp(protectedBasePreviewRaw),
+      feeRatePreview
+    )
+    : roundHalfUp(protectedBasePreviewRaw)
 
-const bankFeeValuePreview=Math.max(
+const bankFeeValuePreview=condicoesInalteradas && saved?.valor_taxa_bancaria!=null ? saved.valor_taxa_bancaria : Math.max(
   0,
-  ((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100)-
-  ((Math.round((protectedBasePreviewRaw + Number.EPSILON) * 100)) / 100)
+  commercialDifference(
+    roundHalfUp(clientTotalPreviewRaw),
+    roundHalfUp(protectedBasePreviewRaw)
+  )
 )
 
 const serverPayload={
   ...payload,
   perfil_comercial:profile
 }
-const romanaPending = products.some(p => p.romanaKind && (p.romanaKind === 'MOTORIZADA' || p.romana?.key !== romanaKey(p,profileLabel[profile]) || p.romana?.error || !p.romana?.result?.preco_disponivel))
-const romanaTetoPending = products.some(p => p.romanaTetoKind && (p.romanaTetoKind === 'MOTORIZADA' || p.romanaTeto?.key !== romanaTetoKey(p,profileLabel[profile]) || p.romanaTeto?.error || !p.romanaTeto?.result?.preco_disponivel))
-const roloPending = products.some(p => p.roloKind && (p.roloKind === 'MOTORIZADA' || p.rolo?.key !== roloKey(p,profileLabel[profile]) || p.rolo?.error || !p.rolo?.result?.preco_disponivel))
-const doubleVisionPending = products.some(p => p.doubleVisionKind && (p.doubleVisionKind === 'MOTORIZADA' || p.doubleVision?.key !== doubleVisionKey(p,profileLabel[profile]) || p.doubleVision?.error || !p.doubleVision?.result?.preco_disponivel || p.doubleVision?.result?.estado_validacao === 'requer_validacao' || p.doubleVision?.result?.estado_validacao === 'bloqueado'))
+const romanaPending = products.some(p => (!p.historico || p.recalcular) && p.romanaKind && (p.romanaKind === 'MOTORIZADA' || p.romana?.key !== romanaKey(p,profileLabel[profile]) || p.romana?.error || !p.romana?.result?.preco_disponivel))
+const romanaTetoPending = products.some(p => (!p.historico || p.recalcular) && p.romanaTetoKind && (p.romanaTetoKind === 'MOTORIZADA' || p.romanaTeto?.key !== romanaTetoKey(p,profileLabel[profile]) || p.romanaTeto?.error || !p.romanaTeto?.result?.preco_disponivel))
+const roloPending = products.some(p => (!p.historico || p.recalcular) && p.roloKind && (p.rolo?.key !== roloKey(p,profileLabel[profile]) || p.rolo?.error || !p.rolo?.result?.preco_disponivel))
+const doubleVisionPending = products.some(p => (!p.historico || p.recalcular) && p.doubleVisionKind && (p.doubleVisionKind === 'MOTORIZADA' || p.doubleVision?.key !== doubleVisionKey(p,profileLabel[profile]) || p.doubleVision?.error || !p.doubleVision?.result?.preco_disponivel || p.doubleVision?.result?.estado_validacao === 'requer_validacao' || p.doubleVision?.result?.estado_validacao === 'bloqueado'))
 
   const curtainPending = products.some((p) => {
+    if (p.historico && !p.recalcular) return false
     const isFinalCurtain =
       String(p.modelTechnical ?? '').trim().toUpperCase() === 'CORTINA' &&
       String(p.groupTechnical ?? '').trim().toUpperCase() === 'TECIDOS_CORTINA'
@@ -604,6 +662,7 @@ const doubleVisionPending = products.some(p => p.doubleVisionKind && (p.doubleVi
     error
   ])
 const save=async()=>{
+if(budgetId && !saved){setError('Não foi possível carregar o orçamento existente; reabra antes de salvar.');return}
   setValidationAttempted(true)
   if(!profileConfirmed){
     setError('Selecione explicitamente a tabela comercial: Consumidor Final, Varejo ou Decorador.')
@@ -650,11 +709,11 @@ if(saleType==='PARCEIRO'&&!partnerId){
   setError('Selecione a revenda.')
   return
 }
-if(!paymentPlanIsConsistent(((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100),payment)){
+if(!paymentPlanIsConsistent(roundHalfUp(clientTotalPreviewRaw),payment)){
   setError('Gere ou ajuste as parcelas para que a soma corresponda exatamente ao total comercial.')
   return
 }
-setSaving(true);setError('');try{const editing=budgetId!=null;const result=editing?await updateBudget(budgetId,serverPayload):await createBudget(serverPayload);setSaved(result);onSaved(result.id,editing?'updated':'created')}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setSaving(false)}}
+setSaving(true);setError('');try{const editing=budgetId!=null;const result=editing?await updateBudget(budgetId,serverPayload):await createBudget(serverPayload);carregarItens(result,catalog);setSaved(result);onSaved(result.id,editing?'updated':'created')}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setSaving(false)}}
  const convertToSale=async()=>{
    const sourceBudgetId=budgetId||saved?.id
 
@@ -702,7 +761,7 @@ setSaving(true);setError('');try{const editing=budgetId!=null;const result=editi
 if(loading)return <div className="panel loading-state">Carregando catálogo completo, clientes e orçamento...</div>
   return (
     <>
-      <div className="new-budget-page" onFocusCapture={selectZeroOnFocus}><section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack}><ArrowLeft size={15}/> Voltar para orçamentos</button><p className="eyebrow">PROPOSTA COMERCIAL CONECTADA</p><h1 className="commercial-title">{budgetId?'Editar orçamento':'Novo orçamento'} <span className="draft-badge">API real</span></h1><p className="heading-subtitle">Catálogo, clientes, itens, totais e reabertura conectados ao FastAPI.</p></div><div className="budget-number">
+      <div className="new-budget-page budget-edit-page" onFocusCapture={selectZeroOnFocus}><section className="new-budget-heading page-heading"><div><button type="button" className="back-button page-back" onClick={onBack}><ArrowLeft size={15}/> Voltar para orçamentos</button><p className="eyebrow">PROPOSTA COMERCIAL CONECTADA</p><h1 className="commercial-title">{budgetId?'Editar orçamento':'Novo orçamento'} <span className="draft-badge">API real</span></h1><p className="heading-subtitle">Catálogo, clientes, itens, totais e reabertura conectados ao FastAPI.</p></div><div className="budget-number">
   <span>NÚMERO</span>
   <strong>{saved?`#${saved.numero}`:'Automático'}</strong>
   {(budgetId||saved?.id)&&status==='APROVADO'&&(
@@ -722,13 +781,15 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
   )}
 </div></section>
       {error&&<div className="api-message error" role="alert" style={{position:"fixed",top:16,right:16,zIndex:9999,maxWidth:440,padding:16,boxShadow:"0 8px 32px rgba(0,0,0,.22)"}}>{error}</div>}
+
       <div className={`new-budget-layout ${isSummaryCollapsed ? 'summary-collapsed' : ''}`}><div className="new-budget-main">
       <BudgetSection icon={<FileText size={17}/>} title="Perfil comercial" subtitle="A tabela define os preços sugeridos. Valores negociados são exclusivos deste orçamento."><Field label="Tabela de preço"><select value={profileConfirmed?profile:''} onChange={e=>{
         const selected=e.target.value
         if(selected==='DECORADOR'||selected==='VAREJO'||selected==='CONSUMIDOR_FINAL'){
-          if(selected!==profile && products.some(p=>p.priceManual) && !window.confirm('Trocar a tabela restaura os preços sugeridos de todos os produtos. Deseja continuar?'))return
+          if(selected!==profile && products.some(p=>p.priceManual && (!p.historico || p.recalcular)) && !window.confirm('Trocar a tabela restaura os preços sugeridos dos itens em cálculo. Deseja continuar?'))return
           if(selected!==profile){
             setProducts(rows=>rows.map(row=>{
+              if(row.historico && !row.recalcular)return row
               const found=catalog.find(p=>p.id===row.productId)
               const technical=Boolean(row.romanaKind || row.romanaTetoKind || row.roloKind || row.doubleVisionKind || row.curtain)
               const suggested=!technical && found ? commercialPrice(found,profileLabel[selected]) : undefined
@@ -825,33 +886,9 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
           {saleType==='DIRETA' ? (
             <>
               <Field label="Cliente">
-                <div className="product-search-box">
-                  <select
-                    value={clientId}
-                    onChange={e=>
-                      handleClientSelectChange(
-                        e.target.value
-                      )
-                    }
-                  >
-                    <option value={0}>
-                      Selecione o cliente
-                    </option>
-
-                    {clients.map(c=>(
-                      <option
-                        key={c.id}
-                        value={c.id}
-                      >
-                        {commercialDisplayText(c.nome)}
-                      </option>
-                    ))}
-
-                    <option value={CREATE_CLIENT_VALUE}>
-                      + Cadastrar novo cliente
-                    </option>
-                  </select>
-                </div>
+                <BudgetClientPicker clients={clients} value={clientId}
+                  onChange={id => handleClientSelectChange(String(id))}
+                  onCreate={() => handleClientSelectChange(CREATE_CLIENT_VALUE)} />
               </Field>
 
               <Field label="Representante?">
@@ -1397,10 +1434,17 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
 
         </div>
       </BudgetSection>
-      <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion allowManualPrice onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
-      <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Selecione um serviço do catálogo ou informe um serviço livre; preços e descontos podem ser negociados." count={`${services.length} itens`}>{serviceCatalogError&&<p className="api-message error" role="alert">Catálogo de serviços indisponível: {serviceCatalogError}. Ainda é possível salvar serviços livres.</p>}<div className="service-rows">{services.map(s=><BudgetServiceRow key={s.id} service={s} catalogServices={serviceCatalog} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'',details:'',quantity:1,value:0,discount:0,unit:'UN',priceManual:true}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
+      <BudgetSection icon={<PackagePlus size={17}/>} title="Produtos" subtitle={`${catalog.length} produtos carregados; somente ativos aparecem na busca.`} count={`${products.length} itens`}>{romanaPending && <div className="api-message error">Romana com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{romanaTetoPending && <div className="api-message error">Romana de teto com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{roloPending && <div className="api-message error">Rolô com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}{doubleVisionPending && <div className="api-message error">Double Vision com simulação pendente, inválida ou indisponível: os totais ainda não estão confirmados e o salvamento está bloqueado.</div>}<div className="product-rows">{products.map(p=><BudgetProductRow key={p.id} product={p} catalog={catalog} commercialType={profileLabel[profile]} validationAttempted={validationAttempted} allowPackageConversion allowManualPrice compactMotorHelp onRomana={onRomana} onRomanaTeto={onRomanaTeto} onRolo={onRolo} onDoubleVision={onDoubleVision} onCurtain={onCurtain} onChange={n=>setProducts(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setProducts(rows=>rows.filter(r=>r.id!==p.id))} onCreateProduct={handleOpenProductModal}/>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setProducts(rows=>[...rows,emptyProduct(nextId(rows))])}><Plus size={16}/> Adicionar produto</button></BudgetSection>
+      <RoloAccessoriesPanel products={products.filter(p=>!p.historico || p.recalcular)} profile={profile} onAdd={(item, ambiente)=>{
+        try {
+          const next=createRoloAccessoryProduct(item,catalog,profileLabel[profile],nextId(products),ambiente)
+          setProducts(rows=>[...rows,next])
+        } catch(e) { setError(e instanceof Error?e.message:String(e)) }
+      }}/>
+
+      <BudgetSection icon={<ReceiptText size={17}/>} title="Serviços" subtitle="Selecione um serviço do catálogo ou informe um serviço livre; preços e descontos podem ser negociados." count={`${services.length} itens`}>{serviceCatalogError&&<p className="api-message error" role="alert">Catálogo de serviços indisponível: {serviceCatalogError}. Ainda é possível salvar serviços livres.</p>}<div className="service-rows">{services.map(s=><div key={s.id}>{s.historico && !s.recalcular && <div><span>Serviço salvo: valores preservados.</span><button type="button" className="secondary-button" onClick={()=>recalcularServico(s)}>Recalcular este serviço</button><button type="button" className="secondary-button" onClick={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))}>Remover serviço</button></div>}<fieldset disabled={Boolean(s.historico && !s.recalcular)} style={{border:0,padding:0,margin:0,minWidth:0}}><BudgetServiceRow service={s} catalogServices={serviceCatalog} onChange={n=>setServices(rows=>rows.map(r=>r.id===n.id?n:r))} onRemove={()=>setServices(rows=>rows.filter(r=>r.id!==s.id))}/></fieldset></div>)}</div><button type="button" className="secondary-button add-product" onClick={()=>setServices(rows=>[...rows,{id:nextId(rows),service:'',details:'',quantity:1,value:0,discount:0,unit:'UN',priceManual:true}])}><Plus size={16}/> Adicionar serviço</button></BudgetSection>
       <BudgetSection icon={<Truck size={17}/>} title="Transporte" subtitle="Ainda sem campos próprios no contrato."><div className="form-grid relationship-grid"><Field label="Frete"><input type="number" value={freight} disabled/><small>Não persistido nesta fase</small></Field><Field label="Transportadora"><input disabled placeholder="Não persistida nesta fase"/></Field></div></BudgetSection>
-      <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100)} value={payment} onChange={setPayment}/></BudgetSection>
+      <BudgetSection icon={<WalletCards size={17}/>} title="Pagamento" subtitle="Condição estruturada e parcelas do orçamento."><BudgetPaymentSection total={roundHalfUp(clientTotalPreviewRaw)} value={payment} onChange={setPayment}/></BudgetSection>
       <BudgetSection icon={<FileText size={17}/>} title="Observações" subtitle="Informações para o cliente e anotações internas da equipe."><div className="budget-observations-grid"><Field label="Observações para o cliente"><textarea value={observation} onChange={e=>setObservation(e.target.value)}/></Field><Field label="Observações internas"><textarea value={internalObservation} onChange={e=>setInternalObservation(e.target.value)}/></Field></div></BudgetSection>
       </div><BudgetSummary
         products={productTotal}
@@ -1416,11 +1460,11 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
         bankFeePercent={bankFeePercent}
         onBankFeePercent={setBankFeePercent}
 
-        internalValue={((Math.round((internalValuePreviewRaw + Number.EPSILON) * 100)) / 100)}
-        partnerValue={((Math.round((partnerValuePreviewRaw + Number.EPSILON) * 100)) / 100)}
-        rtValue={((Math.round((rtValuePreviewRaw + Number.EPSILON) * 100)) / 100)}
+        internalValue={roundHalfUp(internalValuePreviewRaw)}
+        partnerValue={roundHalfUp(partnerValuePreviewRaw)}
+        rtValue={roundHalfUp(rtValuePreviewRaw)}
         bankFeeValue={bankFeeValuePreview}
-        clientTotal={((Math.round((clientTotalPreviewRaw + Number.EPSILON) * 100)) / 100)}
+        clientTotal={roundHalfUp(clientTotalPreviewRaw)}
 
         onCancel={onBack}
         onSave={save}
@@ -1452,7 +1496,7 @@ if(loading)return <div className="panel loading-state">Carregando catálogo comp
         if(commercialRegistration==='revenda'){setPartners(rows=>[record,...rows]);setPartnerId(record.id);setPartnerPercent(Number(record.percentual_padrao??0))}
         else {setRepresentatives(rows=>[record,...rows]);changeRepresentative(record.id)}
       }} />}
-      {showClientModal&&<div className="modal-overlay" onClick={handleCloseClientModal}><div className="modal-container" onClick={e=>e.stopPropagation()}><div className="modal-header"><h3 className="commercial-title"><UserPlus size={16}/> Cadastrar novo cliente</h3><button type="button" className="modal-close" onClick={handleCloseClientModal}><X size={16}/></button></div><form className="modal-form" onSubmit={e=>{e.preventDefault();handleCreateClient()}}><div className="modal-field"><label>Tipo *</label><select value={clientForm.tipo} onChange={e=>handleClientFormChange('tipo',e.target.value)}><option value="">Selecione</option><option value="Pessoa Física">Pessoa Física</option><option value="Pessoa Jurídica">Pessoa Jurídica</option></select></div><div className="modal-field"><label>Nome *</label><input type="text" className={commercialDisplayText(clientForm.nome) === clientForm.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={clientForm.nome} onChange={e=>handleClientFormChange('nome',e.target.value)} placeholder="Nome do cliente" autoFocus/></div>{clientModalError&&<div className="modal-error">{clientModalError}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={handleCloseClientModal} disabled={clientModalSaving}>Cancelar</button><button type="submit" className="primary-button" disabled={clientModalSaving||!clientForm.tipo.trim()||!clientForm.nome.trim()}>{clientModalSaving?<><Loader2 size={14} className="spinning"/> Salvando...</>:<><UserPlus size={14}/> Salvar e selecionar</>}</button></div></form></div></div>}
+      {showClientModal&&<CadastroClienteDialog onClose={handleCloseClientModal} onSaved={handleClientCreated}/>}
 
       {showProductModal&&<div className="modal-overlay" onClick={handleCloseProductModal}><div className="modal-container" onClick={e=>e.stopPropagation()}><div className="modal-header"><h3 className="commercial-title"><PackagePlus size={16}/> Cadastrar novo produto</h3><button type="button" className="modal-close" onClick={handleCloseProductModal}><X size={16}/></button></div><form className="modal-form" onSubmit={e=>{e.preventDefault();handleCreateProduct()}}><div className="modal-field"><label>Nome *</label><input type="text" className={commercialDisplayText(productForm.nome) === productForm.nome.toLocaleUpperCase('pt-BR') ? 'commercial-name' : undefined} value={productForm.nome} onChange={e=>handleProductFormChange('nome',e.target.value)} placeholder="Nome do produto" autoFocus/></div><div className="modal-field"><label>Grupo do produto *</label><select value={productForm.grupo_produto} onChange={e=>handleProductFormChange('grupo_produto',e.target.value)}><option value="">Selecione</option>{productGroups.map(g=><option key={g} value={g}>{g}</option>)}</select></div><div className="modal-field"><label>Unidade de venda *</label><select value={productForm.unidade_venda} onChange={e=>handleProductFormChange('unidade_venda',e.target.value)}><option value="">Selecione</option>{effectiveProductUnits.map(u=><option key={u} value={u}>{u}</option>)}</select></div><div className="modal-field"><label>Valor de custo *</label><input type="text" inputMode="decimal" value={productForm.valor_custo} onChange={e=>handleProductFormChange('valor_custo',e.target.value)} placeholder="Ex: 150,00"/></div>{productModalError&&<div className="modal-error">{productModalError}</div>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={handleCloseProductModal} disabled={productModalSaving}>Cancelar</button><button type="submit" className="primary-button" disabled={productModalSaving||!productForm.nome.trim()||!productForm.grupo_produto.trim()||!productForm.unidade_venda.trim()||!productForm.valor_custo.trim()}>{productModalSaving?<><Loader2 size={14} className="spinning"/> Salvando...</>:<><PackagePlus size={14}/> Salvar e selecionar</>}</button></div></form></div></div>}
     </>

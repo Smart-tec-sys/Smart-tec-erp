@@ -63,6 +63,17 @@ Liberação: usuário {e(ordem.liberado_por)}, {e(ordem.liberado_em)}</p>
 
 
 def _dados_etiqueta(ordem, peca):
+    origem = next((item for item in ordem.snapshot.get("itens", [])
+                   if item.get("id") == peca.pedido_item_id), {})
+    identificacao_produto = str(origem.get("descricao") or "").strip()
+    codigo_produto = str(origem.get("codigo_interno") or "").strip()
+    modelo_etiqueta = str(peca.modelo or "").strip()
+    if identificacao_produto:
+        modelo_etiqueta = " · ".join(dict.fromkeys(
+            valor for valor in (modelo_etiqueta, identificacao_produto) if valor
+        ))
+    if codigo_produto:
+        modelo_etiqueta = f"{modelo_etiqueta} [{codigo_produto}]".strip()
     observacoes = peca.observacoes or ""
     if peca.modo_fabricacao == "MANUAL_SUPERVISIONADA":
         observacoes = "COMPOSIÇÃO MANUAL SUPERVISIONADA — NÃO HOMOLOGADA. " + observacoes
@@ -82,6 +93,7 @@ def _dados_etiqueta(ordem, peca):
         )},
         "observacoes": observacoes,
     }
+    dados["modelo"] = modelo_etiqueta
     return {campo: escape(str(valor or "")) for campo, valor in dados.items()}
 
 

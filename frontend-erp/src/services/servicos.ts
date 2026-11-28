@@ -1,3 +1,4 @@
+import { commercialSubtotal } from '../types/budget'
 import { request } from './api'
 
 export type UnidadeServico = 'UN' | 'ML' | 'M2' | 'HORA' | 'SERVICO'
@@ -40,5 +41,5 @@ export function precoServicoParaAltura(servico: Pick<Servico, 'tipo_calculo' | '
 }
 
 export function subtotalServico(quantidade: number, precoUnitario: number, desconto: number): number {
-  return Math.round(Math.max(0, quantidade * precoUnitario - desconto) * 100) / 100
+  return commercialSubtotal(quantidade, precoUnitario, desconto)
 }

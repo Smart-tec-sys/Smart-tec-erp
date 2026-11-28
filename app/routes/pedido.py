@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.schemas.pedido import ConverterOrcamentoInput, GerarContaReceberInput, PedidoUpdate, PedidoCreate
@@ -57,6 +58,12 @@ def converter_orcamento(
             prazo_entrega=data.prazo_entrega,
             canal_venda=data.canal_venda,
         )
+
+    except IntegrityError as exc:
+        db.rollback()
+        if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) == "uq_pedidos_orcamento":
+            raise HTTPException(409, "O orçamento já foi convertido em venda. Recarregue a listagem.") from exc
+        raise
 
     except ValueError as exc:
         db.rollback()

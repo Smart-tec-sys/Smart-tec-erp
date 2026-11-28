@@ -74,6 +74,8 @@ registerHooks({
  assert.equal(customer.products[0].material,item.material)
  assert.equal(customer.companyLegalName,'Razão Social Teste')
  assert.equal(customer.companyAddress,context.companyAddress)
+ assert.ok(text(BudgetPdfDocument({data:customer})).includes('VALOR TOTAL'))
+ assert.ok(!text(BudgetPdfDocument({data:customer})).includes('TOTAL CLIENTE FINAL'))
  assert.deepEqual(customer.companyPhones,context.companyPhones)
  assert.equal(prepareBudgetPdfData(budget,'reseller_client').company,'')
  assert.equal(prepareBudgetPdfData(budget,'reseller_client').companyLegalName,'')
@@ -271,6 +273,10 @@ registerHooks({
  assert.equal(companyContext.companyLogo,undefined);assert.deepEqual(companyContext.warnings,[])
  assert.equal(companyContext.companyAddress,'Rua Tenant 1, 123, Cidade A, SP')
  assert.deepEqual(companyContext.companyPhones,['1133334444','11999998888'])
+ const savedCompanyMobile=mockCompany.perfil_publico.telefone_celular
+ mockCompany.perfil_publico.telefone_celular='11 3333-4444'
+ assert.deepEqual((await loadBudgetPdfContext(direct,'direct')).companyPhones,['1133334444'])
+ mockCompany.perfil_publico.telefone_celular=savedCompanyMobile
  assert.equal(companyContext.companyEmail,'empresa1@example.invalid')
  assert.equal(companyContext.companySite,'https://empresa1.example.invalid')
  assert.equal(companyContext.sellerName,'André')
@@ -350,7 +356,12 @@ registerHooks({
  authModule.setAuthEnabled(true)
  const dialog=fs.readFileSync(path.join(__dirname,'../src/components/BudgetPreviewDialog.tsx'),'utf8')
  assert.match(dialog,/await prepareSavedBudgetPdf\(id, mode\)/)
- assert.ok(dialog.indexOf('await prepareSavedBudgetPdf(id, mode)')<dialog.indexOf('downloadBudgetPdf(result.blob'))
+ assert.ok(dialog.indexOf('await prepareSavedBudgetPdf(id, mode)') < dialog.indexOf('setPdfPreview({'))
+ assert.match(dialog,/if \(!pdfPreview\) return/)
+ assert.match(dialog,/downloadBudgetPdf\(pdfPreview.blob, pdfPreview.filename\)/)
+ assert.match(dialog,/onClick=\{\(\) => void downloadPreview\(\)\}/)
+ assert.match(dialog,/iframe src=\{previewUrl\}/)
+ assert.ok(dialog.includes('Baixar PDF'))
  assert.match(dialog,/generating\.current/);assert.match(dialog,/Gerando PDF/)
  for(const label of ['PDF Revenda','PDF Interno Smart-tec','PDF Cliente Final'])assert.ok(dialog.includes(label),label)
  assert.ok(!dialog.includes('PDF interno da Revenda'))

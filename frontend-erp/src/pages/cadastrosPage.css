@@ -1,4 +1,5 @@
 .cad-page {
+  min-width: 0;
   display: grid;
   gap: 20px;
 }
@@ -66,6 +67,7 @@
 }
 
 .cad-table-card {
+  min-width: 0;
   background: #fff;
   border: 1px solid #e3e7ec;
   border-radius: 14px;
@@ -73,12 +75,17 @@
 }
 
 .cad-table-wrap {
+  max-width: 100%;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-gutter: stable;
 }
 
 .cad-table {
-  width: 100%;
-  border-collapse: collapse;
+  min-width: 100%;
+  width: max-content;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .cad-table th,
@@ -104,6 +111,25 @@
 
 .cad-actions-col {
   width: 120px;
+}
+
+/* Mantem as acoes acessiveis quando a tabela e rolada lateralmente. */
+.cad-table th:last-child,
+.cad-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  background: #fff;
+  box-shadow: -1px 0 0 #eef0f3;
+}
+
+.cad-table th:last-child {
+  z-index: 2;
+  background: #f8f9fb;
+}
+
+.cad-table tbody tr:hover td:last-child {
+  background: #fbfbfc;
 }
 
 .cad-actions {

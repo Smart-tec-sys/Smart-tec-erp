@@ -86,6 +86,19 @@ class PedidoDB(Base):
     valor_taxa_bancaria = Column(Numeric(14, 2), nullable=True)
     total_cliente_final = Column(Numeric(14, 2), nullable=True)
 
+
+    pagamento_modalidade = Column(String(20), nullable=True)
+    pagamento_numero_parcelas = Column(Integer, nullable=True)
+    pagamento_intervalo_dias = Column(Integer, nullable=True)
+    pagamento_primeiro_vencimento = Column(Date, nullable=True)
+
+    parcelas_pagamento = relationship(
+        "PedidoParcelaDB",
+        cascade="all, delete-orphan",
+        back_populates="pedido",
+        order_by="PedidoParcelaDB.numero",
+    )
+
     observacao = Column(Text, nullable=True)
     observacao_interna = Column(Text, nullable=True)
 
@@ -100,6 +113,36 @@ class PedidoDB(Base):
         back_populates="pedido",
     )
 
+
+class PedidoParcelaDB(Base):
+    __tablename__ = "pedido_parcelas"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["pedido_id", "empresa_id"], ["pedidos.id", "pedidos.empresa_id"],
+            name="fk_pedido_parcelas_pedido_empresa", ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["forma_pagamento_id", "empresa_id"],
+            ["formas_pagamento.id", "formas_pagamento.empresa_id"],
+            name="fk_pedido_parcelas_forma_empresa",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("pedido_id", "numero", name="uq_pedido_parcelas_numero"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    empresa_id = Column(Integer, ForeignKey("empresas.id"), nullable=False, index=True)
+    pedido_id = Column(Integer, nullable=False, index=True)
+    numero = Column(Integer, nullable=False)
+    tipo = Column(String(20), nullable=False, default="PARCELA")
+    valor = Column(Numeric(14, 2), nullable=False)
+    vencimento = Column(Date, nullable=False)
+    forma_pagamento_id = Column(Integer, nullable=False)
+    forma_pagamento_nome = Column(String(80), nullable=False)
+    criado_em = Column(DateTime, nullable=False, server_default=func.now())
+    atualizado_em = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    pedido = relationship("PedidoDB", back_populates="parcelas_pagamento")
 
 class PedidoItemDB(Base):
     __tablename__ = "pedidos_itens"

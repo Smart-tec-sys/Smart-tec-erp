@@ -1,9 +1,10 @@
+import { moneyToCents } from '../utils/commercialDecimal'
 import type { ApiBudget, ApiBudgetItem } from '../types/budget'
 
 const brl = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 const amount = '(\\d{1,3}(?:\\.\\d{3})*,\\d{2})'
 const value = (text: string) => Number(text.replace(/\./g, '').replace(',', '.'))
-const cents = (number: number) => Math.round(number * 100)
+const cents = moneyToCents
 
 // Texto comercial livre permanece intacto. Marcadores explícitos de composição
 // privada impedem a exportação, para que o operador revise a origem do texto.

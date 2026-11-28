@@ -105,6 +105,22 @@ def _pedido_dict(pedido: PedidoDB) -> dict:
         "valor_parceiro": pedido.valor_parceiro,
         "valor_taxa_bancaria": pedido.valor_taxa_bancaria,
         "total_cliente_final": pedido.total_cliente_final,
+        "pagamento_modalidade": pedido.pagamento_modalidade,
+        "pagamento_numero_parcelas": pedido.pagamento_numero_parcelas,
+        "pagamento_intervalo_dias": pedido.pagamento_intervalo_dias,
+        "pagamento_primeiro_vencimento": pedido.pagamento_primeiro_vencimento,
+        "pagamento_parcelas": [
+            {
+                "id": parcela.id,
+                "numero": parcela.numero,
+                "tipo": parcela.tipo,
+                "valor": parcela.valor,
+                "vencimento": parcela.vencimento,
+                "forma_pagamento_id": parcela.forma_pagamento_id,
+                "forma_pagamento_nome": parcela.forma_pagamento_nome,
+            }
+            for parcela in pedido.parcelas_pagamento
+        ],
         "observacao": pedido.observacao,
         "observacao_interna": pedido.observacao_interna,
         "criado_em": pedido.criado_em,
@@ -124,6 +140,7 @@ def listar(db: Session, tenant):
         .options(
             selectinload(PedidoDB.itens),
             selectinload(PedidoDB.orcamento),
+            selectinload(PedidoDB.parcelas_pagamento),
         )
         .filter(
             PedidoDB.empresa_id == empresa_id
@@ -152,6 +169,7 @@ def obter(
         .options(
             selectinload(PedidoDB.itens),
             selectinload(PedidoDB.orcamento),
+            selectinload(PedidoDB.parcelas_pagamento),
         )
         .filter(
             PedidoDB.id == pedido_id,
@@ -178,12 +196,14 @@ def converter_orcamento(
     orcamento = (
         db.query(OrcamentoDB)
         .options(
-            selectinload(OrcamentoDB.itens)
+            selectinload(OrcamentoDB.itens),
+            selectinload(OrcamentoDB.parcelas_pagamento)
         )
         .filter(
             OrcamentoDB.id == orcamento_id,
             OrcamentoDB.empresa_id == empresa_id,
         )
+        .with_for_update()
         .first()
     )
 
@@ -228,6 +248,11 @@ def converter_orcamento(
         {key: getattr(orcamento, key) for key in CLIENTE_FINAL_CAMPOS},
     )
 
+    from app.models.pedido import PedidoParcelaDB
+    from app.services.orcamento_service import _validar_pagamento_existente
+
+    _validar_pagamento_existente(orcamento)
+
     pedido = PedidoDB(
         empresa_id=empresa_id,
         numero=None,
@@ -265,6 +290,10 @@ def converter_orcamento(
         valor_parceiro=orcamento.valor_parceiro,
         valor_taxa_bancaria=orcamento.valor_taxa_bancaria,
         total_cliente_final=orcamento.total_cliente_final,
+        pagamento_modalidade=orcamento.pagamento_modalidade,
+        pagamento_numero_parcelas=orcamento.pagamento_numero_parcelas,
+        pagamento_intervalo_dias=orcamento.pagamento_intervalo_dias,
+        pagamento_primeiro_vencimento=orcamento.pagamento_primeiro_vencimento,
         observacao=orcamento.observacao,
         observacao_interna=orcamento.observacao_interna,
     )
@@ -273,6 +302,20 @@ def converter_orcamento(
     db.flush()
 
     pedido.numero = f"VEN-{pedido.id:06d}"
+
+    for parcela in orcamento.parcelas_pagamento:
+        if parcela.empresa_id != empresa_id:
+            raise ValueError("Parcela de outra empresa.")
+
+        pedido.parcelas_pagamento.append(PedidoParcelaDB(
+            empresa_id=empresa_id,
+            numero=parcela.numero,
+            tipo=parcela.tipo,
+            valor=parcela.valor,
+            vencimento=parcela.vencimento,
+            forma_pagamento_id=parcela.forma_pagamento_id,
+            forma_pagamento_nome=parcela.forma_pagamento_nome,
+        ))
 
     for origem in orcamento.itens:
         item = PedidoItemDB(
@@ -314,6 +357,7 @@ def converter_orcamento(
         .options(
             selectinload(PedidoDB.itens),
             selectinload(PedidoDB.orcamento),
+            selectinload(PedidoDB.parcelas_pagamento),
         )
         .filter(
             PedidoDB.id == pedido.id,
@@ -436,8 +480,8 @@ def atualizar(db, pedido_id, tenant, data):
                 raise ValueError(f"{field}: vínculo não encontrado na empresa atual.")
     if "status" in changes:
         value = (changes["status"] or "").strip().upper()
-        if value not in {"ABERTO", "CONCLUIDO", "CANCELADO", "FATURADO"}:
-            raise ValueError("Status inválido. Use ABERTO, CONCLUIDO, CANCELADO ou FATURADO.")
+        if value not in {"ABERTO", "APROVADO", "CONCLUIDO", "CANCELADO", "FATURADO"}:
+            raise ValueError("Status inválido. Use ABERTO, APROVADO, CONCLUIDO, CANCELADO ou FATURADO.")
         changes["status"] = value
     if "perfil_comercial" in changes:
         value = (changes["perfil_comercial"] or "").strip().upper()
@@ -446,7 +490,7 @@ def atualizar(db, pedido_id, tenant, data):
         changes["perfil_comercial"] = value
     invalidar_autorizacao = (
         any(campo != "status" for campo in changes)
-        or changes.get("status") == "CANCELADO"
+        or changes.get("status") in {"ABERTO", "CANCELADO"}
     )
     if invalidar_autorizacao and (
         getattr(pedido, "producao_aprovado_em", None) is not None
@@ -568,12 +612,28 @@ def criar(db: Session, data, tenant):
         fields = ("total", "total_final", "percentual_parceiro", "incluir_rt", "tipo_rt",
                   "percentual_rt", "valor_rt", "incluir_taxa_bancaria", "taxa_bancaria_percentual",
                   "valor_parceiro", "valor_taxa_bancaria", "total_cliente_final")
-        header = data.dict(exclude=set(fields) | {"itens"})
+        header = data.dict(exclude=set(fields) | {
+            "itens",
+            "pagamento_modalidade",
+            "pagamento_numero_parcelas",
+            "pagamento_intervalo_dias",
+            "pagamento_primeiro_vencimento",
+            "pagamento_parcelas",
+        })
         # Parâmetros calculados explicitamente, inclusive zero/false quando desligados.
         pedido = PedidoDB(empresa_id=empresa_id, orcamento_id=None, numero=None,
                           **header, **{key: getattr(calculated, key) for key in fields})
         pedido.data_venda = data.data_venda or date.today()
         pedido.itens = calculated.itens
+
+        from app.models.pedido import PedidoParcelaDB
+        from app.services.orcamento_service import _preencher_pagamento
+
+        _preencher_pagamento(
+            db, pedido, data, empresa_id,
+            parcela_model=PedidoParcelaDB,
+        )
+
         db.add(pedido)
         db.flush()
         # A PK é alocada pela sequência do banco: segura também entre conversões e criações concorrentes.

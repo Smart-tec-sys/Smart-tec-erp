@@ -1371,6 +1371,51 @@ textarea { font: inherit; }
 .product-suggestions button { display: flex; width: 100%; flex-direction: column; gap: 2px; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; cursor: pointer; }
 .product-suggestions button:hover { background: #f4f6f8; }
 .product-suggestions small { color: #667085; }
+.budget-edit-page .product-rows,
+.budget-edit-page .budget-product-row { min-width: 0; max-width: 100%; }
+.budget-edit-page .product-fields {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 2px 2px 10px;
+}
+.budget-edit-page .product-fields:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.budget-edit-page .product-fields > .field,
+.budget-edit-page .product-fields > .product-subtotal { flex: 0 0 140px; min-width: 0; }
+.budget-edit-page .product-fields > .product-field-name { flex-basis: 240px; }
+.budget-edit-page .product-fields > .product-field-color { flex-basis: 165px; }
+.budget-edit-page .product-fields > .product-field-drive { flex-basis: 145px; }
+.budget-edit-page .product-fields > .product-field-details { flex-basis: 210px; }
+.budget-edit-page .product-fields > .product-field-environment { flex-basis: 160px; }
+.budget-edit-page .product-fields > .product-field-quantity { flex-basis: 110px; }
+.budget-edit-page .product-fields > .product-field-profile { flex-basis: 150px; }
+.product-field-measures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; min-width: 0; }
+.budget-edit-page .product-fields > .product-field-measures { flex: 0 0 230px; }
+.product-measures-help { grid-column: 1 / -1; min-width: 0; font-size: 11px; line-height: 1.4; }
+.product-measures-help p { margin: 0; }
+.product-measure-error { display: block; margin-bottom: 4px; color: var(--color-danger); }
+.budget-product-suggestions-layer { position: fixed; z-index: 80; }
+.budget-product-suggestions-layer > .product-suggestions { position: static; inset: auto; min-width: 0; max-width: none; width: 100%; max-height: inherit; box-sizing: border-box; }
+.budget-edit-page .product-fields > .product-field-price { flex-basis: 170px; }
+.budget-edit-page .product-fields .field > span { white-space: nowrap; font-size: 11px; }
+.budget-edit-page .product-fields .field input,
+.budget-edit-page .product-fields .field select { height: 36px; font-size: 12px; }
+.budget-edit-page .product-fields .stepper { height: 36px; }
+.budget-edit-page .product-fields .stepper button { flex: 0 0 28px; }
+.budget-edit-page .product-fields .stepper input { flex: 1; width: 0 !important; min-width: 0; height: 34px !important; }
+.budget-edit-page .product-field-motor p { margin: 0; font-size: 11px; overflow-wrap: anywhere; }
+.budget-edit-page .product-fields > .product-subtotal { height: auto; padding-top: 20px; text-align: left; }
+.budget-edit-page .budget-product-row > .api-message { min-width: 0; overflow-wrap: anywhere; }
+.budget-edit-page .product-field-drive { position: relative; }
+.motor-help-button { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 1px solid #667085; border-radius: 50%; background: #fff; color: #344054; font-size: 12px; font-weight: 700; cursor: pointer; }
+.motor-help-button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.product-field-drive > .motor-help-button { position: absolute; top: -3px; left: 84px; }
+.motor-selector-status { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; overflow-wrap: anywhere; }
+.motor-selector-status .motor-help-button { flex: 0 0 20px; }
+.motor-help-popup { position: fixed; z-index: 10000; width: min(320px, calc(100vw - 24px)); max-height: min(45vh, 300px); overflow: auto; padding: 10px 12px; border-radius: 8px; background: #101828; color: #fff; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .payload-preview { max-height: 320px; overflow: auto; padding: 14px; border-radius: 8px; background: #101828; color: #e4e7ec; font-size: 12px; white-space: pre-wrap; }
 .api-message { padding: 12px 14px; border-radius: 8px; background: #f2f4f7; color: #344054; }
 .api-message.error { background: #fff1f0; color: #b42318; }
@@ -3282,4 +3327,240 @@ textarea { font: inherit; }
   textarea, pre, code, a[href^="mailto:"], a[href^="http"], .commercial-literal
 ) {
   text-transform: none;
+}
+
+
+/* SMARTTEC_LAYOUT_ORCAMENTO_V2 */
+
+.budget-edit-page .product-fields {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 14px 12px;
+    align-items: start;
+    overflow: visible;
+    width: 100%;
+    min-width: 0;
+    padding: 4px 0 12px;
+}
+
+.budget-edit-page .product-fields > * {
+    min-width: 0;
+    max-width: 100%;
+    grid-column: span 3;
+}
+
+.budget-edit-page .product-fields > .product-field-name {
+    grid-column: 1 / -1;
+    order: 1;
+}
+
+.budget-edit-page .product-fields > .product-field-color {
+    order: 2;
+}
+
+.budget-edit-page .product-fields > .product-field-profile {
+    order: 3;
+}
+
+.budget-edit-page .product-fields > .product-field-quantity {
+    grid-column: span 2;
+    order: 4;
+}
+
+.budget-edit-page .product-fields > .product-field-measures {
+    grid-column: span 4;
+    order: 5;
+    gap: 12px;
+}
+
+.budget-edit-page .product-fields > .product-field-measure {
+    grid-column: span 2;
+    order: 5;
+}
+
+.budget-edit-page .product-fields > .product-field-drive {
+    grid-column: span 3;
+    order: 6;
+}
+
+.budget-edit-page .product-fields > .product-field-motor {
+    grid-column: 1 / -1;
+    order: 7;
+    display: grid;
+    gap: 12px;
+}
+
+.budget-edit-page .product-measures-help {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+}
+
+.budget-edit-page .product-fields > .product-field-environment {
+    order: 8;
+}
+
+.budget-edit-page .product-fields > .product-field-details {
+    order: 9;
+}
+
+.budget-edit-page .product-fields > .product-field-price {
+    order: 10;
+    border-top: 1px solid var(--color-border, #e5e7eb);
+    padding-top: 14px;
+}
+
+.budget-edit-page .product-fields > .product-subtotal {
+    order: 11;
+    padding: 14px 0 0;
+    border-top: 1px solid var(--color-border, #e5e7eb);
+    text-align: right;
+    align-content: start;
+}
+
+.budget-edit-page .product-subtotal strong {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.budget-edit-page .product-fields .field > span {
+    font-size: 12px;
+    white-space: normal;
+}
+
+.budget-edit-page .product-fields .field input:not([type="checkbox"]),
+.budget-edit-page .product-fields .field select {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    font-size: 13px;
+}
+
+.budget-edit-page .product-fields input[type="checkbox"] {
+    width: 16px !important;
+    height: 16px !important;
+    min-width: 16px !important;
+    margin: 0 8px 0 0;
+    padding: 0;
+    vertical-align: middle;
+    accent-color: var(--color-primary, #dc2626);
+}
+
+@media (max-width: 600px) {
+    .budget-edit-page .product-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .budget-edit-page .product-fields > * {
+        grid-column: 1 / -1;
+    }
+
+    .budget-edit-page .product-fields > .product-field-quantity,
+    .budget-edit-page .product-fields > .product-field-measure,
+    .budget-edit-page .product-fields > .product-field-drive {
+        grid-column: 1 / -1;
+    }
+
+    .budget-edit-page .product-fields > .product-field-measures {
+        grid-column: 1 / -1;
+    }
+}
+
+
+/* SMARTTEC_ACESSORIOS_V2 */
+
+.rolo-accessories-panel {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    margin: 16px 0;
+    border: 1px solid var(--color-border, #d1d5db);
+    border-radius: 10px;
+    background: var(--color-surface, transparent);
+    min-width: 0;
+}
+
+.rolo-accessories-panel > strong {
+    font-size: 15px;
+}
+
+.rolo-accessories-panel p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-muted);
+}
+
+.rolo-accessories-panel > div {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+.rolo-accessories-panel select {
+    width: 100%;
+    min-width: 0;
+    height: 38px;
+    font-size: 13px;
+}
+
+.product-technical-details {
+    margin-top: 16px;
+    padding: 12px;
+    border: 1px solid var(--color-border, #d1d5db);
+    border-radius: 8px;
+}
+
+.product-technical-details > summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+
+/* SMARTTEC_ACESSORIO_UNIDADE */
+
+.product-accessory-row .product-field-color,
+.product-accessory-row .product-field-measures,
+.product-accessory-row .product-field-measure,
+.product-accessory-row .product-field-drive,
+.product-accessory-row .product-field-motor {
+    display: none !important;
+}
+
+.budget-edit-page .product-accessory-row .product-field-quantity {
+    grid-column: span 3;
+}
+
+
+
+/* SMARTTEC_STATUS_RAPIDO */
+
+.budget-status-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(0,0,0,.55);
+}
+
+.budget-status-dialog {
+    width: min(100%, 420px);
+    padding: 24px;
+    display: grid;
+    gap: 18px;
+}
+
+.budget-status-dialog h2,
+.budget-status-dialog p {
+    margin: 0;
+}
+
+.budget-status-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
 }

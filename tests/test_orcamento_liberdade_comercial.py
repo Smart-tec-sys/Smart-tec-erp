@@ -2,7 +2,7 @@
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +15,7 @@ from app.schemas.orcamento import OrcamentoInput, OrcamentoItemInput, OrcamentoC
 from app.schemas.pedido import PedidoCreate
 from app.services import orcamento_service
 from app.services.composicao_comercial import calcular_itens
+from app.services.rolo_simulacao import simular_rolo
 from app.tenant.context import TenantContext
 
 TENANT = TenantContext(empresa_id=1)
@@ -44,7 +45,8 @@ def test_criar_editar_reabrir_restaurar_sem_alterar_cadastro(db, unidade, base, 
     assert criado["itens"][0]["preco_unitario_sugerido"] == 200
 
     negociado = item_produto()
-    negociado.update(preco_unitario=37.1256, preco_unitario_manual=True)
+    negociado.update(id=criado["itens"][0]["id"], recalcular=True,
+                     preco_unitario=37.1256, preco_unitario_manual=True)
     orcamento_service.atualizar(db, criado["id"], entrada(itens=[negociado]), TENANT)
     db.expire_all()
     reaberto = orcamento_service.obter(db, criado["id"], TENANT)
@@ -58,7 +60,7 @@ def test_criar_editar_reabrir_restaurar_sem_alterar_cadastro(db, unidade, base, 
     # O cadastro pode mudar; medidas e quantidade não autorizam perder a negociação.
     db.get(ProdutoDB, 10).custo_final = 120
     db.commit()
-    editado = dict(reaberto["itens"][0], largura=.7, altura=.7, quantidade=3)
+    editado = dict(reaberto["itens"][0], largura=.7, altura=.7, quantidade=3, recalcular=True)
     atualizado = orcamento_service.atualizar(db, criado["id"], entrada(itens=[editado]), TENANT)
     assert atualizado["itens"][0]["preco_unitario"] == 37.1256
     assert atualizado["itens"][0]["preco_unitario_sugerido"] == 240
@@ -77,11 +79,15 @@ def test_criar_editar_reabrir_restaurar_sem_alterar_cadastro(db, unidade, base, 
 @pytest.mark.parametrize("largura,quantidade", [(1.82, 1), (2, 2)])
 def test_negociacao_preserva_motor_tecnico_e_pedidos(modelo, largura, quantidade):
     produto, item, esperado = setup(modelo, largura, quantidade)
+    produto.empresa_id = 1
     item.update(preco_unitario=77.7777, preco_unitario_manual=True, desconto=1.23)
     banco = MagicMock()
     banco.query.return_value.filter.return_value.first.return_value = produto
+    banco.query.return_value.filter_by.return_value.one_or_none.return_value = SimpleNamespace(configuracoes={})
     documento = SimpleNamespace(itens=[])
-    calcular_itens(banco, documento, OrcamentoInput(cliente_id=1, itens=[item]), 1, SimpleNamespace)
+    with patch("app.services.rolo_receita.simular_rolo_catalogo",
+               side_effect=lambda db, produto, dados, tenant: simular_rolo(produto, dados)):
+        calcular_itens(banco, documento, OrcamentoInput(cliente_id=1, itens=[item]), 1, SimpleNamespace)
     salvo = documento.itens[0]
     base = Decimal(str(quantidade if modelo == "CORTINA" else esperado["area_faturavel_m2"]))
     assert salvo.preco_unitario == Decimal("77.7777")
@@ -96,7 +102,9 @@ def test_negociacao_preserva_motor_tecnico_e_pedidos(modelo, largura, quantidade
 
     pedido = SimpleNamespace(itens=[])
     item_pedido = {k: v for k, v in item.items() if k != "preco_unitario_manual"}
-    calcular_itens(banco, pedido, PedidoCreate(cliente_id=1, itens=[item_pedido]), 1, SimpleNamespace)
+    with patch("app.services.rolo_receita.simular_rolo_catalogo",
+               side_effect=lambda db, produto, dados, tenant: simular_rolo(produto, dados)):
+        calcular_itens(banco, pedido, PedidoCreate(cliente_id=1, itens=[item_pedido]), 1, SimpleNamespace)
     assert pedido.itens[0].preco_unitario == esperado["preco_unitario"]
     assert dinheiro(pedido.itens[0].subtotal) == dinheiro(Decimal(str(esperado["subtotal"])) - Decimal("1.23"))
 
@@ -132,8 +140,9 @@ def test_servico_negociado_parcelado_edicoes_repetidas_e_taxa_unica(db):
     assert criado["base_protegida"] == 89.1 and criado["valor_taxa_bancaria"] == 9.9
     assert criado["total_cliente_final"] == criado["pagamento_total"] == 99
     for preco, quantidade, total in [(90, 1, 110), (75, 2, 183.33), (45, 1, 55)]:
+        item = dict(servico(preco, quantidade), id=criado["itens"][0]["id"], recalcular=True)
         salvo = orcamento_service.atualizar(db, criado["id"], entrada(
-            itens=[servico(preco, quantidade)], **condicoes, **plano(total)), TENANT)
+            itens=[item], **condicoes, **plano(total)), TENANT)
         db.expire_all()
         reaberto = orcamento_service.obter(db, criado["id"], TENANT)
         assert salvo["id"] == criado["id"]
@@ -148,7 +157,8 @@ def test_divergencia_parcelas_faz_rollback_integral(db, enviar_plano):
     criado = salvar(db, entrada(itens=[servico()], **plano(100)))
     kwargs = plano(100) if enviar_plano else {}
     with pytest.raises(ValueError, match="soma das parcelas"):
-        orcamento_service.atualizar(db, criado["id"], entrada(itens=[servico(150)], **kwargs), TENANT)
+        item = dict(servico(150), id=criado["itens"][0]["id"], recalcular=True)
+        orcamento_service.atualizar(db, criado["id"], entrada(itens=[item], **kwargs), TENANT)
     db.expire_all()
     reaberto = orcamento_service.obter(db, criado["id"], TENANT)
     assert reaberto["total_cliente_final"] == reaberto["pagamento_total"] == 100
@@ -195,13 +205,17 @@ def test_modelo_tecnico_negociado_persiste_apos_edicao(db, modelo):
     db.add(ProdutoDB(**vars(produto), empresa_id=1, largura=1.5, situacao="Ativo"))
     db.commit()
     item.update(preco_unitario=55.4321, preco_unitario_manual=True)
-    criado = salvar(db, entrada(itens=[item]))
+    with patch("app.services.rolo_receita.simular_rolo_catalogo",
+               side_effect=lambda db, produto, dados, tenant: simular_rolo(produto, dados)):
+        criado = salvar(db, entrada(itens=[item]))
     db.expire_all()
     reaberto = orcamento_service.obter(db, criado["id"], TENANT)
     assert reaberto["itens"][0]["preco_unitario"] == 55.4321
     assert reaberto["itens"][0]["preco_unitario_manual"] is True
-    editado = dict(reaberto["itens"][0], largura=1.8, altura=2, quantidade=3)
-    atualizado = orcamento_service.atualizar(db, criado["id"], entrada(itens=[editado]), TENANT)
+    editado = dict(reaberto["itens"][0], largura=1.8, altura=2, quantidade=3, recalcular=True)
+    with patch("app.services.rolo_receita.simular_rolo_catalogo",
+               side_effect=lambda db, produto, dados, tenant: simular_rolo(produto, dados)):
+        atualizado = orcamento_service.atualizar(db, criado["id"], entrada(itens=[editado]), TENANT)
     db.expire_all()
     persistido = orcamento_service.obter(db, criado["id"], TENANT)
     base = Decimal("3") if modelo == "CORTINA" else Decimal("10.8")
@@ -232,3 +246,68 @@ def test_resposta_legada_identifica_falta_de_marcador(db):
     reaberto = orcamento_service.obter(db, criado["id"], TENANT)
     assert reaberto["itens"][0]["preco_unitario_manual"] is None
     assert reaberto["itens"][0]["preco_unitario_sugerido"] is None
+
+
+def test_cliente_legado_preserva_itens_omitidos_e_servicos(db):
+    criado = salvar(db, entrada(itens=[servico(81), dict(servico(42), descricao="Frete")], desconto=5))
+    primeiro, segundo = criado["itens"]
+    legado = dict(primeiro)
+    legado.pop("id")
+    atualizado = orcamento_service.atualizar(db, criado["id"], entrada(
+        itens=[legado], desconto=5, observacao="Edição legada"), TENANT)
+    itens = {item["id"]: item for item in atualizado["itens"]}
+    assert set(itens) == {primeiro["id"], segundo["id"]}
+    assert itens[primeiro["id"]]["subtotal"] == primeiro["subtotal"]
+    assert itens[segundo["id"]]["subtotal"] == segundo["subtotal"]
+    assert atualizado["total_final"] == criado["total_final"] == 118
+
+
+def test_exclusao_e_recalculo_de_servico_sao_explicitamente_identificados(db):
+    criado = salvar(db, entrada(itens=[servico(81), dict(servico(42), descricao="Frete")], desconto=5))
+    primeiro, segundo = criado["itens"]
+    alterado = dict(primeiro, preco_unitario=90, recalcular=True)
+    atualizado = orcamento_service.atualizar(db, criado["id"], entrada(
+        itens=[alterado], itens_removidos_ids=[segundo["id"]], desconto=5), TENANT)
+    assert len(atualizado["itens"]) == 1
+    assert atualizado["itens"][0]["id"] == primeiro["id"]
+    assert atualizado["itens"][0]["preco_unitario"] == 90
+    assert atualizado["total_final"] == 85
+
+
+def test_cliente_legado_ambiguo_nao_altera_nem_duplica_itens(db):
+    criado = salvar(db, entrada(itens=[servico(81), servico(81)]))
+    legado = dict(criado["itens"][0])
+    legado.pop("id")
+    with pytest.raises(ValueError, match="ambíguo"):
+        orcamento_service.atualizar(db, criado["id"], entrada(itens=[legado]), TENANT)
+    reaberto = orcamento_service.obter(db, criado["id"], TENANT)
+    assert len(reaberto["itens"]) == 2
+    assert reaberto["total"] == criado["total"]
+
+
+def test_identidade_alheia_e_subtotal_enviado_nao_afetam_historico(db):
+    criado = salvar(db, entrada(itens=[servico(81)]))
+    item = criado["itens"][0]
+    with pytest.raises(ValueError, match="Identidade"):
+        orcamento_service.atualizar(db, criado["id"], entrada(
+            itens=[dict(item, id=item["id"] + 100)]), TENANT)
+    atualizado = orcamento_service.atualizar(db, criado["id"], entrada(
+        itens=[dict(item, subtotal=1)]), TENANT)
+    assert atualizado["itens"][0]["id"] == item["id"]
+    assert atualizado["itens"][0]["subtotal"] == 81
+    assert atualizado["total"] == 81
+
+
+def test_edicao_sem_recalculo_preserva_totais_historicos(db):
+    criado = salvar(db, entrada(itens=[servico(81)]))
+    registro = db.get(OrcamentoDB, criado["id"])
+    registro.total = Decimal("80.99")
+    registro.total_final = Decimal("80.99")
+    registro.base_protegida = Decimal("80.99")
+    registro.total_cliente_final = Decimal("80.99")
+    db.commit()
+    reaberto = orcamento_service.obter(db, criado["id"], TENANT)
+    salvo = orcamento_service.atualizar(db, criado["id"], entrada(
+        itens=reaberto["itens"], observacao="Sem alteração comercial"), TENANT)
+    assert salvo["itens"][0]["subtotal"] == 81
+    assert salvo["total"] == salvo["total_final"] == salvo["total_cliente_final"] == 80.99

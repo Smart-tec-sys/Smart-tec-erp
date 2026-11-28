@@ -14,17 +14,13 @@ export async function generateBudgetPdf(budget:ApiBudget,mode:BudgetPdfMode,cont
 async function loadCompanyLogo(path:string,apiUrl:string):Promise<string>{
  const url=new URL(path,apiUrl)
  if(!['http:','https:'].includes(url.protocol))throw new Error('Endereço de logo inválido.')
- const apiOrigin = new URL(apiUrl).origin
-const headers = url.origin === apiOrigin
-  ? await (await import('./auth')).getApiAuthHeaders()
-  : {}
-
-const response = await fetch(url, {
+ const response = await fetch(url, {
+  method: 'GET',
+  mode: 'cors',
   signal: AbortSignal.timeout(10000),
-  credentials: 'omit',
-  headers
+  credentials: 'omit'
 })
- if(!response.ok)throw new Error('Logo indisponível.')
+ if(!response.ok)throw new Error(`Logo indisponível (HTTP ${response.status}).`)
  const blob=await response.blob()
  if(!['image/png','image/jpeg','image/webp'].includes(blob.type)||blob.size===0||blob.size>5*1024*1024)throw new Error('Logo inválida.')
  // Decodificar antes do renderer; normalizar WebP e imagens para PNG.
@@ -69,17 +65,24 @@ export async function loadBudgetPdfContext(budget:ApiBudget,mode:BudgetPdfMode):
   companyTradeName:company.nome_fantasia??undefined,
   companyDocument:company.documento??undefined,
   companyAddress:[publicProfile.logradouro,publicProfile.numero,publicProfile.complemento,publicProfile.bairro,publicProfile.cidade,publicProfile.estado,publicProfile.cep].filter(Boolean).join(', '),
-  companyPhones:[publicProfile.telefone_comercial,publicProfile.telefone_celular].filter((phone):phone is string=>Boolean(phone)),
+  companyPhones:[publicProfile.telefone_comercial,publicProfile.telefone_celular].filter((phone,index,phones):phone is string=>{
+    if(typeof phone!=='string'||!phone.trim())return false
+    const key=phone.replace(/\D/g,'')||phone.trim().toLowerCase()
+    return phones.findIndex(other=>typeof other==='string'&&(other.replace(/\D/g,'')||other.trim().toLowerCase())===key)===index
+  }),
   companyEmail:publicProfile.email??undefined,companySite:publicProfile.site??undefined,
   warnings:[],
  }
  if(company.logo_url){
   try{context.companyLogo=await loadCompanyLogo(company.logo_url,api.apiConfig.baseUrl)}
-  catch{context.warnings?.push('A logo da empresa não pôde ser carregada. O PDF foi gerado sem logo.')}
+  catch(error){
+   const reason=error instanceof Error?error.message:'Falha desconhecida'
+   context.warnings?.push(`A logo da empresa não pôde ser carregada (${reason}). Verifique a logo nas Configurações; o PDF foi gerado sem ela.`)
+  }
  }
  return context
 }
-async function budgetPdfCompanyId():Promise<number>{
+export async function budgetPdfCompanyId():Promise<number>{
  const auth=await import('./auth')
  if(auth.authEnabled){
   const empresaId=auth.getEmpresaId()

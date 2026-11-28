@@ -1,3 +1,5 @@
+import { SaleShareDialog } from '../components/SaleShareDialog'
+import type { BudgetShareChannel } from '../services/budgetShare'
 import { commercialDisplayText } from '../utils/commercialDisplay'
 import './salesPage.css'
 import { ColumnManager } from '../components/ColumnManager'
@@ -8,11 +10,14 @@ import {
   ShoppingCart,
   WalletCards,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SaleEditDialog } from '../components/SaleEditDialog'
+import { SaleProductionDialog } from '../components/SaleProductionDialog'
 import { RowActionsMenu } from '../components/RowActionsMenu'
+import { saleProductionReason } from '../services/saleProduction'
 import {
   deleteOrder,
+  updateOrder,
   getClients,
   getOrders,
   getCommercialPartners,
@@ -39,6 +44,7 @@ function statusLabel(status?: string | null) {
   const value = (status || 'ABERTO').toUpperCase()
 
   if (value === 'ABERTO') return 'Em aberto'
+  if (value === 'APROVADO') return 'Aprovado'
   if (value === 'CONCLUIDO') return 'Concluído'
   if (value === 'CANCELADO') return 'Cancelado'
   if (value === 'FATURADO') return 'Faturado'
@@ -60,9 +66,41 @@ function commercialName(
 }
 
 export function SalesPage({ onOpenSale, onNewSale, onViewFinance }: { onOpenSale: (id: number) => void; onNewSale: () => void; onViewFinance?: (id: number) => void }) {
+  const [statusOrder, setStatusOrder] = useState<ApiOrder | null>(null)
+  const [newStatus, setNewStatus] = useState('ABERTO')
+  const [statusSaving, setStatusSaving] = useState(false)
+  const [statusError, setStatusError] = useState('')
+  const [sharingSale, setSharingSale] = useState<{
+    order: ApiOrder; channel: BudgetShareChannel
+  } | null>(null)
+  const closeSharingSale = useCallback(() => setSharingSale(null), [])
   const [editingOrder, setEditingOrder] = useState<ApiOrder | null>(null)
+  const [productionSaleId, setProductionSaleId] = useState<number | null>(null)
+  const closeProduction = useCallback(() => setProductionSaleId(null), [])
   const [actionError, setActionError] = useState('')
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  async function saveSaleStatus() {
+    if (!statusOrder || statusSaving) return
+    setStatusSaving(true)
+    setStatusError('')
+
+    try {
+      const updated = await updateOrder(
+        statusOrder.id, { status: newStatus }
+      )
+      setOrders(current => current.map(
+        item => item.id === updated.id ? updated : item
+      ))
+      setStatusOrder(null)
+    } catch (err) {
+      setStatusError(
+        err instanceof Error ? err.message : String(err)
+      )
+    } finally {
+      setStatusSaving(false)
+    }
+  }
+
   async function removeOrder(order: ApiOrder) {
     if (deletingId !== null || !window.confirm(`Excluir a venda ${order.numero || order.id}? Esta ação não pode ser desfeita.`)) return
     setDeletingId(order.id); setActionError('')
@@ -87,19 +125,18 @@ export function SalesPage({ onOpenSale, onNewSale, onViewFinance }: { onOpenSale
 
     void Promise.all([
       getOrders(),
-      getClients(),
       Promise.allSettled([
+        getClients(),
         getCommercialPartners(),
         getRepresentatives(),
       ]),
     ])
-      .then(([ordersData, clientsData, commercialData]) => {
+      .then(([ordersData, commercialData]) => {
         if (cancelled) return
 
         setOrders(ordersData)
-        setClients(clientsData)
-
-        const [partnersResult, representativesResult] = commercialData
+        const [clientsResult, partnersResult, representativesResult] = commercialData
+        if (clientsResult.status === 'fulfilled') setClients(clientsResult.value)
         if (partnersResult.status === 'fulfilled') setPartners(partnersResult.value)
         if (representativesResult.status === 'fulfilled') {
           setRepresentatives(representativesResult.value)
@@ -260,6 +297,50 @@ export function SalesPage({ onOpenSale, onNewSale, onViewFinance }: { onOpenSale
       </section>
 
       {actionError && <div className="api-message error" role="alert">{actionError}</div>}
+      {productionSaleId !== null && <SaleProductionDialog key={productionSaleId} saleId={productionSaleId} onClose={closeProduction} />}
+      {statusOrder && <div className="budget-status-overlay">
+        <section className="panel budget-status-dialog"
+          role="dialog" aria-modal="true"
+          aria-label="Alterar situacao da venda">
+
+          <h2>Alterar situação</h2>
+          <p>Venda #{statusOrder.numero || statusOrder.id}</p>
+
+          <label className="field">
+            <span>Nova situação</span>
+            <select value={newStatus}
+              disabled={statusSaving}
+              onChange={e => setNewStatus(e.target.value)}>
+              <option value="ABERTO">Em aberto</option>
+              <option value="APROVADO">Aprovado</option>
+              <option value="FATURADO">Faturado</option>
+              <option value="CONCLUIDO">Concluído</option>
+              <option value="CANCELADO">Cancelado</option>
+            </select>
+          </label>
+
+          {statusError && <p role="alert">{statusError}</p>}
+
+          <div className="budget-status-buttons">
+            <button type="button" className="secondary-button"
+              disabled={statusSaving}
+              onClick={() => setStatusOrder(null)}>
+              Voltar
+            </button>
+            <button type="button" className="primary-button"
+              disabled={statusSaving || newStatus === statusOrder.status}
+              onClick={() => void saveSaleStatus()}>
+              {statusSaving ? 'Salvando...' : 'Salvar situa\u00e7\u00e3o'}
+            </button>
+          </div>
+        </section>
+      </div>}
+      {sharingSale && <SaleShareDialog
+        key={`${sharingSale.order.id}-${sharingSale.channel}`}
+        order={sharingSale.order}
+        channel={sharingSale.channel}
+        onClose={closeSharingSale}
+      />}
       {editingOrder && <SaleEditDialog order={editingOrder} onClose={() => setEditingOrder(null)} onSaved={updated => { setOrders(current => current.map(item => item.id === updated.id ? updated : item)); setEditingOrder(null) }} />}
       {loading ? (
         <div className="panel loading-state">
@@ -433,7 +514,33 @@ export function SalesPage({ onOpenSale, onNewSale, onViewFinance }: { onOpenSale
                         )}
                       </strong>
                     </td>
-                    <td className="sales-actions-cell"><RowActionsMenu module="sale" label={`venda ${order.numero || `#${order.id}`}`} onView={() => onOpenSale(order.id)} onEdit={() => setEditingOrder(order)} onChangeStatus={() => setEditingOrder(order)} onViewFinance={onViewFinance ? () => onViewFinance(order.id) : undefined} onDelete={() => void removeOrder(order)} busy={deletingId !== null} /></td>
+                    <td className="sales-actions-cell"><RowActionsMenu module="sale" label={`venda ${order.numero || `#${order.id}`}`} onShareBudget={
+  order.parceiro_id == null &&
+  order.representante_id == null &&
+  !order.cliente_final_nome?.trim() &&
+  order.cliente_id != null
+    ? channel => setSharingSale({ order, channel })
+    : undefined
+} onPrintSale={
+  order.parceiro_id == null &&
+  order.representante_id == null &&
+  !order.cliente_final_nome?.trim() &&
+  order.cliente_id != null
+    ? () => {
+        void import('../services/salePdf')
+          .then(mod => mod.downloadDirectSalePdf(order.id))
+          .catch(err => window.alert(
+            err instanceof Error ? err.message : String(err)
+          ))
+      }
+    : undefined
+} onView={() => onOpenSale(order.id)} onEdit={() => setEditingOrder(order)} onChangeStatus={() => {
+          setNewStatus(order.status || 'ABERTO')
+          setStatusError('')
+          setStatusOrder(order)
+        }} onViewFinance={onViewFinance ? () => onViewFinance(order.id) : undefined} onGenerateProduction={order.status === 'APROVADO' && !saleProductionReason(order) ? () => setProductionSaleId(order.id) : undefined} productionReason={order.status !== 'APROVADO'
+          ? 'Somente vendas aprovadas podem iniciar producao.'
+          : saleProductionReason(order)} onDelete={() => void removeOrder(order)} busy={deletingId !== null} /></td>
                   </tr>
                 ))}
               </tbody>

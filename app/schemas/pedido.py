@@ -1,3 +1,5 @@
+from app.schemas.orcamento import OrcamentoParcelaInput
+from pydantic import conint
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional, Literal
@@ -53,6 +55,16 @@ class ClienteFinalRevenda(BaseModel):
     producao_historico: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class PedidoParcelaOut(BaseModel):
+    id: int
+    numero: int
+    tipo: Literal["PARCELA", "ENTRADA", "SALDO"]
+    valor: Decimal
+    vencimento: date
+    forma_pagamento_id: int
+    forma_pagamento_nome: str
+
+
 class PedidoOut(ClienteFinalRevenda):
     id: int
     numero: Optional[str] = None
@@ -90,6 +102,12 @@ class PedidoOut(ClienteFinalRevenda):
 
     criado_em: Optional[datetime] = None
     atualizado_em: Optional[datetime] = None
+
+    pagamento_modalidade: Optional[str] = None
+    pagamento_numero_parcelas: Optional[int] = None
+    pagamento_intervalo_dias: Optional[int] = None
+    pagamento_primeiro_vencimento: Optional[date] = None
+    pagamento_parcelas: list[PedidoParcelaOut] = Field(default_factory=list)
 
     itens: list[PedidoItemOut] = []
 
@@ -203,4 +221,9 @@ class PedidoCreate(ClienteFinalRevenda):
     valor_rt: Decimal = Field(default=0, ge=0)
     incluir_taxa_bancaria: bool = False
     taxa_bancaria_percentual: Decimal = Field(default=0, ge=0, lt=100)
+    pagamento_modalidade: Optional[Literal["AVISTA", "PARCELADO", "ENTRADA_SALDO"]] = None
+    pagamento_numero_parcelas: Optional[conint(strict=True, ge=1, le=24)] = None
+    pagamento_intervalo_dias: Optional[conint(strict=True, ge=0, le=365)] = None
+    pagamento_primeiro_vencimento: Optional[date] = None
+    pagamento_parcelas: Optional[list[OrcamentoParcelaInput]] = None
     itens: list[PedidoItemCreate] = Field(min_items=1)

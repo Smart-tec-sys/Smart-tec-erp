@@ -293,14 +293,21 @@ export function CadastrosPage({ entity }: { entity: CadastroEntity }) {
   return <CadastrosGenericosPage entity={entity} />
 }
 
-function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) {
+export function CadastroClienteDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (cliente: CadastroRecord) => void }) {
+  return <CadastrosGenericosPage entity="clientes" createDialog={{ onClose, onSaved }} />
+}
+
+function CadastrosGenericosPage({ entity, createDialog }: {
+  entity: CadastroGenericoEntity
+  createDialog?: { onClose: () => void; onSaved: (cliente: CadastroRecord) => void }
+}) {
   const config = configs[entity]
 
   const [items, setItems] = useState<CadastroRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [mode, setMode] = useState<'create' | 'edit' | 'view' | null>(null)
+  const [mode, setMode] = useState<'create' | 'edit' | 'view' | null>(createDialog ? 'create' : null)
   const [selected, setSelected] = useState<CadastroRecord | null>(null)
   const [form, setForm] = useState<CadastroPayload>(() => emptyPayload(config))
   const [saving, setSaving] = useState(false)
@@ -333,6 +340,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   }
 
   useEffect(() => {
+    if (createDialog) return
     setMode(null)
     setSelected(null)
     setShowImport(false)
@@ -340,6 +348,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
     void reload()
   }, [entity])
   useEffect(()=>{
+    if (createDialog) return
     if(entity!=='clientes'){
       setCommercialPartners([])
       setCommercialRepresentatives([])
@@ -425,9 +434,11 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
   }
 
   const closeForm = () => {
+    if (saving && createDialog) return
     setMoreActionsOpen(false)
     setMode(null)
     setSelected(null)
+    createDialog?.onClose()
   }
 
   const save = async () => {
@@ -509,7 +520,11 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
         if (!config.update) return
         await config.update(selected.id, payloadToSave)
       } else {
-        await config.create(payloadToSave)
+        const created = await config.create(payloadToSave)
+        if (createDialog) {
+          createDialog.onSaved(created)
+          return
+        }
       }
 
       closeForm()
@@ -539,6 +554,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
 
   return (
     <section className="cad-page">
+      {!createDialog && <>
       <div className="cad-heading">
         <div>
           <p className="cad-eyebrow">CADASTROS</p>
@@ -645,6 +661,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
         )}
       </div>
 
+      </>}
       {mode && (
         <div className="cad-modal-backdrop" onMouseDown={closeForm}>
           <div
@@ -781,6 +798,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
             </div>
 
             <div className="cad-modal-footer">
+              {createDialog && error && <div className="cad-error" role="alert">{error}</div>}
               {entity === 'clientes' && mode === 'edit' && selected && !reclassifying && (
                 <div className="cad-more-actions">
                   <button
@@ -806,7 +824,7 @@ function CadastrosGenericosPage({ entity }: { entity: CadastroGenericoEntity }) 
                   )}
                 </div>
               )}
-              <button className="cad-secondary" onClick={closeForm}>
+              <button className="cad-secondary" disabled={saving && Boolean(createDialog)} onClick={closeForm}>
                 {mode === 'view' ? 'Voltar' : 'Cancelar'}
               </button>
 
